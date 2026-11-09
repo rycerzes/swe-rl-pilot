@@ -1,0 +1,14 @@
+[project]
+name = "swe-rl-pilot-rollout"
+version = "0.0.0"
+description = "OpenEnv Harbor rollouts for the pilot: OpenEnv main + Harbor 0.25 (separate verifier)."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "openenv[harbor] @ git+https://github.com/openenv/OpenEnv@e83f73f2",
+    "harbor==0.25.0",
+]
+
+[tool.uv]
+package = false
+# OpenEnv's lock pins Harbor 0.23; Repo2RLEnv tasks need 0.25 for the separate verifier.
+override-dependencies = ["harbor==0.25.0"]

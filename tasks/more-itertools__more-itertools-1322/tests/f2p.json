@@ -1,0 +1,4 @@
+[
+  "tests/test_more.py::PeekableTests::test_slicing_negative_step_omitted_stop",
+  "tests/test_more.py::PeekableTests::test_slicing_negative_step_omitted_stop_read_bound"
+]

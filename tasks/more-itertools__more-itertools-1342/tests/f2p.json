@@ -1,0 +1,4 @@
+[
+  "tests/test_more.py::ChunkedEvenTests::test_negative_chunk_size",
+  "tests/test_more.py::ChunkedEvenTests::test_zero_chunk_size"
+]

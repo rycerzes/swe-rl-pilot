@@ -1,0 +1,28 @@
+diff --git a/docs/versions.rst b/docs/versions.rst
+index 738ff67c6..ecc381171 100644
+--- a/docs/versions.rst
++++ b/docs/versions.rst
+@@ -9,6 +9,7 @@ Unreleased
+ ----------
+ 
+ * Changes to existing functions:
++    * :func:`bucket` now honours a falsey *validator* callable (such as an empty ``set`` subclass that defines ``__call__``) instead of silently replacing it with the default that accepts every key.
+     * :func:`ichunked` now matches :func:`chunked` for ``n = 0`` and negative *n*: it yields nothing for a zero chunk size (without consuming the source) and raises ``ValueError: n must be at least 0`` instead of leaking :func:`itertools.islice`'s error.
+     * :func:`running_min`, :func:`running_max`, :func:`running_mean`, and :func:`running_statistics` now consistently validate *maxlen* as an integer and support the index protocol.
+     * :func:`numeric_range` now preserves its original values and length when reversed, including floating-point ranges and ranges near datetime limits.
+diff --git a/more_itertools/more.py b/more_itertools/more.py
+index 940b8009c..9c56ab375 100755
+--- a/more_itertools/more.py
++++ b/more_itertools/more.py
+@@ -1182,7 +1182,10 @@ def __init__(self, iterable, key, validator=None):
+         self._it = iter(iterable)
+         self._key = key
+         self._cache = defaultdict(deque)
+-        self._validator = validator or (lambda x: True)
++        # Use ``is None`` rather than truthiness: a valid validator may be a
++        # callable object that is falsey (e.g. an empty ``set`` subclass with
++        # ``__call__``), and ``validator or ...`` would silently replace it.
++        self._validator = (lambda x: True) if validator is None else validator
+ 
+     def __contains__(self, value):
+         if not self._validator(value):

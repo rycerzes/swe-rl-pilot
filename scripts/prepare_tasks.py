@@ -43,12 +43,16 @@ def main() -> int:
     parser.add_argument("generated", type=Path, help="a `repo2rlenv generate --out` directory")
     parser.add_argument("out", type=Path, help="where the prepared tasks go (e.g. tasks/)")
     parser.add_argument("--registry", default=REGISTRY)
+    parser.add_argument("--replace", action="store_true", help="redo tasks already in `out`")
     args = parser.parse_args()
 
     sources = sorted(p.parent for p in args.generated.glob("*/task.toml"))
+    if not args.replace:
+        # Re-preparing only refreshes timestamps; leave committed tasks alone.
+        sources = [s for s in sources if not (args.out / s.name).exists()]
     if not sources:
-        print(f"no tasks under {args.generated}", file=sys.stderr)
-        return 1
+        print(f"no new tasks under {args.generated}")
+        return 0
     with tempfile.TemporaryDirectory() as tmp:
         staging = Path(tmp)
         for src in sources:

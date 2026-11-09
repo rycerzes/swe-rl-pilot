@@ -1,0 +1,3 @@
+[
+  "tests/test_more.py::BucketTests::test_falsey_validator_is_honoured"
+]

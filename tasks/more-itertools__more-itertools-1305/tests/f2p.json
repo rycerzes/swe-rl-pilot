@@ -1,0 +1,4 @@
+[
+  "tests/test_more.py::IchunkedTests::test_negative",
+  "tests/test_more.py::IchunkedTests::test_zero_nonempty"
+]

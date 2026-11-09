@@ -1,0 +1,6 @@
+[
+  "tests/test_more.py::BucketTests::test_getitem_miss_does_not_add_key",
+  "tests/test_more.py::BucketTests::test_in_does_not_add_key",
+  "tests/test_more.py::BucketTests::test_in_does_not_add_key_with_validator",
+  "tests/test_more.py::BucketTests::test_keys_are_only_those_seen"
+]

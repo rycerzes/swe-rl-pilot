@@ -1,0 +1,3 @@
+[
+  "tests/test_more.py::SeekableTest::test_repeated_zero_cache_peek_has_bounded_memory"
+]

@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+# Bootstrap cache: agent transcripts and local image references stay local.
+envs/
+jobs/
+runs/
+workspace/

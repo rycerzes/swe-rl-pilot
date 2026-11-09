@@ -1,0 +1,11 @@
+[project]
+name = "swe-rl-pilot-gen"
+version = "0.0.0"
+description = "Task generation for the SWE-agent RL pilot (Repo2RLEnv main)."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "repo2rlenv[harbor,mutants] @ git+https://github.com/huggingface/Repo2RLEnv@db619e1e71e76462203389209b365783a133791a",
+]
+
+[tool.uv]
+package = false

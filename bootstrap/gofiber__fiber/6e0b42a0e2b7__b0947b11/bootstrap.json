@@ -1,0 +1,27 @@
+{
+  "image_digest": "sha256:10f6cab9d6fad98bcdc3c2d856141e5b815ebbaf26cea9ca446e4b42bfdf2194",
+  "image_tag": "local/r2e-bootstrap/gofiber__fiber:6e0b42a0e2b7",
+  "language": "go",
+  "repo": "gofiber/fiber",
+  "ref": "6e0b42a0e2b72c4fedfca62f3824e6339d883b4d",
+  "rebuild_cmds": [
+    "export PATH=$PATH:/usr/local/go/bin",
+    "export GOFLAGS=-mod=mod",
+    "cd /workspace && go mod download",
+    "cd /workspace && go build ./..."
+  ],
+  "test_cmds": [
+    "export PATH=$PATH:/usr/local/go/bin && export GOFLAGS=-mod=mod && cd /workspace && go test ./..."
+  ],
+  "smoke_passed": true,
+  "iterations": 8,
+  "build_time_sec": 213.03,
+  "llm_provider": "openai/deepseek-ai/DeepSeek-V4.1-Flash",
+  "llm_cost_estimate_usd": 0.0,
+  "dockerfile_reconstruction": "# Auto-generated from r2e-bootstrap agent transcript.\n# Build from the cloned repo root: `docker build -t my-image .`\nFROM golang:1.27\nWORKDIR /workspace\nCOPY . /workspace\n\nRUN cd /workspace && ls -la && echo \"---GO VERSION---\" && go version && echo \"---GO.MOD---\" && head -20 go.mod\nRUN ls /usr/local/go/bin 2>/dev/null; ls /usr/local/ 2>/dev/null; which go; ls /go 2>/dev/null; find / -name 'go' -type f -path '*bin*' 2>/dev/null | head\nRUN export PATH=$PATH:/usr/local/go/bin && go version && cd /workspace && head -20 go.mod\nRUN export PATH=$PATH:/usr/local/go/bin && export GOFLAGS=-mod=mod && cd /workspace && go mod download 2>&1 | tail -5 && echo \"---BUILD---\" && go build ./... 2>&1 | tail -20 && echo \"BUILD_DONE\"\nRUN export PATH=$PATH:/usr/local/go/bin && export GOFLAGS=-mod=mod && cd /workspace && go test -list '.*' ./... 2>&1 | head -20 && echo \"---VET---\" && go vet ./... 2>&1 | tail -5\nRUN export PATH=$PATH:/usr/local/go/bin && export GOFLAGS=-mod=mod && cd /workspace && go test -run TestNewTestCtx_ReturnsDefaultCtx ./... 2>&1 | tail -20\n",
+  "transcript_path": "workspace/bootstrap/gofiber__fiber/6e0b42a0e2b7__b0947b11/transcript.jsonl",
+  "pushed_to_registry": false,
+  "verify_passed": true,
+  "verify_detail": "exit=1; ware/skip\t(cached)\nok  \tgithub.com/gofiber/fiber/v3/middleware/sse\t(cached)\nok  \tgithub.com/gofiber/fiber/v3/middleware/static\t6.059s\nok  \tgithub.com/gofiber/fiber/v3/middleware/timeout\t(cached)\nFAIL",
+  "extra": {}
+}

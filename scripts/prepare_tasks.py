@@ -9,7 +9,8 @@ For each generated task this:
   1. bakes the bootstrap recipe into `environment/Dockerfile` (Repo2RLEnv's inline mode),
      so the image builds from a public base with no local image;
   2. adds `scrub_history.sh` before the verifier's pristine copy, so the image keeps no git
-     objects past the base commit and the build fails if any survive;
+     objects past the base commit and the build fails if any survive; for Go recipes, first
+     downloads the base commit's modules;
   3. strips PR-body sections that describe the fix or its tests from `instruction.md`, and
      records them and any hidden test the instruction still names under
      `[metadata.swe_rl_pilot]`;
@@ -52,16 +53,27 @@ def environment_hash(env_dir: Path) -> str:
     return digest.hexdigest()[:12]
 
 
+# The recipe downloads Go modules at the bootstrap ref; the grader then runs the tests with a
+# read-only module cache, so a base that needs other versions builds nothing. Fetch the base's
+# own modules once the tree is at the base commit.
+GO_MODULES_STEP = (
+    "# swe-rl-pilot: this base commit's Go modules (the test user can't fetch them)\n"
+    "RUN cd /workspace && PATH=/usr/local/go/bin:$PATH GOFLAGS=-mod=mod go mod download\n"
+)
+
+
 def add_scrub(task: Path) -> None:
     env = task / "environment"
     shutil.copyfile(SCRUB, env / SCRUB.name)
     dockerfile = env / "Dockerfile"
     text = dockerfile.read_text(encoding="utf-8")
-    if SCRUB_STEP in text:
-        return
-    if text.count(PRISTINE_COPY) != 1:
-        raise SystemExit(f"{task.name}: expected one `{PRISTINE_COPY}` line in the Dockerfile")
-    dockerfile.write_text(text.replace(PRISTINE_COPY, SCRUB_STEP + PRISTINE_COPY), encoding="utf-8")
+    if SCRUB_STEP not in text:
+        if text.count(PRISTINE_COPY) != 1:
+            raise SystemExit(f"{task.name}: expected one `{PRISTINE_COPY}` line in the Dockerfile")
+        text = text.replace(PRISTINE_COPY, SCRUB_STEP + PRISTINE_COPY)
+    if "go mod download" in text and GO_MODULES_STEP not in text:
+        text = text.replace(SCRUB_STEP, GO_MODULES_STEP + SCRUB_STEP)
+    dockerfile.write_text(text, encoding="utf-8")
 
 
 def set_image(task: Path, registry: str) -> str:

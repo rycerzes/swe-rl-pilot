@@ -22,27 +22,42 @@ on:
       limit:
         description: "PRs per window. Repo2RLEnv fetches the newest 3x limit merged PRs, then keeps those in the window, so a small limit starves older windows"
         default: "200"
+      anchor:
+        description: "rebuild the bootstrap recipe at each window's last commit (dependencies match the PRs)"
+        type: boolean
+        default: true
 
 permissions: {}
 
 jobs:
   plan:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - id: plan
         env:
           WINDOWS: ${{ inputs.windows }}
+          REPO: ${{ inputs.repo }}
+          ANCHOR: ${{ inputs.anchor }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'EOF' >> "$GITHUB_OUTPUT"
-          import json, os, re
+          import json, os, re, subprocess
           include = []
           for w in os.environ["WINDOWS"].split():
               m = re.fullmatch(r"(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})", w)
               if not m:
                   raise SystemExit(f"bad window {w!r}, expected YYYY-MM-DD..YYYY-MM-DD")
-              include.append({"since": m[1], "until": m[2]})
+              anchor = ""
+              if os.environ["ANCHOR"] == "true":
+                  # Last commit on the default branch by the window's end.
+                  anchor = subprocess.run(
+                      ["gh", "api", f"repos/{os.environ['REPO']}/commits?until={m[2]}T23:59:59Z&per_page=1",
+                       "-q", ".[0].sha"], check=True, capture_output=True, text=True).stdout.strip()
+              include.append({"since": m[1], "until": m[2], "anchor": anchor})
           print("matrix=" + json.dumps({"include": include}))
           EOF
 
@@ -58,6 +73,7 @@ jobs:
     env:
       REPO: ${{ inputs.repo }}
       SINCE: ${{ matrix.since }}
+      ANCHOR_REF: ${{ matrix.anchor }}
       UNTIL: ${{ matrix.until }}
       LIMIT: ${{ inputs.limit }}
       UV_NO_CONFIG: "1"
@@ -76,7 +92,8 @@ jobs:
             echo "::error::expected one slot under bootstrap/${REPO/\//__}/, found: ${slots[*]}"
             exit 1
           fi
-          gen/.venv/bin/python scripts/restore_bootstrap.py "${slots[0]}" | tee -a "$GITHUB_OUTPUT"
+          gen/.venv/bin/python scripts/restore_bootstrap.py "${slots[0]}" --at-ref "$ANCHOR_REF" \
+            | tee -a "$GITHUB_OUTPUT"
       - name: Generate
         env:
           REF: ${{ steps.bootstrap.outputs.ref }}
@@ -109,7 +126,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gen-${{ matrix.since }}
+          # workspace/bootstrap/: the (anchored) slot prepare_tasks.py needs for the inline recipe.
           path: |
             workspace/gen/
             workspace/logs/
+            workspace/bootstrap/
           retention-days: 30

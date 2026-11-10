@@ -1,0 +1,25 @@
+{
+  "image_digest": "sha256:d912dce586c78bac3ca53f53c7c03dbb0212b1fcc27745d806e99cc7695ce91d",
+  "image_tag": "local/r2e-bootstrap/networkx__networkx:c32b376b5322",
+  "language": "python",
+  "repo": "networkx/networkx",
+  "ref": "c32b376b53229f2b2a2d06029c25a852737efdc2",
+  "rebuild_cmds": [
+    "pip install -e .",
+    "pip install pytest pytest-xdist pytest-cov numpy scipy matplotlib pandas"
+  ],
+  "test_cmds": [
+    "python -m pytest -v"
+  ],
+  "smoke_passed": true,
+  "iterations": 6,
+  "build_time_sec": 297.51,
+  "llm_provider": "openai/deepseek-ai/DeepSeek-V4.1-Flash",
+  "llm_cost_estimate_usd": 0.0,
+  "dockerfile_reconstruction": "# Auto-generated from r2e-bootstrap agent transcript.\n# Build from the cloned repo root: `docker build -t my-image .`\nFROM python:3.12-slim\nWORKDIR /workspace\nCOPY . /workspace\n\nRUN cd /workspace && ls -la && echo \"---\" && cat pyproject.toml 2>/dev/null | head -80\nRUN cd /workspace && sed -n '80,200p' pyproject.toml && echo \"=== requirements ===\" && ls requirements && echo \"---\" && cat requirements/*.txt 2>/dev/null | head -60\nRUN cd /workspace && pip install -e . 2>&1 | tail -5 && pip install pytest pytest-xdist pytest-cov numpy scipy matplotlib pandas 2>&1 | tail -3\nRUN cd /workspace && python -m pytest --collect-only -q 2>&1 | tail -15\n",
+  "transcript_path": "workspace/bootstrap/networkx__networkx/c32b376b5322__b74dcc61/transcript.jsonl",
+  "pushed_to_registry": false,
+  "verify_passed": true,
+  "verify_detail": "exit=0; nbalanced_merge_weights PASSED [ 99%]\nnetworkx/utils/tests/test_unionfind.py::test_empty_union PASSED          [100%]\n\n========== 9441 passed, 79 skipped, 741 xfailed in 110.27s (0:01:50) ===========",
+  "extra": {}
+}

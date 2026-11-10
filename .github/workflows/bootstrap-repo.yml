@@ -1,0 +1,89 @@
+name: Bootstrap a repo
+
+# Runs Repo2RLEnv's bootstrap agent (an LLM that works out how to build and test the repo) on a
+# native x86 runner. Locally on Apple silicon it runs under QEMU, where rustc segfaults and big
+# test suites time out. The result is uploaded as an artifact: review it, then commit the slot
+# under bootstrap/<owner>__<name>/<slot>/ (bootstrap.json + Dockerfile) for generate-tasks.yml.
+#
+# The model is called through the HF router with the HF_INFERENCE_TOKEN secret. Only manual
+# runs use it; workflows on pull requests from forks never receive secrets.
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: "owner/name"
+        required: true
+      ref:
+        description: "commit to bootstrap at (default: HEAD)"
+        default: ""
+      language:
+        description: "python|node|go|rust|java|c_cpp (default: auto-detect)"
+        default: ""
+      base_image:
+        description: "base image, e.g. golang:1.27 (default: per language)"
+        default: ""
+      model:
+        description: "model on the HF router"
+        default: "deepseek-ai/DeepSeek-V4.1-Flash"
+
+permissions: {}
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      REPO: ${{ inputs.repo }}
+      REF: ${{ inputs.ref }}
+      LANGUAGE: ${{ inputs.language }}
+      BASE_IMAGE: ${{ inputs.base_image }}
+      MODEL: ${{ inputs.model }}
+      UV_NO_CONFIG: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Generation environment
+        run: cd gen && uv sync --no-config && .venv/bin/python -I patch_repo2rlenv.py
+      - name: Bootstrap
+        env:
+          HF_TOKEN: ${{ secrets.HF_INFERENCE_TOKEN }}
+        run: |
+          set -o pipefail
+          args=(--repo "$REPO" --platform linux/amd64 --max-iterations 40 --max-seconds 3600
+                --llm "openai/$MODEL" --llm-endpoint https://router.huggingface.co/v1
+                --llm-key-env HF_TOKEN --max-spend-usd 2)
+          [ -n "$REF" ] && args+=(--ref "$REF")
+          [ -n "$LANGUAGE" ] && args+=(--language "$LANGUAGE")
+          [ -n "$BASE_IMAGE" ] && args+=(--base-image "$BASE_IMAGE")
+          mkdir -p workspace/logs
+          gen/.venv/bin/repo2rlenv --no-ui bootstrap "${args[@]}" 2>&1 \
+            | grep -v "Provider List" | tee "workspace/logs/bootstrap-${REPO#*/}.log"
+      - name: Summary
+        if: always()
+        run: |
+          for f in workspace/bootstrap/*/*/bootstrap.json; do
+            [ -f "$f" ] || continue
+            python3 - "$f" <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import json, sys
+          d = json.load(open(sys.argv[1]))
+          print(f"### {d['repo']} @ {d['ref'][:12]} ({d['language']})\n")
+          for k in ("smoke_passed", "verify_passed", "iterations", "build_time_sec"):
+              print(f"- {k}: {d.get(k)}")
+          print(f"- verify_detail: `{str(d.get('verify_detail'))[-160:]}`")
+          print("\nrebuild_cmds:\n```\n" + "\n".join(d.get("rebuild_cmds") or []) + "\n```")
+          print("test_cmds:\n```\n" + "\n".join(d.get("test_cmds") or []) + "\n```")
+          EOF
+          done
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bootstrap-${{ github.run_id }}
+          path: |
+            workspace/bootstrap/
+            workspace/logs/
+          retention-days: 30

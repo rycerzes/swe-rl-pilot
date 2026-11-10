@@ -1,0 +1,24 @@
+{
+  "image_digest": "sha256:5e1af053bc5d156f3af64a05730a106c63ee415a3668f170f18216a38715d8fc",
+  "image_tag": "local/r2e-bootstrap/gohugoio__hugo:592242167ee1",
+  "language": "go",
+  "repo": "gohugoio/hugo",
+  "ref": "592242167ee17aaaef7521cdc2f673c235824cf2",
+  "rebuild_cmds": [
+    "export PATH=$PATH:/usr/local/go/bin && export GOFLAGS=-mod=mod && cd /workspace && go mod download && go build ./..."
+  ],
+  "test_cmds": [
+    "export PATH=$PATH:/usr/local/go/bin && export GOFLAGS=-mod=mod && cd /workspace && go test ./..."
+  ],
+  "smoke_passed": false,
+  "iterations": 15,
+  "build_time_sec": 1586.25,
+  "llm_provider": "openai/deepseek-ai/DeepSeek-V4.1-Flash",
+  "llm_cost_estimate_usd": 0.0,
+  "dockerfile_reconstruction": "# Auto-generated from r2e-bootstrap agent transcript.\n# Build from the cloned repo root: `docker build -t my-image .`\nFROM golang:1.27\nWORKDIR /workspace\nCOPY . /workspace\n\nRUN cd /workspace && ls -la && echo \"---\" && cat go.mod | head -20 && echo \"---\" && go version\nRUN ls /usr/local/go/bin 2>/dev/null; which go; ls /usr/local/ 2>/dev/null; echo \"PATH=$PATH\"\nRUN export PATH=$PATH:/usr/local/go/bin && go version && cd /workspace && export GOFLAGS=-mod=mod && go mod download 2>&1 | tail -5; echo \"download exit=$?\"\nRUN export PATH=$PATH:/usr/local/go/bin && cd /workspace && export GOFLAGS=-mod=mod && go build ./... 2>&1 | tail -20; echo \"build exit=${PIPESTATUS[0]}\"\nRUN cd /workspace && git config --global --add safe.directory /workspace && git status 2>&1 | head -3; echo \"---\"; export PATH=$PATH:/usr/local/go/bin && export GOFLAGS=-mod=mod && go build ./... 2>&1 | tail -5; echo \"build exit=${PIPESTATUS[0]}\"\nRUN cd /workspace && export PATH=$PATH:/usr/local/go/bin && export GOFLAGS=-mod=mod && go test -list '.*' ./common/... 2>&1 | head -20; echo \"exit=${PIPESTATUS[0]}\"\nRUN cd /workspace && export PATH=$PATH:/usr/local/go/bin && export GOFLAGS=-mod=mod && go test ./common/collections/... 2>&1 | tail -5; echo \"exit=${PIPESTATUS[0]}\"\nRUN cd /workspace && export PATH=$PATH:/usr/local/go/bin && export GOFLAGS=-mod=mod && go test -list '.*' ./hugolib/... 2>&1 | tail -5; echo \"exit=${PIPESTATUS[0]}\"\nRUN cd /workspace && export PATH=$PATH:/usr/local/go/bin && export GOFLAGS=-mod=mod && go test ./common/... 2>&1 | tail -8; echo \"exit=${PIPESTATUS[0]}\"\nRUN cd /workspace && export PATH=$PATH:/usr/local/go/bin && export GOFLAGS=-mod=mod && go test -list '.*' ./... 2>&1 | grep -iE \"cannot|error|no required module|build failed\" | head -20; echo \"done\"\nRUN cd /workspace && export PATH=$PATH:/usr/local/go/bin && export GOFLAGS=-mod=mod && timeout 120 go test -list '.*' ./tpl/... 2>&1 | grep -iE \"cannot|error|build failed\" | head; echo \"tpl done exit=$?\"\nRUN cd /workspace && export PATH=$PATH:/usr/local/go/bin && export GOFLAGS=-mod=mod && timeout 200 go test -list '.*' . ./hugolib 2>&1 | tail -5; echo \"exit=${PIPESTATUS[0]}\"\nRUN cd /workspace && export PATH=$PATH:/usr/local/go/bin && export GOFLAGS=-mod=mod && timeout 200 go test ./common/collections/... ./common/text/... 2>&1 | tail -5; echo \"exit=${PIPESTATUS[0]}\"\n",
+  "transcript_path": "workspace/bootstrap/gohugoio__hugo/592242167ee1__b0947b11/transcript.jsonl",
+  "pushed_to_registry": false,
+  "verify_passed": false,
+  "verify_detail": "exit=124; m/gohugoio/hugo/publisher\t0.993s\nok  \tgithub.com/gohugoio/hugo/related\t0.438s\n?   \tgithub.com/gohugoio/hugo/releaser\t[no test files]\nok  \tgithub.com/gohugoio/hugo/resources\t9.753s\n[timeout after 300s]",
+  "extra": {}
+}

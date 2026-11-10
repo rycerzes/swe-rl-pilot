@@ -20,8 +20,8 @@ on:
         description: "space-separated merged-date windows, e.g. 2026-05-01..2026-07-31 2026-08-01..2026-11-11"
         required: true
       limit:
-        description: "max PRs listed per window"
-        default: "15"
+        description: "PRs per window. Repo2RLEnv fetches the newest 3x limit merged PRs, then keeps those in the window, so a small limit starves older windows"
+        default: "200"
 
 permissions: {}
 
@@ -67,7 +67,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Generation environment
-        run: cd gen && uv sync --no-config
+        run: cd gen && uv sync --no-config && .venv/bin/python -I patch_repo2rlenv.py
       - id: bootstrap
         name: Restore the bootstrap image
         run: |
@@ -80,6 +80,8 @@ jobs:
       - name: Generate
         env:
           REF: ${{ steps.bootstrap.outputs.ref }}
+          # --language/--base-image the slot was bootstrapped with; its name hashes them.
+          BOOTSTRAP_ARGS: ${{ steps.bootstrap.outputs.args }}
           # Listing PRs and reading linked issues; public repos only.
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -89,7 +91,10 @@ jobs:
           # No LLM is called: the bootstrap is a cache hit and pr_runtime makes no LLM calls.
           log="workspace/logs/gen-${REPO#*/}-${SINCE}.log"
           rc=0
-          gen/.venv/bin/repo2rlenv --no-ui generate --repo "$REPO" --ref "$REF" \
+          read -ra bootstrap_args <<< "$BOOTSTRAP_ARGS"
+          # generate_logged.py keeps each validation stage's script and output for diagnosis.
+          gen/.venv/bin/python scripts/generate_logged.py "workspace/logs/stages-${SINCE}" \
+            --no-ui generate --repo "$REPO" --ref "$REF" "${bootstrap_args[@]}" \
             --pipeline pr_runtime --pipeline-opt "limit=$LIMIT" \
             --pipeline-opt "since=$SINCE" --pipeline-opt "until=$UNTIL" \
             --llm anthropic/claude-sonnet-4-6 --max-spend-usd 0.01 \

@@ -7,10 +7,12 @@ Bootstrapping a repo runs an LLM agent once (locally, `repo2rlenv bootstrap`). I
 machine (CI) Repo2RLEnv sees the slot but not the image and would re-bootstrap. This script
 copies the slot into the cache dir and builds the image from the slot's clean recipe (clone at
 the bootstrap ref, then its verified `rebuild_cmds`), the same recipe inline task Dockerfiles
-use, and tags it with the slot's `image_tag`. Pass `--ref <ref>` to `generate` so it resolves
-to the same slot.
+use, and tags it with the slot's `image_tag`.
 
-Prints the ref, for `$GITHUB_OUTPUT`.
+`generate` only finds the slot if it asks for the same ref and the same image options: the slot
+name ends in a hash of them (`--language`, `--base-image`). This works out which flags reproduce
+that hash and prints them with the ref, for `$GITHUB_OUTPUT`:
+`ref=<sha>` and `args=<flags for generate>`.
 """
 
 from __future__ import annotations
@@ -23,7 +25,23 @@ import sys
 import tempfile
 from pathlib import Path
 
+from repo2rlenv.bootstrap.cache import _options_hash
 from repo2rlenv.registry.integration import _build_clean_recipe
+
+
+def generate_flags(slot: Path, data: dict) -> list[str]:
+    """The --language/--base-image flags whose options hash matches the slot's name."""
+    want = slot.name.rpartition("__")[2]
+    recipe = data.get("dockerfile_reconstruction") or ""
+    base = next((l.split()[1] for l in recipe.splitlines() if l.upper().startswith("FROM ")), None)
+    for language in (None, data.get("language")):
+        for base_image in (None, base):
+            opts = {"platform": "linux/amd64", "base_image": base_image, "user_dockerfile": None,
+                    "image_registry": None, "languages_hint": [language] if language else None}
+            if _options_hash(opts) == want:
+                return (["--language", language] if language else []) + (
+                    ["--base-image", base_image] if base_image else [])
+    raise SystemExit(f"{slot}: no --language/--base-image combination reproduces hash {want}")
 
 
 def main() -> int:
@@ -33,6 +51,7 @@ def main() -> int:
     args = parser.parse_args()
 
     data = json.loads((args.slot / "bootstrap.json").read_text(encoding="utf-8"))
+    flags = generate_flags(args.slot, data)
     owner, name = data["repo"].split("/", 1)
     recipe = _build_clean_recipe(owner, name, data)
     if recipe is None:
@@ -49,6 +68,7 @@ def main() -> int:
         print("+", " ".join(cmd), file=sys.stderr, flush=True)
         subprocess.run(cmd, check=True)
     print(f"ref={data['ref']}")
+    print(f"args={' '.join(flags)}")
     return 0
 
 

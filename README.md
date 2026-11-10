@@ -13,6 +13,9 @@ publicly pullable image, so each task's `environment/Dockerfile` is built here b
 - `scripts/prepare_tasks.py`: generated output → CI-buildable tasks (inline Dockerfile,
   content-addressed image tag).
 - `scripts/plan_images.py`, `scripts/check_controls.py`: used by the workflow.
+- `bootstrap/`: committed bootstrap cache slots (one per repo, from a local `repo2rlenv bootstrap`).
+- `.github/workflows/generate-tasks.yml`: runs `pr_runtime` per merged-date window on
+  GitHub runners, restoring the bootstrap image with `scripts/restore_bootstrap.py` (no LLM key).
 - `.github/workflows/build-images.yml`: builds missing images (linux/amd64), pushes them to
   `ghcr.io/rycerzes/swe-rl-pilot`, then pulls each one anonymously and checks its controls
   (oracle 1.0 and resolved, nop 0.0) with Harbor.

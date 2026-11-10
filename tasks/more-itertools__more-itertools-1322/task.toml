@@ -702,6 +702,15 @@ inline_recipe_sha256 = "sha256:21b27b6f50dccbf13d390f3b7a1b33d50a0cb2f6c554faa06
 inline_recipe_lines = 13
 inline_recipe_source = "agent_replay"
 
+[metadata.swe_rl_pilot]
+instruction_stripped_sections = [
+    "Changes",
+    "Checks and tests",
+]
+instruction_names_hidden_tests = []
+instruction_description_words = 3
+instruction_ok = false
+
 [agent]
 timeout_sec = 1800.0
 

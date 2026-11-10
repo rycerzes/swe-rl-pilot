@@ -1,0 +1,24 @@
+{
+  "image_digest": "docker.io/local/r2e-bootstrap/more-itertools__more-itertools@sha256:50c5713db9040b52e844c6d08199fea83947476b1487a7cbec8f8b032e4cb344",
+  "image_tag": "local/r2e-bootstrap/more-itertools__more-itertools:f42daddf205f",
+  "language": "python",
+  "repo": "more-itertools/more-itertools",
+  "ref": "f42daddf205f335fea6e200dad46049f33e71221",
+  "rebuild_cmds": [
+    "cd /workspace && pip install -e . && pip install pytest pytest-xdist coverage ruff"
+  ],
+  "test_cmds": [
+    "cd /workspace && python -m pytest -v"
+  ],
+  "smoke_passed": true,
+  "iterations": 7,
+  "build_time_sec": 466.03,
+  "llm_provider": "openai/FW-Deepseek-V4.1-Flash-1017",
+  "llm_cost_estimate_usd": 0.0,
+  "dockerfile_reconstruction": "# Auto-generated from r2e-bootstrap agent transcript.\n# Build from the cloned repo root: `docker build -t my-image .`\nFROM python:3.12-slim\nWORKDIR /workspace\nCOPY . /workspace\n\nRUN cd /workspace && ls -la && cat pyproject.toml 2>/dev/null | head -80\nRUN cd /workspace && ls requirements && echo \"---setup.cfg---\" && cat setup.cfg && echo \"---tox---\" && cat tox.ini && echo \"---reqs---\" && for f in requirements/*; do echo \"== $f ==\"; cat \"$f\"; done\nRUN cd /workspace && pip install -e . && pip install pytest pytest-xdist coverage ruff && python -c 'import more_itertools; print(more_itertools.__version__)'\nRUN cd /workspace && python -m pytest --collect-only -q 2>&1 | tail -20\n",
+  "transcript_path": "workspace/bootstrap/more-itertools__more-itertools/f42daddf205f__74ba7084/transcript.jsonl",
+  "pushed_to_registry": false,
+  "verify_passed": true,
+  "verify_detail": "exit=0; izeTests::test_nonpositive_index \ntests/test_recipes.py::RunningWindowSizeTests::test_nonpositive_index PASSED [100%]\n\n============ 771 passed, 21203 subtests passed in 184.10s (0:03:04) ============",
+  "extra": {}
+}

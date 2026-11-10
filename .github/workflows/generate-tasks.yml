@@ -1,0 +1,110 @@
+name: Generate tasks
+
+# Runs Repo2RLEnv's pr_runtime pipeline on GitHub runners: one job per window of merged-PR dates,
+# in parallel. Validation runs every PR's tests in Docker several times, which is slow locally.
+#
+# The repo must already be bootstrapped (an LLM agent, run once locally) with its cache slot
+# committed under bootstrap/. This workflow needs no LLM key: it rebuilds the bootstrap image
+# from the slot's recipe and pins --ref to the slot's ref, so generate gets a cache hit.
+#
+# Output: one artifact per window with the generated tasks and the log. Review and add them with
+# scripts/prepare_tasks.py; the build workflow then builds their images.
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: "owner/name, with a slot under bootstrap/<owner>__<name>/"
+        required: true
+      windows:
+        description: "space-separated merged-date windows, e.g. 2026-05-01..2026-07-31 2026-08-01..2026-11-11"
+        required: true
+      limit:
+        description: "max PRs listed per window"
+        default: "15"
+
+permissions: {}
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - id: plan
+        env:
+          WINDOWS: ${{ inputs.windows }}
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_OUTPUT"
+          import json, os, re
+          include = []
+          for w in os.environ["WINDOWS"].split():
+              m = re.fullmatch(r"(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})", w)
+              if not m:
+                  raise SystemExit(f"bad window {w!r}, expected YYYY-MM-DD..YYYY-MM-DD")
+              include.append({"since": m[1], "until": m[2]})
+          print("matrix=" + json.dumps({"include": include}))
+          EOF
+
+  generate:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 340
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      REPO: ${{ inputs.repo }}
+      SINCE: ${{ matrix.since }}
+      UNTIL: ${{ matrix.until }}
+      LIMIT: ${{ inputs.limit }}
+      UV_NO_CONFIG: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Generation environment
+        run: cd gen && uv sync --no-config
+      - id: bootstrap
+        name: Restore the bootstrap image
+        run: |
+          slots=(bootstrap/${REPO/\//__}/*/)
+          if [ ${#slots[@]} -ne 1 ] || [ ! -f "${slots[0]}bootstrap.json" ]; then
+            echo "::error::expected one slot under bootstrap/${REPO/\//__}/, found: ${slots[*]}"
+            exit 1
+          fi
+          gen/.venv/bin/python scripts/restore_bootstrap.py "${slots[0]}" | tee -a "$GITHUB_OUTPUT"
+      - name: Generate
+        env:
+          REF: ${{ steps.bootstrap.outputs.ref }}
+          # Listing PRs and reading linked issues; public repos only.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          out="workspace/gen/${REPO#*/}-${SINCE}"
+          mkdir -p workspace/logs
+          # No LLM is called: the bootstrap is a cache hit and pr_runtime makes no LLM calls.
+          log="workspace/logs/gen-${REPO#*/}-${SINCE}.log"
+          rc=0
+          gen/.venv/bin/repo2rlenv --no-ui generate --repo "$REPO" --ref "$REF" \
+            --pipeline pr_runtime --pipeline-opt "limit=$LIMIT" \
+            --pipeline-opt "since=$SINCE" --pipeline-opt "until=$UNTIL" \
+            --llm anthropic/claude-sonnet-4-6 --max-spend-usd 0.01 \
+            --out "$out" 2>&1 | tee "$log" || rc=$?
+          # generate exits 1 when a window emits nothing; that's a result, not a failure.
+          grep -q "Generation result" "$log" || { echo "::error::generate failed (exit $rc)"; exit 1; }
+          sed -n '/Generation result/,/╰/p' "$log" >> "$GITHUB_STEP_SUMMARY"
+          grep -q "bootstrap cache hit" "$log" \
+            || { echo "::error::bootstrap was not a cache hit"; exit 1; }
+          echo "emitted: $(ls "$out"/*/task.toml 2>/dev/null | wc -l)" >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gen-${{ matrix.since }}
+          path: |
+            workspace/gen/
+            workspace/logs/
+          retention-days: 30

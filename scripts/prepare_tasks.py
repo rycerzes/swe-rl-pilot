@@ -3,14 +3,17 @@
 Usage (from the repo root, where `workspace/bootstrap` holds the bootstrap cache):
 
     gen/.venv/bin/python scripts/prepare_tasks.py workspace/gen/<dataset> tasks
-    gen/.venv/bin/python scripts/prepare_tasks.py --refresh tasks   # re-apply 2-3 in place
+    gen/.venv/bin/python scripts/prepare_tasks.py --refresh tasks   # re-apply 2-4 in place
 
 For each generated task this:
   1. bakes the bootstrap recipe into `environment/Dockerfile` (Repo2RLEnv's inline mode),
      so the image builds from a public base with no local image;
   2. adds `scrub_history.sh` before the verifier's pristine copy, so the image keeps no git
      objects past the base commit and the build fails if any survive;
-  3. sets `[environment].docker_image` to `<registry>:<task>-<hash of environment/>`,
+  3. strips PR-body sections that describe the fix or its tests from `instruction.md`, and
+     records them and any hidden test the instruction still names under
+     `[metadata.swe_rl_pilot]`;
+  4. sets `[environment].docker_image` to `<registry>:<task>-<hash of environment/>`,
      which the build workflow pushes and HF Sandbox pulls.
 
 The hash covers every file under `environment/`, so a changed recipe gets a new tag and an
@@ -21,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import re
 import shutil
 import sys
 import tempfile
@@ -69,8 +73,82 @@ def set_image(task: Path, registry: str) -> str:
     return image
 
 
+# PR-body sections that describe the fix or the tests that grade it. Repo2RLEnv drops
+# checklist/changelog/testing/test-plan sections but not these; in our first 7 tasks, 5 had a
+# `Changes` section (one ends "Use an `is None` check instead of truthiness") and 3 named the
+# hidden tests under `Checks and tests`.
+_LEAKY_HEADING = re.compile(
+    r"(?:proposed\s+|summary\s+of\s+|description\s+of\s+(?:the\s+)?)?changes?(?:\s+made)?"
+    r"|what\s+(?:this|the)\s+pr\s+does\b.*|what\s+changed|solutions?\b.*|(?:the\s+)?fix(?:es)?\b.*"
+    r"|implementation(?:\s+details?)?|approach|how\s+(?:it|this)\s+works|technical\s+details?"
+    r"|checks?(?:\s+and\s+tests?)?|tests?(?:\s+added.*)?|testing\b.*|test\s+plan|verification"
+    r"|validation|how\s+(?:has\s+this\s+been|was\s+this|to)\s+test(?:ed)?\b.*",
+    re.IGNORECASE,
+)
+_MD_HEADING = re.compile(r"^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$")
+_BOLD_HEADING = re.compile(r"^\s*\*\*([^*]+?)\*\*\s*:?\s*$")
+_KEEP = {"issue", "description", "task"}  # the instruction template's own headings
+MIN_DESCRIPTION_WORDS = 30
+
+
+def _heading(line: str) -> tuple[int, str] | None:
+    if m := _MD_HEADING.match(line):
+        return len(m[1]), m[2]
+    if m := _BOLD_HEADING.match(line):
+        return 7, m[1]  # a bold line used as a heading: ends at the next heading of any kind
+    return None
+
+
+def strip_leaky_sections(text: str) -> tuple[str, list[str]]:
+    """Drop sections whose heading names the fix or its tests, up to the next heading at the
+    same or a higher level. Headings inside code fences don't count."""
+    out, stripped, skip_level, fenced = [], [], None, False
+    for line in text.splitlines(keepends=True):
+        if line.lstrip().startswith(("```", "~~~")):
+            fenced = not fenced
+        head = None if fenced else _heading(line)
+        if head and skip_level is not None and head[0] <= skip_level:
+            skip_level = None
+        if head and skip_level is None:
+            title = head[1].strip().rstrip(":").strip()
+            if title.lower() not in _KEEP and _LEAKY_HEADING.fullmatch(title):
+                stripped.append(title)
+                skip_level = head[0]
+                continue
+        if skip_level is None:
+            out.append(line)
+    return re.sub(r"\n{3,}", "\n\n", "".join(out)), stripped
+
+
+def screen_instruction(task: Path) -> None:
+    """Strip fix/test sections from instruction.md; record them, and any hidden test it names."""
+    path = task / "instruction.md"
+    text, stripped = strip_leaky_sections(path.read_text(encoding="utf-8"))
+    path.write_text(text, encoding="utf-8")
+    toml_path = task / "task.toml"
+    data = tomllib.loads(toml_path.read_text(encoding="utf-8"))
+    hidden = data["metadata"]["repo2env"]["pr_runtime"].get("fail_to_pass") or []
+    names = sorted({t.split("::")[-1].split("[")[0] for t in hidden})
+    named = [n for n in names if len(n) >= 6 and re.search(rf"\b{re.escape(n)}\b", text)]
+    pilot = data.setdefault("metadata", {}).setdefault("swe_rl_pilot", {})
+    if stripped:  # keep the record from the first pass; a refresh finds nothing left to strip
+        pilot["instruction_stripped_sections"] = stripped
+    pilot["instruction_names_hidden_tests"] = named
+    # Stripping can leave little more than the title (1342 kept one line). Too thin to say what
+    # the hidden tests expect: hold such tasks out, or rewrite them, rather than train on them.
+    body = text.split("## Description", 1)[-1].rsplit("## Task", 1)[0]
+    words = len(re.findall(r"\w+", body))
+    pilot["instruction_description_words"] = words
+    pilot["instruction_ok"] = not named and words >= MIN_DESCRIPTION_WORDS
+    toml_path.write_text(tomli_w.dumps(data), encoding="utf-8")
+    if stripped or named or not pilot["instruction_ok"]:
+        print(f"{task.name}: stripped {stripped or '-'}; names hidden tests {named or '-'}; "
+              f"{words} description words{'' if pilot['instruction_ok'] else ' -> instruction_ok=false'}")
+
+
 def finish(task: Path, registry: str) -> None:
     add_scrub(task)
+    screen_instruction(task)
     print(f"{task.name}  {set_image(task, registry)}")
 
 

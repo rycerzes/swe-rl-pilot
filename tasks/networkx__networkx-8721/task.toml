@@ -1,0 +1,110 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/networkx__networkx-8721"
+description = "ENH: add n_samples parameter to rich_club_coefficient for multi-sample averaging"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "networkx",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "networkx/networkx"
+ref = "3b4c227fda1c5462e6c04ac1ed7e7b0d8f2eacd4"
+reference = "https://github.com/networkx/networkx/pull/8721"
+source_access = "auto"
+built_at = "2026-11-10T21:53:09.616740+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:18fc083c9ed44ee521e1e9551bfee7ecd21336efaeb9c50a600b54d0ee0cfd66"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/networkx/networkx/pull/8721"
+pr_merged_at = "2026-07-22T11:30:41Z"
+base_commit = "3b4c227fda1c5462e6c04ac1ed7e7b0d8f2eacd4"
+fail_to_pass = [
+    "networkx/algorithms/tests/test_richclub.py::test_rich_club_invalid_n_samples",
+    "networkx/algorithms/tests/test_richclub.py::test_rich_club_zero_division_error",
+]
+pass_to_pass = [
+    "networkx/algorithms/tests/test_richclub.py::test_rich_club_exception2",
+    "networkx/algorithms/tests/test_richclub.py::test_rich_club_leq_3_nodes_normalized",
+    "networkx/algorithms/tests/test_richclub.py::test_rich_club_leq_3_nodes_unnormalized",
+    "networkx/algorithms/tests/test_richclub.py::test_rich_club_selfloop",
+    "networkx/algorithms/tests/test_richclub.py::test_richclub",
+    "networkx/algorithms/tests/test_richclub.py::test_richclub2",
+    "networkx/algorithms/tests/test_richclub.py::test_richclub3",
+    "networkx/algorithms/tests/test_richclub.py::test_richclub4",
+    "networkx/algorithms/tests/test_richclub.py::test_richclub_exception",
+    "networkx/algorithms/tests/test_richclub.py::test_richclub_normalized",
+    "networkx/algorithms/tests/test_richclub.py::test_richclub_seed",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "sha256:d912dce586c78bac3ca53f53c7c03dbb0212b1fcc27745d806e99cc7695ce91d"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 1.044
+measured_overhead_seconds = 1.305
+measured_copy_seconds = 0.096
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 2
+p2p_count = 11
+source_files = 1
+loc_changed = 44
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-10T22:18:29.842783+00:00"
+inline_recipe_sha256 = "sha256:662685de4d6684d0b23b4fdc5d2dc55aabab1a6ddcc12dd9d390be9b7bb82f5c"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 261
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:networkx__networkx-8721-4ac681226f0c"

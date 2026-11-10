@@ -1,0 +1,4 @@
+[
+  "networkx/algorithms/centrality/tests/test_group.py::TestGroupBetweennessCentrality::test_group_betweenness_disconnected_directed_graph",
+  "networkx/algorithms/centrality/tests/test_group.py::TestGroupBetweennessCentrality::test_group_betweenness_many_groups_directed_graph"
+]

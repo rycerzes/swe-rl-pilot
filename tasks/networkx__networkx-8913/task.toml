@@ -1,0 +1,119 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/networkx__networkx-8913"
+description = "Ignoring self loops in chordal graphs -  8471"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "networkx",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "networkx/networkx"
+ref = "4e74880b0da01977da79915167c64e5c2af38b47"
+reference = "https://github.com/networkx/networkx/pull/8913"
+source_access = "auto"
+built_at = "2026-11-10T21:49:53.156574+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:dffb96b4a18bc3f9fa0637d288b04e73b99d4d92d379dd71fc2e44ef2e5426d0"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/networkx/networkx/pull/8913"
+pr_merged_at = "2026-10-22T00:23:18Z"
+base_commit = "4e74880b0da01977da79915167c64e5c2af38b47"
+fail_to_pass = [
+    "networkx/algorithms/tests/test_chordal.py::TestMCS::test_chordal_find_cliques",
+    "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_clique_ignores_selfloops[1]",
+    "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_clique_ignores_selfloops[2]",
+    "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_clique_ignores_selfloops[3]",
+    "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_clique_ignores_selfloops[4]",
+    "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_clique_ignores_selfloops[5]",
+]
+pass_to_pass = [
+    "networkx/algorithms/tests/test_chordal.py::TestMCS::test_chordal_find_cliquesCC",
+    "networkx/algorithms/tests/test_chordal.py::TestMCS::test_chordal_find_cliques_path",
+    "networkx/algorithms/tests/test_chordal.py::TestMCS::test_complete_to_chordal_graph",
+    "networkx/algorithms/tests/test_chordal.py::TestMCS::test_graph_treewidth",
+    "networkx/algorithms/tests/test_chordal.py::TestMCS::test_induced_nodes",
+    "networkx/algorithms/tests/test_chordal.py::TestMCS::test_is_chordal",
+    "networkx/algorithms/tests/test_chordal.py::TestMCS::test_is_chordal_not_implemented[G0]",
+    "networkx/algorithms/tests/test_chordal.py::TestMCS::test_is_chordal_not_implemented[G1]",
+    "networkx/algorithms/tests/test_chordal.py::TestMCS::test_is_chordal_not_implemented[G2]",
+    "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_treewidth[G0-1]",
+    "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_treewidth[G1-1]",
+    "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_treewidth[G2-1]",
+    "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_treewidth[G3-2]",
+    "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_treewidth[G4-3]",
+    "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_treewidth[G5-6]",
+    "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_treewidth_highest_degree_node_not_in_clique",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "sha256:d912dce586c78bac3ca53f53c7c03dbb0212b1fcc27745d806e99cc7695ce91d"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "mutants"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 1.383
+measured_overhead_seconds = 1.346
+measured_copy_seconds = 0.055
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 2
+verifier_timeout_sec = 720
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 6
+p2p_count = 16
+source_files = 1
+loc_changed = 69
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-10T22:18:30.731715+00:00"
+inline_recipe_sha256 = "sha256:662685de4d6684d0b23b4fdc5d2dc55aabab1a6ddcc12dd9d390be9b7bb82f5c"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 117
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 720.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:networkx__networkx-8913-eef5ebc58b5f"

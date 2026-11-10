@@ -1,0 +1,120 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/networkx__networkx-8753"
+description = "Prune nested components in `k_components` reconstruction and add tests the private helpers"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "networkx",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "networkx/networkx"
+ref = "b1f956344071ba1adfad17d56d62a7a78dfd37e6"
+reference = "https://github.com/networkx/networkx/pull/8753"
+source_access = "auto"
+built_at = "2026-11-10T21:52:59.335750+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:c5a630f164d78179b2500d80a4d8a32b8a5cb77f41a73f1de7d507ce7dad7741"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/networkx/networkx/pull/8753"
+pr_merged_at = "2026-07-24T20:35:21Z"
+base_commit = "b1f956344071ba1adfad17d56d62a7a78dfd37e6"
+fail_to_pass = [
+    "networkx/algorithms/connectivity/tests/test_kcomponents.py::test_reconstruct_k_components_drops_nested_candidate",
+]
+pass_to_pass = [
+    "networkx/algorithms/connectivity/tests/test_kcomponents.py::test_configuration",
+    "networkx/algorithms/connectivity/tests/test_kcomponents.py::test_davis_southern_women",
+    "networkx/algorithms/connectivity/tests/test_kcomponents.py::test_davis_southern_women_detail_3_and_4",
+    "networkx/algorithms/connectivity/tests/test_kcomponents.py::test_directed",
+    "networkx/algorithms/connectivity/tests/test_kcomponents.py::test_empty_k_components",
+    "networkx/algorithms/connectivity/tests/test_kcomponents.py::test_generate_partition_does_not_drop_cutset_nodes",
+    "networkx/algorithms/connectivity/tests/test_kcomponents.py::test_generate_partition_keeps_cut_adjacent_low_degree_nodes",
+    "networkx/algorithms/connectivity/tests/test_kcomponents.py::test_k_components_alternative_flow_func[boykov_kolmogorov]",
+    "networkx/algorithms/connectivity/tests/test_kcomponents.py::test_k_components_alternative_flow_func[dinitz]",
+    "networkx/algorithms/connectivity/tests/test_kcomponents.py::test_k_components_alternative_flow_func[edmonds_karp]",
+    "networkx/algorithms/connectivity/tests/test_kcomponents.py::test_k_components_alternative_flow_func[preflow_push]",
+    "networkx/algorithms/connectivity/tests/test_kcomponents.py::test_k_components_alternative_flow_func[shortest_augmenting_path]",
+    "networkx/algorithms/connectivity/tests/test_kcomponents.py::test_karate",
+    "networkx/algorithms/connectivity/tests/test_kcomponents.py::test_karate_component_number",
+    "networkx/algorithms/connectivity/tests/test_kcomponents.py::test_random_gnp[10-0.6]",
+    "networkx/algorithms/connectivity/tests/test_kcomponents.py::test_reconstruct_k_components_no_nested_output",
+    "networkx/algorithms/connectivity/tests/test_kcomponents.py::test_reconstruct_k_components_promotes_spanning_component",
+    "networkx/algorithms/connectivity/tests/test_kcomponents.py::test_reconstruction_does_not_replace_component_by_fragments",
+    "networkx/algorithms/connectivity/tests/test_kcomponents.py::test_set_consolidation_rosettacode",
+    "networkx/algorithms/connectivity/tests/test_kcomponents.py::test_shell[constructor0]",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "sha256:d912dce586c78bac3ca53f53c7c03dbb0212b1fcc27745d806e99cc7695ce91d"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "mutants"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 1.572
+measured_overhead_seconds = 1.224
+measured_copy_seconds = 0.078
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 2
+verifier_timeout_sec = 720
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 1
+p2p_count = 20
+source_files = 1
+loc_changed = 17
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-10T22:18:29.844024+00:00"
+inline_recipe_sha256 = "sha256:662685de4d6684d0b23b4fdc5d2dc55aabab1a6ddcc12dd9d390be9b7bb82f5c"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = [
+    "test_reconstruct_k_components_drops_nested_candidate",
+]
+instruction_description_words = 518
+instruction_ok = false
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 720.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:networkx__networkx-8753-d5fc30687353"

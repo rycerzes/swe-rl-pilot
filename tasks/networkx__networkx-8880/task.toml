@@ -1,0 +1,125 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/networkx__networkx-8880"
+description = "BUG: Group betweenness centrality counts paths incorrectly for directed but not strongly connected."
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "networkx",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "networkx/networkx"
+ref = "73cb92bbaed12828848f2609340442119e7e0fe8"
+reference = "https://github.com/networkx/networkx/pull/8880"
+source_access = "auto"
+built_at = "2026-11-10T21:55:09.728581+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:6ba8083041588863512bded29bfc3131a6a15f298aaa718a4097a81b0714937b"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/networkx/networkx/pull/8880"
+pr_merged_at = "2026-08-30T01:48:51Z"
+base_commit = "73cb92bbaed12828848f2609340442119e7e0fe8"
+fail_to_pass = [
+    "networkx/algorithms/centrality/tests/test_group.py::TestGroupBetweennessCentrality::test_group_betweenness_disconnected_directed_graph",
+    "networkx/algorithms/centrality/tests/test_group.py::TestGroupBetweennessCentrality::test_group_betweenness_many_groups_directed_graph",
+]
+pass_to_pass = [
+    "networkx/algorithms/centrality/tests/test_group.py::TestGroupBetweennessCentrality::test_group_betweenness_directed_weighted",
+    "networkx/algorithms/centrality/tests/test_group.py::TestGroupBetweennessCentrality::test_group_betweenness_disconnected_graph",
+    "networkx/algorithms/centrality/tests/test_group.py::TestGroupBetweennessCentrality::test_group_betweenness_many_groups",
+    "networkx/algorithms/centrality/tests/test_group.py::TestGroupBetweennessCentrality::test_group_betweenness_no_paths_through_group",
+    "networkx/algorithms/centrality/tests/test_group.py::TestGroupBetweennessCentrality::test_group_betweenness_node_not_in_graph",
+    "networkx/algorithms/centrality/tests/test_group.py::TestGroupBetweennessCentrality::test_group_betweenness_normalized",
+    "networkx/algorithms/centrality/tests/test_group.py::TestGroupBetweennessCentrality::test_group_betweenness_single_node",
+    "networkx/algorithms/centrality/tests/test_group.py::TestGroupBetweennessCentrality::test_group_betweenness_value_zero",
+    "networkx/algorithms/centrality/tests/test_group.py::TestGroupBetweennessCentrality::test_group_betweenness_with_endpoints",
+    "networkx/algorithms/centrality/tests/test_group.py::TestGroupBetweennessCentrality::test_two_group_betweenness_value_zero",
+    "networkx/algorithms/centrality/tests/test_group.py::TestGroupClosenessCentrality::test_group_closeness_disconnected",
+    "networkx/algorithms/centrality/tests/test_group.py::TestGroupClosenessCentrality::test_group_closeness_multiple_node",
+    "networkx/algorithms/centrality/tests/test_group.py::TestGroupClosenessCentrality::test_group_closeness_node_not_in_graph",
+    "networkx/algorithms/centrality/tests/test_group.py::TestGroupClosenessCentrality::test_group_closeness_single_node",
+    "networkx/algorithms/centrality/tests/test_group.py::TestGroupDegreeCentrality::test_group_degree_centrality_multiple_node",
+    "networkx/algorithms/centrality/tests/test_group.py::TestGroupDegreeCentrality::test_group_degree_centrality_node_not_in_graph",
+    "networkx/algorithms/centrality/tests/test_group.py::TestGroupDegreeCentrality::test_group_degree_centrality_single_node",
+    "networkx/algorithms/centrality/tests/test_group.py::TestGroupDegreeCentrality::test_group_in_degree_centrality",
+    "networkx/algorithms/centrality/tests/test_group.py::TestGroupDegreeCentrality::test_group_out_degree_centrality",
+    "networkx/algorithms/centrality/tests/test_group.py::TestProminentGroup::test_group_betweenness_directed_weighted",
+    "networkx/algorithms/centrality/tests/test_group.py::TestProminentGroup::test_prominent_group_disconnected_graph",
+    "networkx/algorithms/centrality/tests/test_group.py::TestProminentGroup::test_prominent_group_greedy_algorithm",
+    "networkx/algorithms/centrality/tests/test_group.py::TestProminentGroup::test_prominent_group_node_not_in_graph",
+    "networkx/algorithms/centrality/tests/test_group.py::TestProminentGroup::test_prominent_group_normalized_endpoints",
+    "networkx/algorithms/centrality/tests/test_group.py::TestProminentGroup::test_prominent_group_single_node",
+    "networkx/algorithms/centrality/tests/test_group.py::TestProminentGroup::test_prominent_group_with_c",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "sha256:d912dce586c78bac3ca53f53c7c03dbb0212b1fcc27745d806e99cc7695ce91d"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "mutants"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 1.818
+measured_overhead_seconds = 1.57
+measured_copy_seconds = 0.107
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 2
+verifier_timeout_sec = 720
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 2
+p2p_count = 26
+source_files = 1
+loc_changed = 30
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-10T22:18:30.119813+00:00"
+inline_recipe_sha256 = "sha256:662685de4d6684d0b23b4fdc5d2dc55aabab1a6ddcc12dd9d390be9b7bb82f5c"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 296
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 720.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:networkx__networkx-8880-8c6b07b3a9d8"

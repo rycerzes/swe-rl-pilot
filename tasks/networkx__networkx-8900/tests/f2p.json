@@ -1,0 +1,10 @@
+[
+  "networkx/algorithms/isomorphism/tests/test_ismags.py::TestDiGraphISO::test_incoming_edge_monomorphism_color[False]",
+  "networkx/algorithms/isomorphism/tests/test_ismags.py::TestDiGraphISO::test_incoming_edge_monomorphism_color[True]",
+  "networkx/algorithms/isomorphism/tests/test_ismags.py::TestDiGraphISO::test_incoming_edge_monomorphism_multiplicity[False]",
+  "networkx/algorithms/isomorphism/tests/test_ismags.py::TestDiGraphISO::test_incoming_edge_monomorphism_multiplicity[True]",
+  "networkx/algorithms/isomorphism/tests/test_ismags.py::TestDiGraphISO::test_incoming_edge_subgraph_constraints[DiGraph-False]",
+  "networkx/algorithms/isomorphism/tests/test_ismags.py::TestDiGraphISO::test_incoming_edge_subgraph_constraints[DiGraph-True]",
+  "networkx/algorithms/isomorphism/tests/test_ismags.py::TestDiGraphISO::test_incoming_edge_subgraph_constraints[MultiDiGraph-False]",
+  "networkx/algorithms/isomorphism/tests/test_ismags.py::TestDiGraphISO::test_incoming_edge_subgraph_constraints[MultiDiGraph-True]"
+]

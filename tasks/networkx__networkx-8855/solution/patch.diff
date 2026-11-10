@@ -1,0 +1,31 @@
+diff --git a/doc/developer/deprecations.rst b/doc/developer/deprecations.rst
+index 0ff825bcf85..20c87b2d118 100644
+--- a/doc/developer/deprecations.rst
++++ b/doc/developer/deprecations.rst
+@@ -77,3 +77,4 @@ Version 3.8
+ Version 3.9
+ ~~~~~~~~~~~
+ * Remove ``bfs_predecessors`` from ``networkx.algorithms.traversal.breadth_first_searcph``.
++* Remove the ``p2g`` module from ``networkx.readwrite``.
+diff --git a/networkx/readwrite/p2g.py b/networkx/readwrite/p2g.py
+index 4bde362ea8d..999e6dd44f5 100644
+--- a/networkx/readwrite/p2g.py
++++ b/networkx/readwrite/p2g.py
+@@ -34,9 +34,17 @@
+ 
+ """
+ 
++import warnings
++
+ import networkx as nx
+ from networkx.utils import open_file
+ 
++warnings.warn(
++    "The p2g module is deprecated and will be removed in v3.9",
++    DeprecationWarning,
++    stacklevel=2,
++)
++
+ 
+ @open_file(1, mode="w")
+ def write_p2g(G, path, encoding="utf-8"):

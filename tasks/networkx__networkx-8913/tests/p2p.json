@@ -1,0 +1,18 @@
+[
+  "networkx/algorithms/tests/test_chordal.py::TestMCS::test_chordal_find_cliquesCC",
+  "networkx/algorithms/tests/test_chordal.py::TestMCS::test_chordal_find_cliques_path",
+  "networkx/algorithms/tests/test_chordal.py::TestMCS::test_complete_to_chordal_graph",
+  "networkx/algorithms/tests/test_chordal.py::TestMCS::test_graph_treewidth",
+  "networkx/algorithms/tests/test_chordal.py::TestMCS::test_induced_nodes",
+  "networkx/algorithms/tests/test_chordal.py::TestMCS::test_is_chordal",
+  "networkx/algorithms/tests/test_chordal.py::TestMCS::test_is_chordal_not_implemented[G0]",
+  "networkx/algorithms/tests/test_chordal.py::TestMCS::test_is_chordal_not_implemented[G1]",
+  "networkx/algorithms/tests/test_chordal.py::TestMCS::test_is_chordal_not_implemented[G2]",
+  "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_treewidth[G0-1]",
+  "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_treewidth[G1-1]",
+  "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_treewidth[G2-1]",
+  "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_treewidth[G3-2]",
+  "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_treewidth[G4-3]",
+  "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_treewidth[G5-6]",
+  "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_treewidth_highest_degree_node_not_in_clique"
+]

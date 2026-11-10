@@ -1,0 +1,4 @@
+[
+  "networkx/algorithms/centrality/tests/test_group.py::TestGroupBetweennessCentrality::test_group_betweenness_endpoints_normalized[DiGraph]",
+  "networkx/algorithms/centrality/tests/test_group.py::TestGroupBetweennessCentrality::test_group_betweenness_endpoints_normalized[Graph]"
+]

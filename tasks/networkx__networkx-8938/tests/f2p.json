@@ -1,0 +1,15 @@
+[
+  "networkx/algorithms/centrality/tests/test_group.py::TestGroupBetweennessCentrality::test_small_graph_and_group",
+  "networkx/algorithms/centrality/tests/test_group.py::TestProminentGroup::test_prom_group_normalized_endpoints[DiGraph-2-True-True-0.904762-g_exp12]",
+  "networkx/algorithms/centrality/tests/test_group.py::TestProminentGroup::test_prom_group_normalized_endpoints[DiGraph-3-False-False-11-g_exp11]",
+  "networkx/algorithms/centrality/tests/test_group.py::TestProminentGroup::test_prom_group_normalized_endpoints[DiGraph-3-False-True-41-g_exp10]",
+  "networkx/algorithms/centrality/tests/test_group.py::TestProminentGroup::test_prom_group_normalized_endpoints[DiGraph-3-True-False-0.9166666-g_exp9]",
+  "networkx/algorithms/centrality/tests/test_group.py::TestProminentGroup::test_prom_group_normalized_endpoints[DiGraph-3-True-True-0.9761904-g_exp8]",
+  "networkx/algorithms/centrality/tests/test_group.py::TestProminentGroup::test_prom_group_normalized_endpoints[Graph-2-True-True-0.8095238-g_exp4]",
+  "networkx/algorithms/centrality/tests/test_group.py::TestProminentGroup::test_prom_group_normalized_endpoints[Graph-3-True-True-0.952381-g_exp0]",
+  "networkx/algorithms/centrality/tests/test_group.py::TestProminentGroup::test_prominent_group_check_for_keyerror",
+  "networkx/algorithms/centrality/tests/test_group.py::TestProminentGroup::test_prominent_group_directed_greedy_algorithm",
+  "networkx/algorithms/centrality/tests/test_group.py::TestProminentGroup::test_prominent_group_greedy_algorithm",
+  "networkx/algorithms/centrality/tests/test_group.py::TestProminentGroup::test_prominent_group_single_node[DiGraph]",
+  "networkx/algorithms/centrality/tests/test_group.py::TestProminentGroup::test_small_graph_and_group"
+]

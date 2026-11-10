@@ -1,0 +1,4 @@
+[
+  "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_unknown_attribute_class_raises[<attributes class=\"graph\">]",
+  "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_unknown_attribute_class_raises[<attributes>]"
+]

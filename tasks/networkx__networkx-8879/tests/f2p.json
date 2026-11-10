@@ -1,0 +1,3 @@
+[
+  "networkx/algorithms/centrality/tests/test_group.py::TestGroupBetweennessCentrality::test_group_betweenness_no_paths_through_group"
+]

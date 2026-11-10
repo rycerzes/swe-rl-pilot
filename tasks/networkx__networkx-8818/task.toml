@@ -1,0 +1,131 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/networkx__networkx-8818"
+description = "Raise NetworkXError on unknown attribute class in GEXF reader"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "networkx",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "networkx/networkx"
+ref = "f884a12db34c39f2e6d81c5b3607caa4cbe8ea7d"
+reference = "https://github.com/networkx/networkx/pull/8818"
+source_access = "auto"
+built_at = "2026-11-10T21:49:08.014733+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:790661804dcc457a2f4c359cb2323d17919905ddf77864b445855bb931ac299c"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/networkx/networkx/pull/8818"
+pr_merged_at = "2026-08-04T20:34:38Z"
+base_commit = "f884a12db34c39f2e6d81c5b3607caa4cbe8ea7d"
+fail_to_pass = [
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_unknown_attribute_class_raises[<attributes class=\"graph\">]",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_unknown_attribute_class_raises[<attributes>]",
+]
+pass_to_pass = [
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_add_parent",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_bool",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_default_attribute",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_directed_edge_in_undirected",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_dynamic_mode",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_edge_id_construct",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_key_raises",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_meta_description_keywords_round_trip",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_missing_viz_attributes",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_multigraph_with_missing_attributes",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_numpy_type",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_read_attribute_graphml",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_read_simple_directed_graphml",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_read_simple_undirected_graphml",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_relabel",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_round_trip_mixed_type_float_to_string",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_round_trip_mixed_type_int_to_string",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_serialize_ints_to_strings",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_simple_list",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_slice_and_spell",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_specials",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_type_promotion_float_to_float",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_type_promotion_integer_to_integer",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_undirected_edge_in_directed",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_write_read_simple_directed_graphml",
+    "networkx/readwrite/tests/test_gexf.py::TestGEXF::test_write_with_node_attributes",
+    "networkx/readwrite/tests/test_gexf.py::test_dynamic_boolean_attvalue_is_lowercase",
+    "networkx/readwrite/tests/test_gexf.py::test_dynamic_graph_has_timeformat[dynamic-end]",
+    "networkx/readwrite/tests/test_gexf.py::test_dynamic_graph_has_timeformat[dynamic-start]",
+    "networkx/readwrite/tests/test_gexf.py::test_dynamic_graph_has_timeformat[static-end]",
+    "networkx/readwrite/tests/test_gexf.py::test_dynamic_graph_has_timeformat[static-start]",
+    "networkx/readwrite/tests/test_gexf.py::test_gexf_v1_3",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "sha256:d912dce586c78bac3ca53f53c7c03dbb0212b1fcc27745d806e99cc7695ce91d"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 1.107
+measured_overhead_seconds = 1.752
+measured_copy_seconds = 0.09
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 2
+p2p_count = 32
+source_files = 1
+loc_changed = 2
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-10T22:18:29.862366+00:00"
+inline_recipe_sha256 = "sha256:662685de4d6684d0b23b4fdc5d2dc55aabab1a6ddcc12dd9d390be9b7bb82f5c"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 276
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:networkx__networkx-8818-3dd0c181b7d9"

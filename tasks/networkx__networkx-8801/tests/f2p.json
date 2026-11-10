@@ -1,0 +1,4 @@
+[
+  "networkx/drawing/tests/test_layout.py::test_dim_parameter[4-spectral_layout]",
+  "networkx/drawing/tests/test_layout.py::test_dim_parameter[5-spectral_layout]"
+]

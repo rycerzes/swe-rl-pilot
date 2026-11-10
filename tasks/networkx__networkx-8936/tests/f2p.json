@@ -1,0 +1,3 @@
+[
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_no_residual_edges_infeasible[capacity_scaling]"
+]

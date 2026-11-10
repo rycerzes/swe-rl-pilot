@@ -1,0 +1,23 @@
+[
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_bone_shaped",
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_deadend",
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_digon",
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_digraph1",
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_digraph2",
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_digraph3",
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_exceptions",
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_finite_capacity_neg_digon",
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_infinite_capacity_neg_digon",
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_large",
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_max_flow_min_cost",
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_multidigraph",
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_negative_selfloops",
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_negcycle_infcap",
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_no_flow_satisfying_demands",
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_no_residual_edges_infeasible[min_cost_flow]",
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_no_residual_edges_infeasible[network_simplex]",
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_simple_digraph",
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_sum_demands_not_zero",
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_transshipment",
+  "networkx/algorithms/flow/tests/test_mincost.py::TestMinCostFlow::test_zero_capacity_edges"
+]

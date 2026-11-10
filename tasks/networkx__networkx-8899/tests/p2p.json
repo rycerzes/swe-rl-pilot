@@ -1,0 +1,12 @@
+[
+  "networkx/algorithms/link_analysis/tests/test_hits.py::TestHITS::test_empty",
+  "networkx/algorithms/link_analysis/tests/test_hits.py::TestHITS::test_hits[_hits_python]",
+  "networkx/algorithms/link_analysis/tests/test_hits.py::TestHITS::test_hits[_hits_svd]",
+  "networkx/algorithms/link_analysis/tests/test_hits.py::TestHITS::test_hits[hits]",
+  "networkx/algorithms/link_analysis/tests/test_hits.py::TestHITS::test_hits[hits_alg1]",
+  "networkx/algorithms/link_analysis/tests/test_hits.py::TestHITS::test_hits_gh6289_star_graph[_hits_python]",
+  "networkx/algorithms/link_analysis/tests/test_hits.py::TestHITS::test_hits_gh6289_star_graph[hits]",
+  "networkx/algorithms/link_analysis/tests/test_hits.py::TestHITS::test_hits_invalid_method",
+  "networkx/algorithms/link_analysis/tests/test_hits.py::TestHITS::test_hits_not_convergent",
+  "networkx/algorithms/link_analysis/tests/test_hits.py::TestHITS::test_hits_numpy"
+]

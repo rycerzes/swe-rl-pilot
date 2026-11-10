@@ -1,0 +1,177 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/networkx__networkx-8801"
+description = "Allow spectral_layout to handle dim>=len(G). Added dim tests."
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "networkx",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "networkx/networkx"
+ref = "f884a12db34c39f2e6d81c5b3607caa4cbe8ea7d"
+reference = "https://github.com/networkx/networkx/pull/8801"
+source_access = "auto"
+built_at = "2026-11-10T21:52:13.687889+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:6ff86054aeeff540ad1fd520d6d40df1635d1c66b8facf77313ab23c8f062b50"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/networkx/networkx/pull/8801"
+pr_merged_at = "2026-08-11T16:31:40Z"
+base_commit = "f884a12db34c39f2e6d81c5b3607caa4cbe8ea7d"
+fail_to_pass = [
+    "networkx/drawing/tests/test_layout.py::test_dim_parameter[4-spectral_layout]",
+    "networkx/drawing/tests/test_layout.py::test_dim_parameter[5-spectral_layout]",
+]
+pass_to_pass = [
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_adjacency_interface_numpy",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_adjacency_interface_scipy",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_arf_layout_negative_a_check",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_arf_layout_partial_input_test",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_bipartite_layout",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_center_parameter",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_center_wrong_dimensions",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_circular_planar_and_shell_dim_error",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_default_scale_and_center",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_empty_graph",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_fixed_node_fruchterman_reingold",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_forceatlas2_layout_partial_input_test",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_initial_only_some_pos",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_kamada_kawai_costfn",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_kamada_kawai_costfn_1d",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_multipartite_layout",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_node_at_center",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_planar_layout_non_planar_input",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_rescale_layout_dict",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_scale_and_center_arg",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_single_nodes",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_smoke_empty_graph",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_smoke_initial_pos_arf",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_smoke_initial_pos_forceatlas2",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_smoke_initial_pos_fruchterman_reingold",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_smoke_initial_pos_nonarray_forceatlas2",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_smoke_int",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_smoke_planar_layout_embedding_input",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_smoke_seed_input",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_smoke_string",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_spiral_layout",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_spiral_layout_equidistant",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_spring_fixed_without_pos",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_spring_init_pos",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_zero_iterations_arf",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_zero_iterations_fruchterman_reingold[spring_layout0-energy]",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_zero_iterations_fruchterman_reingold[spring_layout0-force]",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_zero_iterations_fruchterman_reingold[spring_layout1-energy]",
+    "networkx/drawing/tests/test_layout.py::TestLayout::test_zero_iterations_fruchterman_reingold[spring_layout1-force]",
+    "networkx/drawing/tests/test_layout.py::test_bfs_layout_barbell",
+    "networkx/drawing/tests/test_layout.py::test_bfs_layout_complete_graph[2]",
+    "networkx/drawing/tests/test_layout.py::test_bfs_layout_complete_graph[3]",
+    "networkx/drawing/tests/test_layout.py::test_bfs_layout_complete_graph[4]",
+    "networkx/drawing/tests/test_layout.py::test_bfs_layout_complete_graph[5]",
+    "networkx/drawing/tests/test_layout.py::test_bfs_layout_complete_graph[6]",
+    "networkx/drawing/tests/test_layout.py::test_bfs_layout_disconnected",
+    "networkx/drawing/tests/test_layout.py::test_bipartite_layout_default_nodes",
+    "networkx/drawing/tests/test_layout.py::test_bipartite_layout_default_nodes_raises_non_bipartite_input",
+    "networkx/drawing/tests/test_layout.py::test_dim_parameter[3-circular_layout]",
+    "networkx/drawing/tests/test_layout.py::test_dim_parameter[3-kamada_kawai_layout]",
+    "networkx/drawing/tests/test_layout.py::test_dim_parameter[3-random_layout]",
+    "networkx/drawing/tests/test_layout.py::test_dim_parameter[3-spectral_layout]",
+    "networkx/drawing/tests/test_layout.py::test_dim_parameter[3-spring_layout]",
+    "networkx/drawing/tests/test_layout.py::test_dim_parameter[4-circular_layout]",
+    "networkx/drawing/tests/test_layout.py::test_dim_parameter[4-kamada_kawai_layout]",
+    "networkx/drawing/tests/test_layout.py::test_dim_parameter[4-random_layout]",
+    "networkx/drawing/tests/test_layout.py::test_dim_parameter[4-spring_layout]",
+    "networkx/drawing/tests/test_layout.py::test_dim_parameter[5-circular_layout]",
+    "networkx/drawing/tests/test_layout.py::test_dim_parameter[5-kamada_kawai_layout]",
+    "networkx/drawing/tests/test_layout.py::test_dim_parameter[5-random_layout]",
+    "networkx/drawing/tests/test_layout.py::test_dim_parameter[5-spring_layout]",
+    "networkx/drawing/tests/test_layout.py::test_layouts_negative_dim[circular_layout]",
+    "networkx/drawing/tests/test_layout.py::test_layouts_negative_dim[forceatlas2_layout]",
+    "networkx/drawing/tests/test_layout.py::test_layouts_negative_dim[kamada_kawai_layout]",
+    "networkx/drawing/tests/test_layout.py::test_layouts_negative_dim[planar_layout]",
+    "networkx/drawing/tests/test_layout.py::test_layouts_negative_dim[random_layout]",
+    "networkx/drawing/tests/test_layout.py::test_layouts_negative_dim[shell_layout]",
+    "networkx/drawing/tests/test_layout.py::test_layouts_negative_dim[spectral_layout]",
+    "networkx/drawing/tests/test_layout.py::test_layouts_negative_dim[spiral_layout]",
+    "networkx/drawing/tests/test_layout.py::test_layouts_negative_dim[spring_layout]",
+    "networkx/drawing/tests/test_layout.py::test_multipartite_layout_layer_order",
+    "networkx/drawing/tests/test_layout.py::test_multipartite_layout_nonnumeric_partition_labels",
+    "networkx/drawing/tests/test_layout.py::test_spring_layout_graph_size_heuristic[extra_layout_kwargs0-100-force]",
+    "networkx/drawing/tests/test_layout.py::test_spring_layout_graph_size_heuristic[extra_layout_kwargs0-501-energy]",
+    "networkx/drawing/tests/test_layout.py::test_spring_layout_graph_size_heuristic[extra_layout_kwargs1-100-force]",
+    "networkx/drawing/tests/test_layout.py::test_spring_layout_graph_size_heuristic[extra_layout_kwargs1-501-energy]",
+    "networkx/drawing/tests/test_layout.py::test_spring_layout_graph_size_heuristic[extra_layout_kwargs2-100-force]",
+    "networkx/drawing/tests/test_layout.py::test_spring_layout_graph_size_heuristic[extra_layout_kwargs2-501-energy]",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "sha256:d912dce586c78bac3ca53f53c7c03dbb0212b1fcc27745d806e99cc7695ce91d"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 8.699
+measured_overhead_seconds = 1.256
+measured_copy_seconds = 0.078
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 2
+p2p_count = 78
+source_files = 1
+loc_changed = 3
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-10T22:18:29.846996+00:00"
+inline_recipe_sha256 = "sha256:662685de4d6684d0b23b4fdc5d2dc55aabab1a6ddcc12dd9d390be9b7bb82f5c"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 122
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:networkx__networkx-8801-3dd0c181b7d9"

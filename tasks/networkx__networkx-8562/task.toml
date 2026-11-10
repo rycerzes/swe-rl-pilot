@@ -1,0 +1,112 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/networkx__networkx-8562"
+description = "ENH: adding magnetic_laplacian_matrix"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "networkx",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "networkx/networkx"
+ref = "db84a87dff15d22557dd54c521fe69ccb7711734"
+reference = "https://github.com/networkx/networkx/pull/8562"
+source_access = "auto"
+built_at = "2026-11-10T21:59:16.266170+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:21aa6b7fcd4beb115020ec25dbef55e7ad9f7a91558334e103866047092afa40"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/networkx/networkx/pull/8562"
+pr_merged_at = "2026-08-20T22:46:25Z"
+base_commit = "db84a87dff15d22557dd54c521fe69ccb7711734"
+fail_to_pass = [
+    "networkx/linalg/tests/test_laplacian.py::TestMagneticLaplacian::test_inputs",
+    "networkx/linalg/tests/test_laplacian.py::TestMagneticLaplacian::test_magnetic_laplacian",
+    "networkx/linalg/tests/test_laplacian.py::TestMagneticLaplacian::test_norm_mag_laplacian",
+    "networkx/linalg/tests/test_spectrum.py::TestSpectrum::test_magnetic_spectrum",
+    "networkx/linalg/tests/test_spectrum.py::TestSpectrum::test_magnetic_spectrum_raises",
+    "networkx/linalg/tests/test_spectrum.py::TestSpectrum::test_normalized_magnetic_spectrum",
+]
+pass_to_pass = [
+    "networkx/linalg/tests/test_laplacian.py::TestLaplacian::test_laplacian",
+    "networkx/linalg/tests/test_laplacian.py::TestLaplacian::test_normalized_laplacian",
+    "networkx/linalg/tests/test_laplacian.py::test_directed_combinatorial_laplacian",
+    "networkx/linalg/tests/test_laplacian.py::test_directed_laplacian",
+    "networkx/linalg/tests/test_spectrum.py::TestSpectrum::test_adjacency_spectrum",
+    "networkx/linalg/tests/test_spectrum.py::TestSpectrum::test_bethe_hessian_spectrum",
+    "networkx/linalg/tests/test_spectrum.py::TestSpectrum::test_laplacian_spectrum",
+    "networkx/linalg/tests/test_spectrum.py::TestSpectrum::test_modularity_spectrum",
+    "networkx/linalg/tests/test_spectrum.py::TestSpectrum::test_normalized_laplacian_spectrum",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "sha256:d912dce586c78bac3ca53f53c7c03dbb0212b1fcc27745d806e99cc7695ce91d"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 1.637
+measured_overhead_seconds = 1.62
+measured_copy_seconds = 0.107
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 6
+p2p_count = 9
+source_files = 3
+loc_changed = 202
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-10T22:18:30.099839+00:00"
+inline_recipe_sha256 = "sha256:662685de4d6684d0b23b4fdc5d2dc55aabab1a6ddcc12dd9d390be9b7bb82f5c"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 238
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:networkx__networkx-8562-a0b0e8652a4e"

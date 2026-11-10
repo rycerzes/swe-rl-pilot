@@ -1,0 +1,13 @@
+diff --git a/networkx/readwrite/gexf.py b/networkx/readwrite/gexf.py
+index 04ad3e1cb1d..5ad0ff04a9b 100644
+--- a/networkx/readwrite/gexf.py
++++ b/networkx/readwrite/gexf.py
+@@ -832,7 +832,7 @@ def make_graph(self, graph_xml, meta_xml=None):
+                 edge_default.update(ed)
+                 G.graph["edge_default"] = edge_default
+             else:
+-                raise  # unknown attribute class
++                raise nx.NetworkXError(f"Unknown attribute class {attr_class}.")
+ 
+         # Hack to handle Gephi0.7beta bug
+         # add weight attribute

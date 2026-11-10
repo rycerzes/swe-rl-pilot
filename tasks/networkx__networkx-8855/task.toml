@@ -1,0 +1,102 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/networkx__networkx-8855"
+description = "API: Deprecate p2g module"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "networkx",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "networkx/networkx"
+ref = "1dda6d2fa692ce82521fa2536f9149d1433b4093"
+reference = "https://github.com/networkx/networkx/pull/8855"
+source_access = "auto"
+built_at = "2026-11-10T21:55:51.773940+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:9474c469962d53a7f058ad0cad1754aec312ebb1838d7427cc834e91944d09e0"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/networkx/networkx/pull/8855"
+pr_merged_at = "2026-08-21T21:18:06Z"
+base_commit = "1dda6d2fa692ce82521fa2536f9149d1433b4093"
+fail_to_pass = [
+    "networkx/readwrite/tests/test_p2g.py::test_fn_import_from_module_deprecation",
+    "networkx/readwrite/tests/test_p2g.py::test_import_deprecation",
+]
+pass_to_pass = [
+    "networkx/readwrite/tests/test_p2g.py::TestP2G::test_read_p2g",
+    "networkx/readwrite/tests/test_p2g.py::TestP2G::test_write_p2g",
+    "networkx/readwrite/tests/test_p2g.py::TestP2G::test_write_read_p2g",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "sha256:d912dce586c78bac3ca53f53c7c03dbb0212b1fcc27745d806e99cc7695ce91d"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 1.326
+measured_overhead_seconds = 1.603
+measured_copy_seconds = 0.103
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 2
+p2p_count = 3
+source_files = 2
+loc_changed = 9
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-10T22:18:30.118004+00:00"
+inline_recipe_sha256 = "sha256:662685de4d6684d0b23b4fdc5d2dc55aabab1a6ddcc12dd9d390be9b7bb82f5c"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 92
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:networkx__networkx-8855-4457285010af"

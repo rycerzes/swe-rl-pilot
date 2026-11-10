@@ -1,0 +1,4 @@
+[
+  "networkx/algorithms/centrality/tests/test_group.py::TestGroupBetweennessCentrality::test_group_betweenness_all_group_orders_agree",
+  "networkx/algorithms/centrality/tests/test_group.py::TestGroupBetweennessCentrality::test_group_betweenness_order_dependent"
+]

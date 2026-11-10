@@ -1,0 +1,3 @@
+[
+  "networkx/algorithms/link_analysis/tests/test_hits.py::TestHITS::test_hits_numpy_normalized_false_finite"
+]

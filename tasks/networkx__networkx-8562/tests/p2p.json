@@ -1,0 +1,11 @@
+[
+  "networkx/linalg/tests/test_laplacian.py::TestLaplacian::test_laplacian",
+  "networkx/linalg/tests/test_laplacian.py::TestLaplacian::test_normalized_laplacian",
+  "networkx/linalg/tests/test_laplacian.py::test_directed_combinatorial_laplacian",
+  "networkx/linalg/tests/test_laplacian.py::test_directed_laplacian",
+  "networkx/linalg/tests/test_spectrum.py::TestSpectrum::test_adjacency_spectrum",
+  "networkx/linalg/tests/test_spectrum.py::TestSpectrum::test_bethe_hessian_spectrum",
+  "networkx/linalg/tests/test_spectrum.py::TestSpectrum::test_laplacian_spectrum",
+  "networkx/linalg/tests/test_spectrum.py::TestSpectrum::test_modularity_spectrum",
+  "networkx/linalg/tests/test_spectrum.py::TestSpectrum::test_normalized_laplacian_spectrum"
+]

@@ -1,0 +1,8 @@
+[
+  "networkx/algorithms/tests/test_chordal.py::TestMCS::test_chordal_find_cliques",
+  "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_clique_ignores_selfloops[1]",
+  "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_clique_ignores_selfloops[2]",
+  "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_clique_ignores_selfloops[3]",
+  "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_clique_ignores_selfloops[4]",
+  "networkx/algorithms/tests/test_chordal.py::test_chordal_graph_clique_ignores_selfloops[5]"
+]

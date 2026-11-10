@@ -1,0 +1,8 @@
+[
+  "networkx/linalg/tests/test_laplacian.py::TestMagneticLaplacian::test_inputs",
+  "networkx/linalg/tests/test_laplacian.py::TestMagneticLaplacian::test_magnetic_laplacian",
+  "networkx/linalg/tests/test_laplacian.py::TestMagneticLaplacian::test_norm_mag_laplacian",
+  "networkx/linalg/tests/test_spectrum.py::TestSpectrum::test_magnetic_spectrum",
+  "networkx/linalg/tests/test_spectrum.py::TestSpectrum::test_magnetic_spectrum_raises",
+  "networkx/linalg/tests/test_spectrum.py::TestSpectrum::test_normalized_magnetic_spectrum"
+]

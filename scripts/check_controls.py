@@ -1,6 +1,7 @@
 """Run a task's controls with Harbor and check the rewards: oracle 1.0 and resolved, nop 0.0.
 
 Usage: python3 scripts/check_controls.py tasks/<task> [--harbor 'uvx --from harbor==0.25.0 harbor']
+       [--env hf-sandbox]   # default docker; hf-sandbox needs rollout/patch_harbor.py applied
 
 Runs on the published image (`docker_image`), so it checks exactly what HF Sandbox will pull.
 A missing reward fails the check: the controls must be graded, not ungraded.
@@ -19,9 +20,9 @@ from pathlib import Path
 EXPECTED = {"oracle": 1.0, "nop": 0.0}
 
 
-def run_control(harbor: list[str], task: Path, agent: str, jobs: Path) -> dict:
+def run_control(harbor: list[str], task: Path, agent: str, jobs: Path, env: str) -> dict:
     out = jobs / f"{task.name}-{agent}"
-    cmd = [*harbor, "run", "-p", str(task), "-a", agent, "-e", "docker", "-o", str(out)]
+    cmd = [*harbor, "run", "-p", str(task), "-a", agent, "-e", env, "-o", str(out)]
     print("+", " ".join(cmd), flush=True)
     subprocess.run(cmd, check=False)
     results = sorted(out.glob("*/*/result.json"))
@@ -47,9 +48,10 @@ def main() -> int:
     parser.add_argument("task", type=Path)
     parser.add_argument("--harbor", default="uvx --from harbor==0.25.0 harbor")
     parser.add_argument("--jobs", type=Path, default=Path("jobs"))
+    parser.add_argument("--env", default="docker", help="Harbor environment (docker, hf-sandbox)")
     args = parser.parse_args()
 
-    rows = [run_control(shlex.split(args.harbor), args.task, a, args.jobs) for a in EXPECTED]
+    rows = [run_control(shlex.split(args.harbor), args.task, a, args.jobs, args.env) for a in EXPECTED]
     failures = []
     for row in rows:
         want = EXPECTED[row["agent"]]

@@ -54,4 +54,7 @@ RUN for ref in $(git branch --format='%(refname:short)' | grep -vx base); do git
     && git gc --prune=now 2>/dev/null || true
 # The separate verifier rebuilds /workspace from this copy plus the
 # agent's source diff, so the agent's environment never reaches grading.
+# swe-rl-pilot: drop git objects past the base commit, fail if any survive
+COPY scrub_history.sh /tmp/scrub_history.sh
+RUN sh /tmp/scrub_history.sh && rm /tmp/scrub_history.sh
 RUN mkdir -p /opt/r2e && cp -a /workspace /opt/r2e/pristine && chmod 700 /opt/r2e

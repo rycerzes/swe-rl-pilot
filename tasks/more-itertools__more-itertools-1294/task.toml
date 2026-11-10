@@ -707,4 +707,4 @@ environment_mode = "separate"
 user = "root"
 
 [environment]
-docker_image = "ghcr.io/rycerzes/swe-rl-pilot:more-itertools__more-itertools-1294-986759f86bb3"
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:more-itertools__more-itertools-1294-59da67f1f710"

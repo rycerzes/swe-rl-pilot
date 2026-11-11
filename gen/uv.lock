@@ -1016,11 +1016,12 @@ wheels = [
 
 [[package]]
 name = "repo2rlenv"
-version = "0.9.5"
-source = { git = "https://github.com/huggingface/Repo2RLEnv?rev=db619e1e71e76462203389209b365783a133791a#db619e1e71e76462203389209b365783a133791a" }
+version = "0.9.6"
+source = { git = "https://github.com/huggingface/Repo2RLEnv?rev=4bbee55c288d4c93f83c0b01efc1a2cc0e589841#4bbee55c288d4c93f83c0b01efc1a2cc0e589841" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anyio" },
+    { name = "filelock" },
     { name = "huggingface-hub" },
     { name = "litellm" },
     { name = "openai" },
@@ -1258,7 +1259,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "repo2rlenv", extras = ["harbor", "mutants"], git = "https://github.com/huggingface/Repo2RLEnv?rev=db619e1e71e76462203389209b365783a133791a" }]
+requires-dist = [{ name = "repo2rlenv", extras = ["harbor", "mutants"], git = "https://github.com/huggingface/Repo2RLEnv?rev=4bbee55c288d4c93f83c0b01efc1a2cc0e589841" }]
 
 [[package]]
 name = "tenacity"

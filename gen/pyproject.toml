@@ -4,7 +4,7 @@ version = "0.0.0"
 description = "Task generation for the SWE-agent RL pilot (Repo2RLEnv main)."
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "repo2rlenv[harbor,mutants] @ git+https://github.com/huggingface/Repo2RLEnv@db619e1e71e76462203389209b365783a133791a",
+    "repo2rlenv[harbor,mutants] @ git+https://github.com/huggingface/Repo2RLEnv@4bbee55c288d4c93f83c0b01efc1a2cc0e589841",
 ]
 
 [tool.uv]

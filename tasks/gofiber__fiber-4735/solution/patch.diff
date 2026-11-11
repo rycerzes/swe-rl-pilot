@@ -1,0 +1,171 @@
+diff --git a/docs/api/ctx.md b/docs/api/ctx.md
+index 2f9161a07d5..c580d070c87 100644
+--- a/docs/api/ctx.md
++++ b/docs/api/ctx.md
+@@ -1811,7 +1811,7 @@ See [`TrustProxy`](fiber.md#trustproxy) and [`TrustProxyConfig`](fiber.md#trustp
+ 
+ ### IPs
+ 
+-Returns an array of IP addresses specified in the [X-Forwarded-For](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Forwarded-For) request header. With `EnableIPValidation`, IPv4, IPv6 and IPv4-mapped IPv6 addresses (`::ffff:203.0.113.5`, as dual-stack proxies forward IPv4 clients) are all accepted.
++Returns an array of IP addresses specified in the [X-Forwarded-For](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Forwarded-For) request header, each with the spaces and tabs around it trimmed ([RFC 9110 Section 5.6.3](https://www.rfc-editor.org/rfc/rfc9110#section-5.6.3) allows either as optional whitespace). With `EnableIPValidation`, IPv4, IPv6 and IPv4-mapped IPv6 addresses (`::ffff:203.0.113.5`, as dual-stack proxies forward IPv4 clients) are all accepted; whitespace inside an address makes it invalid.
+ 
+ ```go title="Signature"
+ func (c fiber.Ctx) IPs() []string
+diff --git a/internal/headerlist/headerlist.go b/internal/headerlist/headerlist.go
+index 646cc74c8bc..1ed87f36187 100644
+--- a/internal/headerlist/headerlist.go
++++ b/internal/headerlist/headerlist.go
+@@ -16,6 +16,9 @@
+ //     bare tokens wants. [AllQuoted] keeps commas that sit inside a quoted
+ //     string, which is what a list of entity tags or media-type parameters
+ //     needs, since those may contain one.
++//   - Whitespace. [All] and its siblings trim with utils.TrimSpace, which also
++//     takes CR, LF, VT and FF. [TrimOWS] takes only SP and HTAB, the OWS of
++//     RFC 9110 Section 5.6.3, for a caller that validates what is left.
+ //
+ // Empty elements are skipped throughout: "a,,b" yields "a" and "b". A list is
+ // permitted to carry them (RFC 9110 Section 5.6.1 allows the empty element for
+@@ -29,7 +32,7 @@ import (
+ )
+ 
+ // All yields each non-empty element of a comma-separated list value, with
+-// leading and trailing OWS removed.
++// leading and trailing whitespace removed.
+ //
+ // Every comma separates. Use [AllQuoted] for a list whose elements may contain
+ // a quoted comma.
+@@ -151,6 +154,23 @@ func AllLines(lines [][]byte) iter.Seq[string] {
+ 	}
+ }
+ 
++// TrimOWS removes the optional whitespace around a list element or a field
++// value: SP and HTAB, which is all RFC 9110 Section 5.6.3 allows. CR, LF, VT
++// and FF are not OWS, so they stay for a validating caller to reject, as does
++// a tab inside the value.
++//
++// The result aliases s.
++func TrimOWS[S ~string | ~[]byte](s S) S {
++	start, end := 0, len(s)
++	for start < end && (s[start] == ' ' || s[start] == '\t') {
++		start++
++	}
++	for end > start && (s[end-1] == ' ' || s[end-1] == '\t') {
++		end--
++	}
++	return s[start:end]
++}
++
+ // Contains reports whether list has an element equal to value, compared byte
+ // for byte. An empty value is never present.
+ //
+diff --git a/middleware/cache/cachecontrol.go b/middleware/cache/cachecontrol.go
+index 49c86708037..e928a0866f9 100644
+--- a/middleware/cache/cachecontrol.go
++++ b/middleware/cache/cachecontrol.go
+@@ -1,6 +1,7 @@
+ package cache
+ 
+ import (
++	"github.com/gofiber/fiber/v3/internal/headerlist"
+ 	"github.com/gofiber/utils/v2"
+ 	"github.com/valyala/fasthttp"
+ )
+@@ -88,50 +89,22 @@ func parseCacheControlDirectives(cc []byte, fn func(key, value []byte)) {
+ 			}
+ 			i++
+ 		}
+-		partEnd := i
+-		for partEnd > start && (cc[partEnd-1] == ' ' || cc[partEnd-1] == '\t') {
+-			partEnd--
+-		}
+-
+-		keyStart := start
+-		for keyStart < partEnd && (cc[keyStart] == ' ' || cc[keyStart] == '\t') {
+-			keyStart++
+-		}
+-		if keyStart >= partEnd {
+-			continue
+-		}
++		// The skip above left cc[start] as neither OWS nor a comma, and the scan
++		// stepped over it, so part keeps at least that byte.
++		part := headerlist.TrimOWS(cc[start:i])
+ 
+-		keyEnd := keyStart
+-		for keyEnd < partEnd && cc[keyEnd] != '=' {
+-			keyEnd++
+-		}
+-		// Trim trailing OWS from key
+-		keyEndTrimmed := keyEnd
+-		for keyEndTrimmed > keyStart && (cc[keyEndTrimmed-1] == ' ' || cc[keyEndTrimmed-1] == '\t') {
+-			keyEndTrimmed--
+-		}
+-		key := cc[keyStart:keyEndTrimmed]
+-
+-		var value []byte
+-		if keyEnd < partEnd && cc[keyEnd] == '=' {
+-			valueStart := keyEnd + 1
+-			for valueStart < partEnd && (cc[valueStart] == ' ' || cc[valueStart] == '\t') {
+-				valueStart++
+-			}
+-			valueEnd := partEnd
+-			for valueEnd > valueStart && (cc[valueEnd-1] == ' ' || cc[valueEnd-1] == '\t') {
+-				valueEnd--
+-			}
+-			if valueStart <= valueEnd {
+-				value = cc[valueStart:valueEnd]
+-				// Handle quoted-string values per RFC 9111 Section 5.2
+-				if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+-					value = unquoteCacheDirective(value)
+-				}
++		// A directive without "=" reports a nil value, one with an empty
++		// argument an empty value.
++		key, value, hasValue := utils.CutByte(part, '=')
++		if hasValue {
++			value = headerlist.TrimOWS(value)
++			// Handle quoted-string values per RFC 9111 Section 5.2
++			if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
++				value = unquoteCacheDirective(value)
+ 			}
+ 		}
+ 
+-		fn(key, value)
++		fn(headerlist.TrimOWS(key), value)
+ 		i++ // skip comma
+ 	}
+ }
+diff --git a/req.go b/req.go
+index a1f904b0550..92e72c38084 100644
+--- a/req.go
++++ b/req.go
+@@ -883,11 +883,11 @@ func (r *DefaultReq) extractIPsFromHeader(header string) []string {
+ 			j++
+ 		}
+ 
+-		for i < j && (headerValue[i] == ' ' || headerValue[i] == ',') {
++		for i < j && headerValue[i] == ',' {
+ 			i++
+ 		}
+ 
+-		s := utils.TrimRight(headerValue[i:j], ' ')
++		s := headerlist.TrimOWS(headerValue[i:j])
+ 
+ 		if r.c.app.config.EnableIPValidation {
+ 			// Skip validation if IP is clearly not IPv4/IPv6; otherwise, validate without allocations.
+@@ -925,7 +925,7 @@ func (r *DefaultReq) extractIPFromHeader(header string) string {
+ 				end++
+ 			}
+ 
+-			ipStr := utils.Trim(headerValue[start:end], ' ')
++			ipStr := headerlist.TrimOWS(headerValue[start:end])
+ 			if isValidProxyIP(ipStr) {
+ 				return ipStr
+ 			}
+@@ -944,7 +944,7 @@ func (r *DefaultReq) extractIPFromHeader(header string) string {
+ 			start--
+ 		}
+ 
+-		ipStr := utils.Trim(headerValue[start:end], ' ')
++		ipStr := headerlist.TrimOWS(headerValue[start:end])
+ 		if isValidProxyIP(ipStr) {
+ 			leftmostIP = ipStr
+ 			if !r.isTrustedProxyIP(ipStr) {

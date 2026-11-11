@@ -1,0 +1,6 @@
+[
+  "TestCookieSameSiteValidation",
+  "Test_Session_Cookie_SameSite",
+  "Test_Session_Cookie_SameSite/Case-insensitive_disabled_should_preserve_secure",
+  "Test_Session_Cookie_SameSite/Disabled_should_omit_SameSite"
+]

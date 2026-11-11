@@ -1,0 +1,108 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gofiber__fiber-4577"
+description = "🐛 bug: answer healthcheck HEAD probes with the GET status"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "fiber",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gofiber/fiber"
+ref = "1104ec30d66976eb6d24d61e7b46e8b4f196400b"
+reference = "https://github.com/gofiber/fiber/pull/4577"
+source_access = "auto"
+built_at = "2026-11-10T23:33:18.993241+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:53c6255eaf1aa069660c4064e2d181e2c206d7e8d83d0a39913b6fd2ec45f56d"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gofiber/fiber/pull/4577"
+pr_merged_at = "2026-07-30T13:28:46Z"
+base_commit = "1104ec30d66976eb6d24d61e7b46e8b4f196400b"
+fail_to_pass = [
+    "Test_HealthCheck_Head",
+]
+pass_to_pass = [
+    "Test_HealthCheck_CBOR_Format",
+    "Test_HealthCheck_Custom",
+    "Test_HealthCheck_Custom_Nested",
+    "Test_HealthCheck_Default",
+    "Test_HealthCheck_JSON_Format",
+    "Test_HealthCheck_MsgPack_Format",
+    "Test_HealthCheck_Next",
+    "Test_HealthCheck_Strict_Routing_Default",
+    "Test_HealthCheck_Text_Format",
+    "Test_HealthCheck_XML_Format",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gofiber__fiber:cb4396488e13"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 24.36
+measured_overhead_seconds = 1.455
+measured_copy_seconds = 0.028
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 1
+p2p_count = 10
+source_files = 2
+loc_changed = 4
+difficulty = "trivial"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:10.953784+00:00"
+inline_recipe_sha256 = "sha256:b0c1e62097e3a8781526d21c5a23d8f6e7948ef33d7b2e93756d33d0f2702bb8"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 106
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gofiber__fiber-4577-6bc5fea78463"

@@ -1,0 +1,148 @@
+diff --git a/docs/content/en/functions/partials/Include.md b/docs/content/en/functions/partials/Include.md
+index 58acbcc7f9b..d42dacce0e2 100644
+--- a/docs/content/en/functions/partials/Include.md
++++ b/docs/content/en/functions/partials/Include.md
+@@ -74,5 +74,29 @@ To return a value from a _partial_ template, it must contain only one `return` s
+ {{ return $result }}
+ ```
+ 
++## Relative paths
++
++{{< new-in 0.167.0 />}}
++
++Within a _partial_ template, a path that begins with `./` or `../` is resolved relative to the directory of the calling _partial_ template. For example, given this structure:
++
++```tree
++layouts/
++└── _partials/
++    ├── cards/
++    │   ├── card.html
++    │   └── image.html
++    └── footer.html
++```
++
++The "card" _partial_ template can call its sibling and the "footer" _partial_ template like this:
++
++```go-html-template
++{{ partial "./image.html" . }}
++{{ partial "../footer.html" . }}
++```
++
++Relative paths are only supported from within _partial_ templates. Calling `partial "./foo.html"` from any other template, or with a path that resolves outside the `_partials` directory, is an error.
++
+ [`return`]: /functions/go-template/return/
+ [breadcrumb navigation]: /content-management/sections/#ancestors-and-descendants
+diff --git a/docs/content/en/functions/partials/IncludeCached.md b/docs/content/en/functions/partials/IncludeCached.md
+index eea5751e8a1..a58ee53e9f6 100644
+--- a/docs/content/en/functions/partials/IncludeCached.md
++++ b/docs/content/en/functions/partials/IncludeCached.md
+@@ -20,6 +20,8 @@ The `partialCached` function can offer significant performance gains for complex
+ >
+ > Hugo renders pages in parallel, and will render the _partial_ template more than once with concurrent calls to the `partialCached` function. After Hugo caches the rendered _partial_ template, new pages entering the build pipeline will use the cached result.
+ 
++Within a _partial_ template, a path that begins with `./` or `../` is resolved relative to the calling _partial_ template. See [`partials.Include`](/functions/partials/include/#relative-paths).
++
+ Here is the simplest usage:
+ 
+ ```go-html-template
+diff --git a/tpl/partials/partials.go b/tpl/partials/partials.go
+index f0906fb838a..f27ba186ed1 100644
+--- a/tpl/partials/partials.go
++++ b/tpl/partials/partials.go
+@@ -111,6 +111,10 @@ func (ns *Namespace) Include(ctx context.Context, name string, contextList ...an
+ }
+ 
+ func (ns *Namespace) include(ctx context.Context, name string, dataList ...any) includeResult {
++	name, err := ns.deps.TemplateStore.ResolvePartialName(ctx, name)
++	if err != nil {
++		return includeResult{err: err}
++	}
+ 	v, err := ns.lookup(name)
+ 	if err != nil {
+ 		return includeResult{err: err}
+@@ -181,6 +185,10 @@ func (ns *Namespace) doInclude(ctx context.Context, key string, templ *tplimpl.T
+ // Note that ctx is provided by Hugo, not the end user.
+ func (ns *Namespace) IncludeCached(ctx context.Context, name string, context any, variants ...any) (any, error) {
+ 	start := time.Now()
++	name, err := ns.deps.TemplateStore.ResolvePartialName(ctx, name)
++	if err != nil {
++		return nil, err
++	}
+ 	keyString := name
+ 	if len(variants) > 0 {
+ 		key := partialCacheKey{
+diff --git a/tpl/tplimpl/templatestore.go b/tpl/tplimpl/templatestore.go
+index 4721c1f4a23..b1aed169f44 100644
+--- a/tpl/tplimpl/templatestore.go
++++ b/tpl/tplimpl/templatestore.go
+@@ -249,6 +249,9 @@ type TemplInfo struct {
+ 	// The base template used, if any.
+ 	base *TemplInfo
+ 
++	// For partial decorator inner templates, the template the inner block was defined in.
++	decoratorOwner *TemplInfo
++
+ 	// The descriptior that this template represents.
+ 	D TemplateDescriptor
+ 
+@@ -636,6 +639,31 @@ func (s *TemplateStore) LookupPartial(pth string) *TemplInfo {
+ 	return ti
+ }
+ 
++// ResolvePartialName resolves partial names starting with "./" or "../"
++// relative to the directory of the calling partial.
++func (s *TemplateStore) ResolvePartialName(ctx context.Context, name string) (string, error) {
++	if !strings.HasPrefix(name, "./") && !strings.HasPrefix(name, "../") {
++		return name, nil
++	}
++	cur := tpl.Context.CurrentTemplate.Get(ctx)
++	if cur == nil {
++		return "", fmt.Errorf("relative partial path %q can only be used from within a partial", name)
++	}
++	ti := cur.CurrentTemplateInfoOps.(*TemplInfo)
++	for ti.decoratorOwner != nil {
++		ti = ti.decoratorOwner
++	}
++	if ti.category != CategoryPartial {
++		return "", fmt.Errorf("relative partial path %q can only be used from within a partial, called from %q", name, ti.Name())
++	}
++	dir := strings.TrimPrefix(strings.TrimPrefix(ti.PathInfo.Dir(), "/"+containerPartials), "/")
++	resolved := path.Join(dir, name)
++	if resolved == ".." || strings.HasPrefix(resolved, "../") {
++		return "", fmt.Errorf("relative partial path %q in %q resolves outside the partials directory", name, ti.Name())
++	}
++	return resolved, nil
++}
++
+ func (s *TemplateStore) LookupShortcodeByName(name string) *TemplInfo {
+ 	name = strings.ToLower(name)
+ 	ti, _ := s.shortcodesByName.Get(name)
+@@ -939,10 +967,12 @@ func (t *TemplateStore) addDeferredTemplate(owner *TemplInfo, name string, n *pa
+ 	}
+ 
+ 	t.templatesByPath.Set(name, &TemplInfo{
+-		Fi:       owner.Fi,
+-		PathInfo: owner.PathInfo,
+-		D:        owner.D,
+-		Template: templ,
++		Fi:             owner.Fi,
++		PathInfo:       owner.PathInfo,
++		D:              owner.D,
++		Template:       templ,
++		category:       owner.category,
++		decoratorOwner: owner.decoratorOwner,
+ 	})
+ 
+ 	return nil
+diff --git a/tpl/tplimpl/templatetransform.go b/tpl/tplimpl/templatetransform.go
+index dcb59abe735..3c37ea6ef51 100644
+--- a/tpl/tplimpl/templatetransform.go
++++ b/tpl/tplimpl/templatetransform.go
+@@ -301,6 +301,7 @@ func (c *templateTransformContext) handleWithPartial(withNode *parse.WithNode) {
+ 			c.err = fmt.Errorf("failed to find internal partial decorator template %q after insertion", internalPartialName)
+ 			return
+ 		}
++		ti.decoratorOwner = c.t
+ 
+ 		cc := newTemplateTransformContext(ti, c.store, c.lookupFn)
+ 

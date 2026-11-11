@@ -1,0 +1,211 @@
+diff --git a/ctx_interface_gen.go b/ctx_interface_gen.go
+index 0b854785ec2..67db3511e2a 100644
+--- a/ctx_interface_gen.go
++++ b/ctx_interface_gen.go
+@@ -335,6 +335,15 @@ type Ctx interface {
+ 	// The field name matches case-insensitively (RFC 9110 Section 5.1), so this
+ 	// agrees with GetAll on whether the field is there.
+ 	HasHeader(key string) bool
++	// HasHeaderValue reports whether the request header key lists value as one of
++	// its comma-separated members, on any of its field lines. Repeated field lines
++	// are one list (RFC 9110 Section 5.3) and the member matches under ASCII case
++	// folding, so it fits directive-style headers such as Cache-Control or
++	// Connection. A comma inside a quoted argument does not end a member, so
++	// `ext="a,no-transform,b"` is one member and does not list no-transform
++	// (RFC 9111 permits quoted directive arguments, escaped quotes included). An
++	// empty value is never present. Only valid within the handler.
++	HasHeaderValue(key, value string) bool
+ 	// MediaType returns the MIME type from the Content-Type header without parameters.
+ 	MediaType() string
+ 	// Charset returns the charset parameter from the Content-Type header.
+@@ -577,6 +586,8 @@ type Ctx interface {
+ 	// If the header is not already set, it creates the header with the specified value.
+ 	// Empty values are skipped: a sender must not generate empty list elements
+ 	// (RFC 9110 Section 5.6.1.2).
++	// Members are compared byte-exactly, because some lists (Link, Cache-Control)
++	// are not all field names. For Vary field names, use Vary, which folds case.
+ 	Append(field string, values ...string)
+ 	// Add appends the value as a new field line, where Append folds values into one
+ 	// comma-separated line. The headers fasthttp keeps in a slot of their own are
+@@ -725,6 +736,7 @@ type Ctx interface {
+ 	Type(extension string, charset ...string) Ctx
+ 	// Vary adds the given header field to the Vary response header.
+ 	// This will append the header, if not already listed; otherwise, leaves it listed in the current location.
++	// Field names are compared case-insensitively (RFC 9110 Section 5.1); the first spelling is kept.
+ 	// Per RFC 9110 Section 12.5.5 the wildcard "*" only has meaning as the sole member of the field:
+ 	// once "*" is added (or already present), the header is collapsed to a single "*".
+ 	Vary(fields ...string)
+diff --git a/docs/api/ctx.md b/docs/api/ctx.md
+index 322edd3aed3..af7d3bf75a1 100644
+--- a/docs/api/ctx.md
++++ b/docs/api/ctx.md
+@@ -1623,6 +1623,26 @@ app.Get("/", func(c fiber.Ctx) error {
+ })
+ ```
+ 
++### HasHeaderValue
++
++Reports whether the request header `key` lists `value` as one of its comma-separated members, on any of its field lines. Repeated field lines are treated as one list ([RFC 9110 Section 5.3](https://www.rfc-editor.org/rfc/rfc9110#section-5.3)) and the member is matched case-insensitively, which fits directive-style headers such as `Cache-Control` or `Connection`. A comma inside a quoted argument does not split a member, so `ext="a,no-transform,b"` does not list `no-transform`. A backslash inside quotes escapes the next byte ([RFC 9110 Section 5.6.4](https://www.rfc-editor.org/rfc/rfc9110#section-5.6.4)), so `ext="a\"", no-transform` does list it. An empty `value` is never present.
++
++```go title="Signature"
++func (c fiber.Ctx) HasHeaderValue(key, value string) bool
++func (r fiber.Req) HasHeaderValue(key, value string) bool
++```
++
++```go title="Example"
++// Cache-Control: public, max-age=60
++// Cache-Control: no-transform
++app.Get("/", func(c fiber.Ctx) error {
++  c.HasHeaderValue(fiber.HeaderCacheControl, "no-transform") // true
++  c.HasHeaderValue(fiber.HeaderCacheControl, "PUBLIC")       // true
++  c.HasHeaderValue(fiber.HeaderCacheControl, "max-age")      // false
++  return nil
++})
++```
++
+ ### Host
+ 
+ Returns the host derived from the [Host](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Host) HTTP header.
+diff --git a/docs/whats_new.md b/docs/whats_new.md
+index fcd4e0119e0..a7b76b7faec 100644
+--- a/docs/whats_new.md
++++ b/docs/whats_new.md
+@@ -702,6 +702,7 @@ The `TypeConstraint` type, `Constraint.ID`, and `Constraint.RegexCompiler` field
+ - **AcceptLanguage**: Returns the `Accept-Language` request header.
+ - **AcceptEncoding**: Returns the `Accept-Encoding` request header.
+ - **HasHeader**: Reports whether the request includes a header with the given key.
++- **HasHeaderValue**: Reports whether a comma-separated request header such as `Cache-Control` lists a member on any of its field lines, case-insensitively and respecting quoted arguments.
+ - **MediaType**: Returns the MIME type from the `Content-Type` header without parameters.
+ - **Charset**: Returns the `charset` parameter from the `Content-Type` header.
+ - **IsJSON**: Reports whether the `Content-Type` header is JSON.
+diff --git a/internal/headerlist/headerlist.go b/internal/headerlist/headerlist.go
+index 27d2bff605a..646cc74c8bc 100644
+--- a/internal/headerlist/headerlist.go
++++ b/internal/headerlist/headerlist.go
+@@ -93,6 +93,47 @@ func AllQuoted(list string) iter.Seq[string] {
+ 	}
+ }
+ 
++// AllQuotedPairs is [AllQuoted] for quoted strings that may carry a quoted-pair
++// (RFC 9110 Section 5.6.4), such as Cache-Control directive arguments: inside
++// quotes a backslash escapes the next byte, so `ext="a\"", no-transform` has two
++// elements. Entity tags have no quoted-pair and keep using [AllQuoted].
++func AllQuotedPairs(list string) iter.Seq[string] {
++	return func(yield func(string) bool) {
++		start, pos := 0, 0
++		inQuotes := false
++		for {
++			i := utils.IndexAny3(list[pos:], '"', ',', '\\')
++			if i == -1 {
++				break
++			}
++			i += pos
++			pos = i + 1
++
++			switch {
++			case list[i] == '\\':
++				if inQuotes && pos < len(list) {
++					pos++ // the escaped byte ends neither the string nor the element
++				}
++				continue
++			case list[i] == '"':
++				inQuotes = !inQuotes
++				continue
++			case inQuotes:
++				continue
++			}
++			if element := utils.TrimSpace(list[start:i]); element != "" {
++				if !yield(element) {
++					return
++				}
++			}
++			start = i + 1
++		}
++		if element := utils.TrimSpace(list[start:]); element != "" {
++			yield(element)
++		}
++	}
++}
++
+ // AllLines yields the elements of every field line in order, so that a header
+ // sent as one line and the same header sent as several read alike (RFC 9110
+ // Section 5.3).
+diff --git a/middleware/compress/compress.go b/middleware/compress/compress.go
+index ebc7e6bc8d1..2e8f3f81593 100644
+--- a/middleware/compress/compress.go
++++ b/middleware/compress/compress.go
+@@ -22,7 +22,7 @@ func shouldSkip(c fiber.Ctx) bool {
+ 		status == fiber.StatusNotModified ||
+ 		status == fiber.StatusPartialContent ||
+ 		c.Get(fiber.HeaderRange) != "" ||
+-		headerlist.ContainsFold(c.Get(fiber.HeaderCacheControl), "no-transform") ||
++		c.HasHeaderValue(fiber.HeaderCacheControl, "no-transform") ||
+ 		headerlist.ContainsFold(c.GetRespHeader(fiber.HeaderCacheControl), "no-transform") {
+ 		return true
+ 	}
+@@ -112,7 +112,9 @@ func New(config ...Config) fiber.Handler {
+ 		}
+ 
+ 		// Negotiate with weights, wildcards and lists honored (RFC 9110 §12.5.3).
+-		encoding := negotiateEncoding(c.Get(fiber.HeaderAcceptEncoding))
++		// A request may carry several Accept-Encoding field lines; RFC 9110 §5.3
++		// treats them as one comma-separated list, which AcceptEncoding joins.
++		encoding := negotiateEncoding(c.AcceptEncoding())
+ 		if encoding == "" {
+ 			appendVaryAcceptEncoding(c)
+ 			return nil
+diff --git a/req.go b/req.go
+index 6e451348881..a1f904b0550 100644
+--- a/req.go
++++ b/req.go
+@@ -295,6 +295,30 @@ func (r *DefaultReq) HasHeader(key string) bool {
+ 	return len(r.headerField(key)) > 0
+ }
+ 
++// HasHeaderValue reports whether the request header key lists value as one of
++// its comma-separated members, on any of its field lines. Repeated field lines
++// are one list (RFC 9110 Section 5.3) and the member matches under ASCII case
++// folding, so it fits directive-style headers such as Cache-Control or
++// Connection. A comma inside a quoted argument does not end a member, so
++// `ext="a,no-transform,b"` is one member and does not list no-transform
++// (RFC 9111 permits quoted directive arguments, escaped quotes included). An
++// empty value is never present. Only valid within the handler.
++func (r *DefaultReq) HasHeaderValue(key, value string) bool {
++	// One lookup settles the common case of a header that is not there at all.
++	if value == "" || len(r.headerField(key)) == 0 {
++		return false
++	}
++	app := r.c.app
++	for _, line := range fieldname.Lines(&r.c.fasthttp.Request.Header, key, !app.config.DisableHeaderNormalizing) {
++		for member := range headerlist.AllQuotedPairs(app.toString(line)) {
++			if utils.EqualFold(member, value) {
++				return true
++			}
++		}
++	}
++	return false
++}
++
+ // ContentType returns the Content-Type request header, parameters included;
+ // MediaType strips them and Charset returns just the charset. On Ctx the request
+ // wins over Res. Only valid within the handler unless Immutable is set.
+diff --git a/req_interface_gen.go b/req_interface_gen.go
+index c3592e4d9a5..0d87ca65d00 100644
+--- a/req_interface_gen.go
++++ b/req_interface_gen.go
+@@ -80,6 +80,15 @@ type Req interface {
+ 	// The field name matches case-insensitively (RFC 9110 Section 5.1), so this
+ 	// agrees with GetAll on whether the field is there.
+ 	HasHeader(key string) bool
++	// HasHeaderValue reports whether the request header key lists value as one of
++	// its comma-separated members, on any of its field lines. Repeated field lines
++	// are one list (RFC 9110 Section 5.3) and the member matches under ASCII case
++	// folding, so it fits directive-style headers such as Cache-Control or
++	// Connection. A comma inside a quoted argument does not end a member, so
++	// `ext="a,no-transform,b"` is one member and does not list no-transform
++	// (RFC 9111 permits quoted directive arguments, escaped quotes included). An
++	// empty value is never present. Only valid within the handler.
++	HasHeaderValue(key, value string) bool
+ 	// ContentType returns the Content-Type request header, parameters included;
+ 	// MediaType strips them and Charset returns just the charset. On Ctx the request
+ 	// wins over Res. Only valid within the handler unless Immutable is set.

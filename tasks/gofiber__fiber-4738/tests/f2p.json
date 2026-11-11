@@ -1,0 +1,6 @@
+[
+  "Test_BasicAuth_RepeatedAuthorizationIsRefused",
+  "Test_BasicAuth_RepeatedAuthorizationIsRefused/behind_adaptor.FiberApp",
+  "Test_BasicAuth_RepeatedAuthorizationIsRefused/lines_under_the_canonical_name",
+  "Test_BasicAuth_RepeatedAuthorizationIsRefused/lines_under_two_spellings"
+]

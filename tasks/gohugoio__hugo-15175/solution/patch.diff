@@ -1,0 +1,205 @@
+diff --git a/media/builtin.go b/media/builtin.go
+index 80c4df6fdec..6595acbe4f3 100644
+--- a/media/builtin.go
++++ b/media/builtin.go
+@@ -21,6 +21,7 @@ type BuiltinTypes struct {
+ 	TextType           Type
+ 	TOMLType           Type
+ 	YAMLType           Type
++	SourceMapType      Type
+ 
+ 	// Common image types
+ 	PNGType  Type
+@@ -36,6 +37,8 @@ type BuiltinTypes struct {
+ 	// Common font types
+ 	TrueTypeFontType Type
+ 	OpenTypeFontType Type
++	WOFFFontType     Type
++	WOFF2FontType    Type
+ 
+ 	// Common document types
+ 	PDFType              Type
+@@ -80,6 +83,7 @@ var Builtin = BuiltinTypes{
+ 	TextType:           Type{Type: "text/plain"},
+ 	TOMLType:           Type{Type: "application/toml"},
+ 	YAMLType:           Type{Type: "application/yaml"},
++	SourceMapType:      Type{Type: "application/source-map"},
+ 
+ 	// Common image types
+ 	PNGType:  Type{Type: "image/png"},
+@@ -95,6 +99,8 @@ var Builtin = BuiltinTypes{
+ 	// Common font types
+ 	TrueTypeFontType: Type{Type: "font/ttf"},
+ 	OpenTypeFontType: Type{Type: "font/otf"},
++	WOFFFontType:     Type{Type: "font/woff"},
++	WOFF2FontType:    Type{Type: "font/woff2"},
+ 
+ 	// Common document types
+ 	PDFType:              Type{Type: "application/pdf"},
+@@ -139,6 +145,7 @@ var defaultMediaTypesConfig = map[string]any{
+ 	"text/plain":                map[string]any{"suffixes": []string{"txt"}},
+ 	"application/toml":          map[string]any{"suffixes": []string{"toml"}},
+ 	"application/yaml":          map[string]any{"suffixes": []string{"yaml", "yml"}},
++	"application/source-map":    map[string]any{"suffixes": []string{"map"}},
+ 
+ 	// Common image types
+ 	"image/png":  map[string]any{"suffixes": []string{"png"}},
+@@ -152,8 +159,10 @@ var defaultMediaTypesConfig = map[string]any{
+ 	"image/heic": map[string]any{"suffixes": []string{"heic"}},
+ 
+ 	// Common font types
+-	"font/ttf": map[string]any{"suffixes": []string{"ttf"}},
+-	"font/otf": map[string]any{"suffixes": []string{"otf"}},
++	"font/ttf":   map[string]any{"suffixes": []string{"ttf"}},
++	"font/otf":   map[string]any{"suffixes": []string{"otf"}},
++	"font/woff":  map[string]any{"suffixes": []string{"woff"}},
++	"font/woff2": map[string]any{"suffixes": []string{"woff2"}},
+ 
+ 	// Common document types
+ 	"application/pdf": map[string]any{"suffixes": []string{"pdf"}},
+diff --git a/resources/artifact.go b/resources/artifact.go
+new file mode 100644
+index 00000000000..e26163a7803
+--- /dev/null
++++ b/resources/artifact.go
+@@ -0,0 +1,50 @@
++// Copyright 2025 The Hugo Authors. All rights reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++// http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package resources
++
++import (
++	"github.com/gohugoio/hugo/media"
++	"github.com/gohugoio/hugo/resources/resource"
++)
++
++// Artifact represents an additional output file published as part of a
++// resource transformation, e.g. a source map or a file emitted by ESBuild's
++// file loader. It is exposed to templates via Resource.Data.Artifacts.
++type Artifact interface {
++	resource.MediaTypeProvider
++	resource.ResourceLinksProvider
++}
++
++// NewArtifact creates a new Artifact with the given permalinks and media type.
++func NewArtifact(permalink, relPermalink string, mediaType media.Type) Artifact {
++	return &artifact{permalink: permalink, relPermalink: relPermalink, mediaType: mediaType}
++}
++
++type artifact struct {
++	permalink    string
++	relPermalink string
++	mediaType    media.Type
++}
++
++func (a *artifact) MediaType() media.Type {
++	return a.mediaType
++}
++
++func (a *artifact) Permalink() string {
++	return a.permalink
++}
++
++func (a *artifact) RelPermalink() string {
++	return a.relPermalink
++}
+diff --git a/resources/resource_transformers/js/build.go b/resources/resource_transformers/js/build.go
+index 0415b058aa0..da7b4092f78 100644
+--- a/resources/resource_transformers/js/build.go
++++ b/resources/resource_transformers/js/build.go
+@@ -18,12 +18,15 @@ import (
+ 	"path"
+ 	"path/filepath"
+ 	"regexp"
++	"sort"
+ 	"strings"
+ 
+ 	"github.com/evanw/esbuild/pkg/api"
++	"github.com/gohugoio/hugo/common/paths"
+ 	"github.com/gohugoio/hugo/helpers"
+ 	"github.com/gohugoio/hugo/hugolib/filesystems"
+ 	"github.com/gohugoio/hugo/internal/js/esbuild"
++	"github.com/gohugoio/hugo/media"
+ 
+ 	"github.com/gohugoio/hugo/resources"
+ 	"github.com/gohugoio/hugo/resources/resource"
+@@ -87,9 +90,27 @@ func (c *Client) transform(opts esbuild.Options, transformCtx *resources.Resourc
+ 	hasLinkedSourceMap := opts.ExternalOptions.SourceMap == "linked"
+ 	hasSourceMap := hasLinkedSourceMap || opts.ExternalOptions.SourceMap == "external"
+ 
++	spec := c.c.Spec()
++	mediaTypes := spec.MediaTypes()
++	baseURL := spec.Cfg.BaseURL().WithoutPath
++	newArtifact := func(relPermalink, fileName string) resources.Artifact {
++		mt, _, found := mediaTypes.GetFirstBySuffix(strings.TrimPrefix(path.Ext(fileName), "."))
++		if !found {
++			mt = media.Builtin.OctetType
++		}
++		return resources.NewArtifact(baseURL+relPermalink, relPermalink, mt)
++	}
++	fileLoaderRelPermalink := func(base string) string {
++		if opts.PublicPath != "" {
++			return strings.TrimSuffix(opts.PublicPath, "/") + "/" + paths.PathEscape(base)
++		}
++		return pathSpec.GetBasePath(false) + paths.PathEscape(paths.AddLeadingSlash(path.Join(outDir, base)))
++	}
++
+ 	// Classify output files by path rather than relying on array ordering,
+ 	// which esbuild does not guarantee.
+ 	var mainOutput []byte
++	var artifacts []resources.Artifact
+ 	for _, file := range result.OutputFiles {
+ 		basePath := path.Base(filepath.ToSlash(file.Path))
+ 		if strings.HasSuffix(basePath, ".map") {
+@@ -97,6 +118,7 @@ func (c *Client) transform(opts esbuild.Options, transformCtx *resources.Resourc
+ 				if err = transformCtx.PublishSourceMap(file.Contents); err != nil {
+ 					return result, err
+ 				}
++				artifacts = append(artifacts, newArtifact(pathSpec.GetBasePath(false)+paths.PathEscape(paths.AddLeadingSlash(transformCtx.OutPath+".map")), basePath))
+ 			}
+ 		} else if isStdinEntryOutput(basePath) {
+ 			mainOutput = file.Contents
+@@ -105,9 +127,13 @@ func (c *Client) transform(opts esbuild.Options, transformCtx *resources.Resourc
+ 			if err = publishFileLoaderArtifact(pathSpec, opts.PublicPath, outDir, basePath, file.Contents, transformCtx); err != nil {
+ 				return result, err
+ 			}
++			artifacts = append(artifacts, newArtifact(fileLoaderRelPermalink(basePath), basePath))
+ 		}
+ 	}
+ 
++	sort.Slice(artifacts, func(i, j int) bool { return artifacts[i].RelPermalink() < artifacts[j].RelPermalink() })
++	transformCtx.Data["Artifacts"] = artifacts
++
+ 	if mainOutput == nil {
+ 		return result, fmt.Errorf("esbuild: entry point output not found")
+ 	}
+diff --git a/resources/transform.go b/resources/transform.go
+index 5dc281f7175..18c768b3601 100644
+--- a/resources/transform.go
++++ b/resources/transform.go
+@@ -129,11 +129,12 @@ type ResourceTransformationCtx struct {
+ 	// The media type of the transformed resource.
+ 	OutMediaType media.Type
+ 
+-	// Data data can be set on the transformed Resource. Not that this need
+-	// to be simple types, as it needs to be serialized to JSON and back.
++	// Data can be set on the transformed Resource. For transformations
++	// cached to disk (see transformationsToCacheOnDisk), this needs to be
++	// simple types, as it will be serialized to JSON and back.
+ 	Data map[string]any
+ 
+-	// This is used to publish additional artifacts, e.g. source hhmaps.
++	// This is used to publish additional artifacts, e.g. source maps.
+ 	// We may improve this.
+ 	OpenResourcePublisher func(relTargetPath string) (io.WriteCloser, error)
+ }

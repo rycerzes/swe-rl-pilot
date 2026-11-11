@@ -1,0 +1,6 @@
+[
+  "Test_Bind_All_CustomPrecedence",
+  "Test_Bind_All_CustomPrecedence_InvalidToken",
+  "Test_Bind_All_CustomPrecedence_MultipleTags",
+  "Test_Bind_All_CustomPrecedence_OmittedSources"
+]

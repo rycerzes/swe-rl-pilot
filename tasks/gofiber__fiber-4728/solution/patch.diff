@@ -1,0 +1,71 @@
+diff --git a/docs/middleware/static.md b/docs/middleware/static.md
+index 99667f5a2a3..ccb65510504 100644
+--- a/docs/middleware/static.md
++++ b/docs/middleware/static.md
+@@ -140,7 +140,7 @@ curl http://localhost:3000/web
+ </details>
+ 
+ :::caution
+-To define static routes using `Get`, append the wildcard (`*`) operator at the end of the route.
++To define static routes using `Get`, append the wildcard (`*`) operator at the end of the route. Under a `/static*` route the rest of the path must start at a segment boundary, so `/static-v2/app.js` or `/staticapp.js` are no longer served; only `/static` and paths below `/static/` are.
+ :::
+ 
+ :::info
+diff --git a/docs/whats_new.md b/docs/whats_new.md
+index fcd4e0119e0..e002bc998ed 100644
+--- a/docs/whats_new.md
++++ b/docs/whats_new.md
+@@ -1994,7 +1994,7 @@ app.Get("*", static.New("./public/index.html"))
+ ```
+ 
+ :::caution
+-You have to put `*` to the end of the route if you don't define static route with `app.Use`.
++You have to put `*` to the end of the route if you don't define static route with `app.Use`. Under a `/prefix*` route such as `/static*`, only `/static` and paths below `/static/` are served; `/static-v2/app.js` or `/staticapp.js` are no longer served.
+ :::
+ 
+ #### Trusted Proxies
+diff --git a/middleware/static/static.go b/middleware/static/static.go
+index 7a04f5abea9..0245fcb9564 100644
+--- a/middleware/static/static.go
++++ b/middleware/static/static.go
+@@ -44,6 +44,7 @@ type fileServer struct {
+ 	prefixLen     int    // length of the route prefix stripped from the path
+ 	decodeEscapes bool   // off under UnescapePath, which already decoded everything
+ 	rootIsFile    bool
++	segmentBound  bool // the route is a /prefix* mount, so the rest of the path starts at a /
+ 	invalid       bool // the fs.FS root cannot be opened, so no path names a file
+ }
+ 
+@@ -59,6 +60,11 @@ type fileServerKey struct {
+ func (s *fileServer) requestPath(dst []byte, p string) []byte {
+ 	addTrailingSlash := false
+ 	if len(p) >= s.prefixLen {
++		// a partial wildcard such as /static* also matches /staticx; the rest of
++		// the path must start at a segment boundary
++		if s.segmentBound && len(p) > s.prefixLen && p[s.prefixLen] != '/' {
++			return append(dst, invalidPathSentinel...)
++		}
+ 		if s.invalid {
+ 			return append(dst, invalidPathSentinel...)
+ 		}
+@@ -252,9 +258,12 @@ func New(root string, cfg ...Config) fiber.Handler {
+ 	// decodeEscapes is off under UnescapePath, which already decoded everything.
+ 	newFileServer := func(prefix string, compressedFileSuffixes map[string]string, decodeEscapes bool) *fileServer {
+ 		// Is prefix a partial wildcard?
++		segmentBound := false
+ 		if before, _, found := utils.CutByte(prefix, '*'); found {
+ 			// /john* -> /john
+ 			prefix = before
++			// only /john* must not match /johnx; /john/* and /* end in a slash
++			segmentBound = before != "" && before[len(before)-1] != '/'
+ 		}
+ 
+ 		prefixLen := len(prefix)
+@@ -312,6 +321,7 @@ func New(root string, cfg ...Config) fiber.Handler {
+ 			root:          root,
+ 			fsRootPrefix:  fsRootPrefix,
+ 			prefixLen:     prefixLen,
++			segmentBound:  segmentBound,
+ 			decodeEscapes: decodeEscapes,
+ 			rootIsFile:    rootIsFile,
+ 			invalid:       rootCheckErr != nil && config.FS != nil,

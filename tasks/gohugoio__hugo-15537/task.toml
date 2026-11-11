@@ -1,0 +1,202 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15537"
+description = "tpl/tplimpl: Fix shortcode layout lookup in non-default output formats"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "fa5a3d48b8dcf6c0bfcd7d06726a6530b2efc174"
+reference = "https://github.com/gohugoio/hugo/pull/15537"
+source_access = "auto"
+built_at = "2026-11-11T00:11:08.950858+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:f1621225eeb2d887c0fc2ac75aa7ec064da6b998d19bcaf809e70f98eb99c0b4"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15537"
+pr_merged_at = "2026-11-06T10:25:38Z"
+base_commit = "fa5a3d48b8dcf6c0bfcd7d06726a6530b2efc174"
+fail_to_pass = [
+    "TestShortcodeCustomLayoutInOtherOutputFormat",
+]
+pass_to_pass = [
+    "TestCodeblockIssue13864",
+    "TestCommentShortcode",
+    "TestCommentsBeforeBlockDefinition",
+    "TestDetailsShortcode",
+    "TestDisqusTemplate",
+    "TestEditBaseofParseAfterExecute",
+    "TestEmbeddedImageRenderHook",
+    "TestEmbeddedLinkAndImageRenderHookConfig",
+    "TestEmbeddedLinkAndImageRenderHookConfig/01",
+    "TestEmbeddedLinkAndImageRenderHookConfig/02",
+    "TestEmbeddedLinkAndImageRenderHookConfig/03",
+    "TestEmbeddedLinkAndImageRenderHookConfig/04",
+    "TestEmbeddedLinkAndImageRenderHookConfig/05",
+    "TestEmbeddedLinkAndImageRenderHookConfig/06",
+    "TestEmbeddedLinkAndImageRenderHookConfig/07",
+    "TestEmbeddedLinkAndImageRenderHookConfig/08",
+    "TestEmbeddedLinkAndImageRenderHookConfig/09",
+    "TestEmbeddedLinkAndImageRenderHookConfig/10",
+    "TestEmbeddedLinkAndImageRenderHookConfig/11",
+    "TestEmbeddedLinkAndImageRenderHookConfig/12",
+    "TestEmbeddedLinkAndImageRenderHookConfig/13",
+    "TestEmbeddedLinkAndImageRenderHookConfig/14",
+    "TestEmbeddedLinkAndImageRenderHookConfig/15",
+    "TestEmbeddedLinkAndImageRenderHookConfig/16",
+    "TestEmbeddedLinkAndImageRenderHookConfig/17",
+    "TestEmbeddedLinkAndImageRenderHookConfig/18",
+    "TestEmbeddedLinkAndImageRenderHookConfig/19",
+    "TestEmbeddedLinkAndImageRenderHookConfig/20",
+    "TestEmbeddedLinkRenderHook",
+    "TestFigureShortcode",
+    "TestGetPageImagesTemplate",
+    "TestGistShortcodeDeprecationError14491",
+    "TestGo18Constructs",
+    "TestGo23ElseWith",
+    "TestGoTemplateBugs",
+    "TestGoTemplateBugs/Issue_11112",
+    "TestGoatAndNoGoat",
+    "TestGoatAndNoGoatCustomTemplate",
+    "TestGoatcustom",
+    "TestGoogleAnalyticsTemplate",
+    "TestHasShortcodeSamePageSourceDifferentShortcodes",
+    "TestHighlightShortcode",
+    "TestHomeRSSAndHTMLWithHTMLOnlyRenderHook",
+    "TestHomeRSSAndHTMLWithHTMLOnlyShortcode",
+    "TestInstagramShortcode",
+    "TestIssue13351",
+    "TestIssue13605",
+    "TestIssue13630",
+    "TestLayoutAll",
+    "TestLayoutAllNested",
+    "TestLayoutIssue13628",
+    "TestLayoutNotFound",
+    "TestLayoutOverrideThemeWhenThemeOnOldFormatIssue13715",
+    "TestLayoutWithLanguagesLegacy",
+    "TestLayoutWithLanguagesVersionsAndRoles",
+    "TestLayoutsLookupVariants",
+    "TestLayoutsNewSetup",
+    "TestLayoutsOldSetup",
+    "TestLayoutsOldSetupBaseofPrefix",
+    "TestLayoutsOldSetupCustomRSS",
+    "TestLayoutsOldSetupTaxonomyAndTerm",
+    "TestLayoutsType",
+    "TestLegacyPartialIssue13599",
+    "TestLookupCodeblockIssue13651",
+    "TestLookupOrderIssue13636",
+    "TestLookupShortcodeDepth",
+    "TestLookupShortcodeLayout",
+    "TestOpengraphTemplate",
+    "TestPageKindIssue13868",
+    "TestPaginationTemplate",
+    "TestParamShortcode",
+    "TestPartialHTML",
+    "TestPartialPlainTextInHTML",
+    "TestPartialPlainTextVsHTML",
+    "TestPartialsLangIssue13612",
+    "TestPrintPathWarningOnDotRemoval",
+    "TestPrintPathWarningOnInvalidMarkupFilename",
+    "TestPrintUnusedTemplates",
+    "TestQRShortcode",
+    "TestRefShortcode",
+    "TestRelRefShortcode",
+    "TestRenderCodeblockSpecificity",
+    "TestRenderHookMultilingual",
+    "TestRenderHooksPosition",
+    "TestRenderHooksPositionRenderString",
+    "TestSchemaTemplate",
+    "TestSecurityAllowActionJSTmpl",
+    "TestShortcodeLanguage13767",
+    "TestShortcodeMultilingualHTML",
+    "TestShortcodeMultilingualMarkdown",
+    "TestShortcodeOnlyLanguageInBaseIssue13699And13740",
+    "TestShortcodePlainTextVsHTMLTemplateIssue13698",
+    "TestSitemap",
+    "TestSkipDotFiles",
+    "TestStandardLayoutInFrontMatter13588",
+    "TestTemplateDescriptorCompare",
+    "TestTemplateFuncsExamples",
+    "TestTemplateLoopBlogVsBlogrollIssue13672",
+    "TestTwitterCardsTemplate",
+    "TestTwitterShortcodeDeprecationError14488",
+    "TestVimeoShortcode",
+    "TestYouTubeShortcode",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:bca2cec8875b"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 76.628
+measured_overhead_seconds = 4.224
+measured_copy_seconds = 0.122
+run_timeout_sec = 180
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 1
+p2p_count = 102
+source_files = 1
+loc_changed = 12
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:10.743479+00:00"
+inline_recipe_sha256 = "sha256:4cc82e3d629b1c3cb536e23a6624772af0004d6045cb5527d068672db0d098ae"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = [
+    "TestShortcodeCustomLayoutInOtherOutputFormat",
+]
+instruction_description_words = 95
+instruction_ok = false
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15537-6a0a076e6c58"

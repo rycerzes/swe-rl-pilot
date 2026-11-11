@@ -1,0 +1,7 @@
+[
+  "TestIncludeRelativePath",
+  "TestIncludeRelativePathInDecoratorInner",
+  "TestIncludeRelativePathInDeferredBlock",
+  "TestIncludeRelativePathNotFromPartial",
+  "TestIncludeRelativePathOutsidePartials"
+]

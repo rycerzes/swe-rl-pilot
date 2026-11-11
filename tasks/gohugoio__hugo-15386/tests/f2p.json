@@ -1,0 +1,20 @@
+[
+  "TestSafeCallFastPaths",
+  "TestSafeCallFastPaths/any",
+  "TestSafeCallFastPaths/any_any_bool_error",
+  "TestSafeCallFastPaths/any_string_error",
+  "TestSafeCallFastPaths/any_variadic_any_error",
+  "TestSafeCallFastPaths/any_variadic_bool",
+  "TestSafeCallFastPaths/bool",
+  "TestSafeCallFastPaths/ctx_string_variadic",
+  "TestSafeCallFastPaths/ctx_variadic_any_error",
+  "TestSafeCallFastPaths/ctx_variadic_error",
+  "TestSafeCallFastPaths/ctx_variadic_nil",
+  "TestSafeCallFastPaths/map",
+  "TestSafeCallFastPaths/params",
+  "TestSafeCallFastPaths/reflect_value_bool",
+  "TestSafeCallFastPaths/string",
+  "TestSafeCallFastPaths/string_variadic",
+  "TestSafeCallFastPaths/variadic_map_error",
+  "TestSafeCallFastPaths/variadic_string"
+]

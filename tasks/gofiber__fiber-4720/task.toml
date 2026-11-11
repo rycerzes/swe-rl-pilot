@@ -1,0 +1,123 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gofiber__fiber-4720"
+description = "🐛 bug: make static, proxy, adaptor and rewrite act on the path the router matched"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "fiber",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gofiber/fiber"
+ref = "0923873f4a1bd7e5582ab0d6729cf04e683db2ae"
+reference = "https://github.com/gofiber/fiber/pull/4720"
+source_access = "auto"
+built_at = "2026-11-11T00:07:49.538768+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:6727b609d032f2881037dd90bee03bf2ef05c874e923a743c8e255937441e8d2"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gofiber/fiber/pull/4720"
+pr_merged_at = "2026-10-08T06:37:17Z"
+base_commit = "0923873f4a1bd7e5582ab0d6729cf04e683db2ae"
+fail_to_pass = [
+    "Test_Rewrite_UnescapePathDecodesOnce",
+]
+pass_to_pass = [
+    "Test_New",
+    "Test_Rewrite",
+    "Test_Rewrite_AlternationNoLongerEscapesTheAnchors",
+    "Test_Rewrite_BothRuleFieldsPanic",
+    "Test_Rewrite_DeprecatedRulesAreQuotedToo",
+    "Test_Rewrite_DeprecatedRulesOrderIsStable",
+    "Test_Rewrite_DeprecatedRulesRanking",
+    "Test_Rewrite_DeprecatedRulesRanking/a_rule_without_a_wildcard_pins_its_whole_length",
+    "Test_Rewrite_DeprecatedRulesRanking/longer_pinned_prefix_first",
+    "Test_Rewrite_DeprecatedRulesRanking/otherwise_the_key,_so_the_order_is_total",
+    "Test_Rewrite_DeprecatedRulesRanking/same_pinned_text,_fewer_wildcards_first",
+    "Test_Rewrite_DeprecatedRulesRanking/same_prefix,_more_pinned_text_first",
+    "Test_Rewrite_PatternIsPathTextNotRegexp",
+    "Test_Rewrite_PatternIsPathTextNotRegexp/brackets_are_text",
+    "Test_Rewrite_PatternIsPathTextNotRegexp/brackets_match_themselves",
+    "Test_Rewrite_PatternIsPathTextNotRegexp/dot_is_a_dot",
+    "Test_Rewrite_PatternIsPathTextNotRegexp/dot_matches_itself",
+    "Test_Rewrite_PatternIsPathTextNotRegexp/parentheses_are_text",
+    "Test_Rewrite_PatternIsPathTextNotRegexp/parentheses_match_themselves",
+    "Test_Rewrite_PatternIsPathTextNotRegexp/plus_is_text",
+    "Test_Rewrite_PatternIsPathTextNotRegexp/plus_matches_itself",
+    "Test_Rewrite_PatternIsPathTextNotRegexp/question_mark_no_longer_eats_a_shorter_path",
+    "Test_Rewrite_RuleListOrderWins",
+    "Test_Rewrite_StartAnchor",
+    "Test_Rewrite_TwoDigitCaptures",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gofiber__fiber:548756be19a8"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 29.627
+measured_overhead_seconds = 1.885
+measured_copy_seconds = 0.056
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 1
+p2p_count = 25
+source_files = 12
+loc_changed = 883
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:12.108696+00:00"
+inline_recipe_sha256 = "sha256:47e3602e816c57cd7a9cd3d29ec43ec0f7cf69f963e5c6a774a507fd8a63c533"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 627
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gofiber__fiber-4720-5567c5af9f12"

@@ -1,0 +1,513 @@
+diff --git a/client/cookiejar.go b/client/cookiejar.go
+index 9636edf6eac..3ecc273374d 100644
+--- a/client/cookiejar.go
++++ b/client/cookiejar.go
+@@ -491,7 +491,17 @@ func isIPLiteral(host string) bool {
+ 		host = host[1 : len(host)-1]
+ 	}
+ 
+-	return net.ParseIP(host) != nil
++	// Equivalent to net.ParseIP(host) != nil: utils.ParseIPv4/ParseIPv6
++	// accept the same strings once zoned addresses (which net.ParseIP
++	// rejects) are screened out, without allocating on either outcome.
++	if strings.IndexByte(host, '%') >= 0 {
++		return false
++	}
++	if _, ok := utils.ParseIPv4(host); ok {
++		return true
++	}
++	_, ok := utils.ParseIPv6(host)
++	return ok
+ }
+ 
+ func isPublicSuffixDomain(domain string) bool {
+diff --git a/middleware/adaptor/adaptor.go b/middleware/adaptor/adaptor.go
+index 02327d1957e..6c9db4654e3 100644
+--- a/middleware/adaptor/adaptor.go
++++ b/middleware/adaptor/adaptor.go
+@@ -52,12 +52,25 @@ func (*noopConn) SetDeadline(time.Time) error      { return nil }
+ func (*noopConn) SetReadDeadline(time.Time) error  { return nil }
+ func (*noopConn) SetWriteDeadline(time.Time) error { return nil }
+ 
++// pooledCtx bundles the RequestCtx with its noopConn so one pool entry
++// serves both and no per-request conn allocation is needed. The conn
++// comes first to keep the struct's trailing pointer span minimal
++// (govet fieldalignment).
++type pooledCtx struct {
++	conn noopConn
++	fctx fasthttp.RequestCtx
++}
++
+ var ctxPool = sync.Pool{
+ 	New: func() any {
+-		return new(fasthttp.RequestCtx)
++		return new(pooledCtx)
+ 	},
+ }
+ 
++// disabledLogger is shared: it is stateless, and reusing one value keeps
++// the logger interface conversion off the per-request path.
++var disabledLogger = &disableLogger{}
++
+ // LocalContextKey is the key used to store the user's context.Context in the fasthttp request context.
+ // Adapted http.Handler functions can retrieve this context using r.Context().Value(adaptor.LocalContextKey)
+ var localContextKey = &struct{}{}
+@@ -199,9 +212,16 @@ func HTTPMiddleware(mw func(http.Handler) http.Handler) fiber.Handler {
+ 
+ 			// Remove all cookies before setting, see https://github.com/valyala/fasthttp/pull/1864
+ 			c.Request().Header.DelAllCookies()
+-			for key, val := range r.Header {
+-				for _, v := range val {
+-					c.Request().Header.Set(key, v)
++			for key, vals := range r.Header {
++				if len(vals) == 0 {
++					continue
++				}
++				// Set replaces whatever the key held on the fiber request,
++				// then Add appends the remaining values so multi-value
++				// headers survive instead of collapsing to the last value.
++				c.Request().Header.Set(key, vals[0])
++				for _, v := range vals[1:] {
++					c.Request().Header.Add(key, v)
+ 				}
+ 			}
+ 			CopyContextToFiberContext(r.Context(), c.RequestCtx())
+@@ -237,6 +257,24 @@ func isUnixNetwork(network string) bool {
+ 	return network == "unix" || network == "unixgram" || network == "unixpacket"
+ }
+ 
++// parseDecimalPort parses a purely numeric port string. Anything else —
++// signs, service names like "http", overflow — reports ok=false so the
++// caller falls back to net.ResolveTCPAddr, which handles the long tail.
++func parseDecimalPort(s string) (int, bool) {
++	if s == "" || len(s) > 5 {
++		return 0, false
++	}
++	port := 0
++	for i := 0; i < len(s); i++ {
++		d := s[i] - '0'
++		if d > 9 {
++			return 0, false
++		}
++		port = port*10 + int(d)
++	}
++	return port, port <= 65535
++}
++
+ func resolveRemoteAddr(remoteAddr string, localAddr any) (net.Addr, error) {
+ 	if addr, ok := localAddr.(net.Addr); ok && isUnixNetwork(addr.Network()) {
+ 		return addr, nil
+@@ -247,6 +285,23 @@ func resolveRemoteAddr(remoteAddr string, localAddr any) (net.Addr, error) {
+ 		return nil, ErrRemoteAddrEmpty
+ 	}
+ 
++	// Fast path: "ip:port" literals — the only form net/http servers set on
++	// Request.RemoteAddr — build the TCPAddr directly instead of going
++	// through net.ResolveTCPAddr's resolver machinery. Hostnames, service
++	// port names, and anything else fall through to the resolver below.
++	if host, portStr, err := net.SplitHostPort(remoteAddr); err == nil {
++		if port, ok := parseDecimalPort(portStr); ok {
++			if ip, ok := utils.ParseIPv4(host); ok {
++				a := ip.As4()
++				return &net.TCPAddr{IP: a[:], Port: port}, nil
++			}
++			if ip, ok := utils.ParseIPv6(host); ok {
++				a := ip.As16()
++				return &net.TCPAddr{IP: a[:], Port: port, Zone: ip.Zone()}, nil
++			}
++		}
++	}
++
+ 	resolved, err := net.ResolveTCPAddr("tcp", remoteAddr)
+ 	if err == nil {
+ 		return resolved, nil
+@@ -269,8 +324,29 @@ func resolveRemoteAddr(remoteAddr string, localAddr any) (net.Addr, error) {
+ 
+ func handlerFunc(app *fiber.App, h ...fiber.Handler) http.HandlerFunc {
+ 	return func(w http.ResponseWriter, r *http.Request) {
+-		req := fasthttp.AcquireRequest()
+-		defer fasthttp.ReleaseRequest(req)
++		// New fasthttp Ctx from pool
++		pctx := ctxPool.Get().(*pooledCtx) //nolint:forcetypeassert,errcheck // not needed
++		fctx := &pctx.fctx
++		fctx.Response.Reset()
++		fctx.Request.Reset()
++		defer ctxPool.Put(pctx)
++
++		remoteAddr, err := resolveRemoteAddr(r.RemoteAddr, r.Context().Value(http.LocalAddrContextKey))
++		if err != nil {
++			remoteAddr = nil // Fallback to nil
++		}
++		pctx.conn.remoteAddr = remoteAddr
++
++		// Init2 mirrors fasthttp's RequestCtx.Init, but with a no-op
++		// connection instead of fasthttp's fakeAddrer, whose Write panics.
++		// Interim responses (e.g. SendEarlyHints' 103) are then silently
++		// discarded instead of panicking; the final response still reaches
++		// the client through the ResponseWriter copy-back below. Init2 only
++		// touches connection metadata and buffer-retention flags, so the
++		// request is built directly into fctx.Request afterwards — the same
++		// order fasthttp's Init uses, minus its full request copy.
++		fctx.Init2(&pctx.conn, disabledLogger, true)
++		req := &fctx.Request
+ 
+ 		// Convert net/http -> fasthttp request with size limit
+ 		maxBodySize := int64(app.Config().BodyLimit)
+@@ -319,30 +395,22 @@ func handlerFunc(app *fiber.App, h ...fiber.Handler) http.HandlerFunc {
+ 		}
+ 		req.Header.SetProtocol(proto)
+ 
+-		for key, val := range r.Header {
+-			for _, v := range val {
+-				req.Header.Set(key, v)
++		for key, vals := range r.Header {
++			if len(vals) == 0 {
++				continue
++			}
++			// Set replaces any value fasthttp derived while building the
++			// request, then Add appends the remaining values so multi-value
++			// headers (e.g. repeated X-Forwarded-For lines) survive instead
++			// of collapsing to the last value. fasthttp's Add keeps its own
++			// singleton semantics for Cookie/Content-Type/etc., which can
++			// only hold one value there by design.
++			req.Header.Set(key, vals[0])
++			for _, v := range vals[1:] {
++				req.Header.Add(key, v)
+ 			}
+ 		}
+ 
+-		remoteAddr, err := resolveRemoteAddr(r.RemoteAddr, r.Context().Value(http.LocalAddrContextKey))
+-		if err != nil {
+-			remoteAddr = nil // Fallback to nil
+-		}
+-
+-		// New fasthttp Ctx from pool
+-		fctx := ctxPool.Get().(*fasthttp.RequestCtx) //nolint:forcetypeassert,errcheck // not needed
+-		fctx.Response.Reset()
+-		fctx.Request.Reset()
+-		defer ctxPool.Put(fctx)
+-		// Init2 + CopyTo mirror fasthttp's RequestCtx.Init, but with a no-op
+-		// connection instead of fasthttp's fakeAddrer, whose Write panics.
+-		// Interim responses (e.g. SendEarlyHints' 103) are then silently
+-		// discarded instead of panicking; the final response still reaches
+-		// the client through the ResponseWriter copy-back below.
+-		fctx.Init2(&noopConn{remoteAddr: remoteAddr}, &disableLogger{}, true)
+-		req.CopyTo(&fctx.Request)
+-
+ 		if len(h) > 0 {
+ 			// New fiber Ctx
+ 			ctx := app.AcquireCtx(fctx)
+diff --git a/middleware/cache/cache.go b/middleware/cache/cache.go
+index f3e91a69d9c..9e5e79c671e 100644
+--- a/middleware/cache/cache.go
++++ b/middleware/cache/cache.go
+@@ -452,7 +452,7 @@ func New(config ...Config) fiber.Handler {
+ 					c.Response().Header.SetBytesV(fiber.HeaderETag, e.etag)
+ 				}
+ 				clampedDate := clampDateSeconds(e.date, ts)
+-				dateValue := fasthttp.AppendHTTPDate(nil, secondsToTime(clampedDate))
++				dateValue := utils.AppendHTTPDate(nil, secondsToTime(clampedDate))
+ 				c.Response().Header.SetBytesV(fiber.HeaderDate, dateValue)
+ 				for i := range e.headers {
+ 					h := e.headers[i]
+@@ -715,7 +715,7 @@ func New(config ...Config) fiber.Handler {
+ 		dateHeader := c.Response().Header.Peek(fiber.HeaderDate)
+ 		parsedDate, _ := parseHTTPDate(dateHeader)
+ 		e.date = clampDateSeconds(parsedDate, nowUnix)
+-		dateBytes := fasthttp.AppendHTTPDate(nil, secondsToTime(e.date))
++		dateBytes := utils.AppendHTTPDate(nil, secondsToTime(e.date))
+ 		c.Response().Header.SetBytesV(fiber.HeaderDate, dateBytes)
+ 
+ 		// Store all response headers
+@@ -750,7 +750,10 @@ func New(config ...Config) fiber.Handler {
+ 				expiration = secondsToDuration(respCacheControl.maxAge)
+ 				expirationSource = expirationSourceMaxAge
+ 			} else if expiresBytes := c.Response().Header.Peek(fiber.HeaderExpires); len(expiresBytes) > 0 {
+-				expiresAt, err := fasthttp.ParseHTTPDate(expiresBytes)
++				// Same parser as the Date header (utils.go parseHTTPDate) so
++				// both share one acceptance set: IMF-fixdate plus the obsolete
++				// RFC 850 and asctime forms RFC 9110 §5.6.7 requires.
++				expiresAt, err := utils.ParseHTTPDate(expiresBytes)
+ 				if err != nil {
+ 					expiration = time.Nanosecond
+ 					expiresParseError = true
+diff --git a/middleware/cache/keygen.go b/middleware/cache/keygen.go
+index b06651df29a..26d42a7cb87 100644
+--- a/middleware/cache/keygen.go
++++ b/middleware/cache/keygen.go
+@@ -152,18 +152,19 @@ func appendCanonicalQueryString(dst []byte, uri *fasthttp.URI) []byte {
+ 				buf = append(buf, '&')
+ 			}
+ 
+-			escapedKey := url.QueryEscape(key)
+-			escapedValue := url.QueryEscape(value)
++			// Escape straight into the pooled buffer to skip the intermediate
++			// strings url.QueryEscape would allocate per key and value.
++			buf = utils.AppendQueryEscape(buf, key)
++			buf = append(buf, '=')
++			buf = utils.AppendQueryEscape(buf, value)
+ 
+-			// Check buffer size before appending to prevent unbounded growth
+-			if len(buf)+len(escapedKey)+len(escapedValue)+2 > maxQueryBufferSize {
++			// Check buffer size to prevent unbounded growth. Equivalent to the
++			// pre-append check len(prev)+len(key)+len(value)+2 > max: the pair
++			// plus '=' is already appended, leaving only the +1 slack.
++			if len(buf)+1 > maxQueryBufferSize {
+ 				releaseKeyBuffer(bufPtr, buf)
+ 				return appendBoundKeySegment(dst, escapeKeyDelimiters(query))
+ 			}
+-
+-			buf = append(buf, escapedKey...)
+-			buf = append(buf, '=')
+-			buf = append(buf, escapedValue...)
+ 		}
+ 	}
+ 
+diff --git a/middleware/cache/utils.go b/middleware/cache/utils.go
+index a94211545f6..7f573f61af7 100644
+--- a/middleware/cache/utils.go
++++ b/middleware/cache/utils.go
+@@ -90,7 +90,10 @@ func parseHTTPDate(dateBytes []byte) (uint64, bool) {
+ 	if len(dateBytes) == 0 {
+ 		return 0, false
+ 	}
+-	parsedDate, err := fasthttp.ParseHTTPDate(dateBytes)
++	// utils.ParseHTTPDate matches net/http.ParseTime semantics: the fast
++	// scalar path covers IMF-fixdate and, per RFC 9110 §5.6.7, the obsolete
++	// RFC 850 and asctime formats are still accepted via the fallback.
++	parsedDate, err := utils.ParseHTTPDate(dateBytes)
+ 	if err != nil {
+ 		return 0, false
+ 	}
+diff --git a/middleware/hostauthorization/hostauthorization.go b/middleware/hostauthorization/hostauthorization.go
+index da9a03a6022..34132eff73e 100644
+--- a/middleware/hostauthorization/hostauthorization.go
++++ b/middleware/hostauthorization/hostauthorization.go
+@@ -196,11 +196,16 @@ func isValidHostSyntax(host string) bool {
+ 		return false
+ 	}
+ 
+-	// A colon only appears in IPv6 literals; validate those via net.ParseIP.
+-	// DNS names and IPv4 literals are accepted by the label scan below, which
+-	// runs on the hot path of every request and avoids allocating.
++	// A colon only appears in IPv6 literals; validate those with
++	// utils.ParseIPv6. Screening out zoned addresses first makes the
++	// acceptance identical to net.ParseIP (netip.ParseAddr minus zones)
++	// without its net.IP slice allocation on this per-request path.
+ 	if strings.IndexByte(host, ':') >= 0 {
+-		return net.ParseIP(host) != nil
++		if strings.IndexByte(host, '%') >= 0 {
++			return false
++		}
++		_, ok := utils.ParseIPv6(host)
++		return ok
+ 	}
+ 
+ 	// Validate dotted DNS labels in a single pass without allocating.
+diff --git a/middleware/paginate/page_info.go b/middleware/paginate/page_info.go
+index 02cf0077ee8..e772bcf6c89 100644
+--- a/middleware/paginate/page_info.go
++++ b/middleware/paginate/page_info.go
+@@ -6,6 +6,7 @@ import (
+ 	"errors"
+ 	"fmt"
+ 	"net/url"
++	"slices"
+ 
+ 	"github.com/gofiber/utils/v2"
+ )
+@@ -132,10 +133,37 @@ func buildPaginationURL(baseURL, pageParam, pageValue, limitParam, limitValue st
+ 	q := u.Query()
+ 	q.Set(pageParam, pageValue)
+ 	q.Set(limitParam, limitValue)
+-	u.RawQuery = q.Encode()
++	u.RawQuery = encodeQueryValues(q)
+ 	return u.String()
+ }
+ 
++// encodeQueryValues renders q exactly like url.Values.Encode — keys sorted,
++// values in slice order — but escapes with utils.AppendQueryEscape into a
++// single buffer instead of allocating an intermediate string per key and
++// value the way the stdlib does.
++func encodeQueryValues(q url.Values) string {
++	if len(q) == 0 {
++		return ""
++	}
++	keys := make([]string, 0, len(q))
++	for k := range q {
++		keys = append(keys, k)
++	}
++	slices.Sort(keys)
++	var buf []byte
++	for _, k := range keys {
++		for _, v := range q[k] {
++			if len(buf) > 0 {
++				buf = append(buf, '&')
++			}
++			buf = utils.AppendQueryEscape(buf, k)
++			buf = append(buf, '=')
++			buf = utils.AppendQueryEscape(buf, v)
++		}
++	}
++	return utils.UnsafeString(buf)
++}
++
+ // CursorValues returns the decoded cursor key-value map.
+ // If the cursor was parsed by the middleware, the pre-parsed data is returned.
+ // Otherwise it decodes the opaque cursor string.
+diff --git a/middleware/proxy/proxy.go b/middleware/proxy/proxy.go
+index d2ba94cb02d..208e89ff211 100644
+--- a/middleware/proxy/proxy.go
++++ b/middleware/proxy/proxy.go
+@@ -413,7 +413,11 @@ func followRedirects(cli *fasthttp.Client, req *fasthttp.Request, resp *fasthttp
+ 	currentURL := initialURL
+ 	currentHost := currentURL.Host
+ 	for redirects := 0; ; redirects++ {
+-		req.SetRequestURI(currentURL.String())
++		// Rendered once per hop: SetRequestURI copies the bytes and
++		// resolveRedirect below needs the same string, so sharing it saves
++		// a URL.String() allocation on every redirect.
++		currentURLStr := currentURL.String()
++		req.SetRequestURI(currentURLStr)
+ 		// Re-apply the scheme each hop: SetRequestURI keeps the previous
+ 		// scheme when req.isTLS is set, so a redirect that changes scheme
+ 		// (HTTP→HTTPS upgrade, or HTTPS→HTTP when AllowHTTPSDowngrade is
+@@ -434,7 +438,7 @@ func followRedirects(cli *fasthttp.Client, req *fasthttp.Request, resp *fasthttp
+ 		if len(location) == 0 {
+ 			return fasthttp.ErrMissingLocation
+ 		}
+-		nextURL, err := resolveRedirect(currentURL.String(), location, policy)
++		nextURL, err := resolveRedirect(currentURLStr, location, policy)
+ 		if err != nil {
+ 			return err
+ 		}
+diff --git a/middleware/proxy/security.go b/middleware/proxy/security.go
+index f817bed9083..e0394df1005 100644
+--- a/middleware/proxy/security.go
++++ b/middleware/proxy/security.go
+@@ -227,9 +227,7 @@ var hopByHopHeaders = []string{
+ func stripHopByHopRequestHeaders(req *fasthttp.Request, except ...string) {
+ 	// Headers listed in Connection must be removed first so the
+ 	// listing is honored before the Connection field itself is dropped.
+-	for _, name := range connectionListedHeaders(req.Header.PeekAll(fiber.HeaderConnection)) {
+-		req.Header.Del(name)
+-	}
++	delConnectionListedHeaders(&req.Header, req.Header.PeekAll(fiber.HeaderConnection))
+ 	for _, h := range hopByHopHeaders {
+ 		if containsFold(except, h) {
+ 			continue
+@@ -241,9 +239,7 @@ func stripHopByHopRequestHeaders(req *fasthttp.Request, except ...string) {
+ // stripHopByHopResponseHeaders applies the same filtering on the way
+ // back, so upstream cannot leak connection-scoped state to the client.
+ func stripHopByHopResponseHeaders(res *fasthttp.Response, except ...string) {
+-	for _, name := range connectionListedHeaders(res.Header.PeekAll(fiber.HeaderConnection)) {
+-		res.Header.Del(name)
+-	}
++	delConnectionListedHeaders(&res.Header, res.Header.PeekAll(fiber.HeaderConnection))
+ 	for _, h := range hopByHopHeaders {
+ 		if containsFold(except, h) {
+ 			continue
+@@ -261,22 +257,28 @@ func containsFold(haystack []string, needle string) bool {
+ 	return false
+ }
+ 
+-// connectionListedHeaders returns the comma-separated header names
+-// listed inside one or more Connection header fields, per RFC 7230 §6.1.
+-func connectionListedHeaders(values [][]byte) []string {
+-	if len(values) == 0 {
+-		return nil
+-	}
+-	var out []string
++// headerDeleter is the Del method shared by fasthttp's request and
++// response header types.
++type headerDeleter interface {
++	Del(key string)
++}
++
++// delConnectionListedHeaders deletes every comma-separated header name
++// listed inside one or more Connection header fields, per RFC 7230 §6.1,
++// without copying the values or collecting the names into a slice. The
++// names handed to Del alias the Connection value buffers; that is sound
++// because fasthttp's Del only re-slices the header's entry list — it never
++// rewrites other entries' key/value buffers — and Del does not retain the
++// name after returning.
++func delConnectionListedHeaders(h headerDeleter, values [][]byte) {
+ 	for _, v := range values {
+-		for name := range strings.SplitSeq(string(v), ",") {
++		for name := range strings.SplitSeq(utils.UnsafeString(v), ",") {
+ 			name = utils.TrimSpace(name)
+ 			if name != "" {
+-				out = append(out, name)
++				h.Del(name)
+ 			}
+ 		}
+ 	}
+-	return out
+ }
+ 
+ // parseUpstream returns the parsed url.URL for raw. Hosts without an
+diff --git a/redirect.go b/redirect.go
+index aef41d4d76d..c4ffbfe9ae4 100644
+--- a/redirect.go
++++ b/redirect.go
+@@ -369,7 +369,7 @@ func (r *Redirect) Route(name string, config ...RedirectConfig) error {
+ 			// Escape the value so characters like &, =, # or + don't break the
+ 			// query string. Keys are left as-is to preserve the nested-key
+ 			// convention (e.g. `data[0][name]`) used elsewhere.
+-			queryText.WriteString(url.QueryEscape(v))
++			queryText.B = utils.AppendQueryEscape(queryText.B, v)
+ 		}
+ 
+ 		return r.To(location + "?" + r.c.app.toString(queryText.Bytes()))
+diff --git a/req.go b/req.go
+index d2652959d5e..a4ab1826bd3 100644
+--- a/req.go
++++ b/req.go
+@@ -6,8 +6,6 @@ import (
+ 	"math"
+ 	"mime/multipart"
+ 	"net"
+-	"net/http"
+-	"net/netip"
+ 	"strings"
+ 	"time"
+ 
+@@ -527,14 +525,14 @@ func (r *DefaultReq) Fresh() bool {
+ 
+ // parseHTTPDate parses an HTTP-date field value. RFC 9110 Section 5.6.7
+ // requires recipients to accept the obsolete RFC 850 and ANSI C asctime()
+-// formats in addition to the preferred IMF-fixdate, so after the fast
+-// IMF-fixdate path fails, fall back to net/http's ParseTime, which tries all
+-// three formats.
++// formats in addition to the preferred IMF-fixdate; utils.ParseHTTPDate
++// covers all three with net/http.ParseTime semantics, taking an
++// allocation-free fast path for canonical IMF-fixdate input. Unlike
++// net/http.ParseTime it also tolerates surrounding ASCII whitespace —
++// deliberate here, matching RFC 9110 §5.5's exclusion of leading and
++// trailing OWS from field values.
+ func parseHTTPDate(date []byte) (time.Time, error) {
+-	if t, err := fasthttp.ParseHTTPDate(date); err == nil {
+-		return t, nil
+-	}
+-	t, err := http.ParseTime(string(date))
++	t, err := utils.ParseHTTPDate(date)
+ 	if err != nil {
+ 		// Callers only nil-check the error; skip wrapping to avoid an
+ 		// allocation for every malformed client-supplied date.
+@@ -788,9 +786,13 @@ func (r *DefaultReq) hasTrustedProxyConfig() bool {
+ func (r *DefaultReq) isTrustedProxyIP(ipStr string) bool {
+ 	cfg := r.c.app.config.TrustProxyConfig
+ 
+-	ip, err := netip.ParseAddr(ipStr)
+-	if err != nil {
+-		return false
++	// utils.ParseIPv4/ParseIPv6 together accept exactly the strings
++	// netip.ParseAddr does, without allocating an error for invalid input.
++	ip, ok := utils.ParseIPv4(ipStr)
++	if !ok {
++		if ip, ok = utils.ParseIPv6(ipStr); !ok {
++			return false
++		}
+ 	}
+ 
+ 	if cfg.Loopback && ip.IsLoopback() {

@@ -1,0 +1,3632 @@
+diff --git a/app.go b/app.go
+index 3f5ba2217b8..032d25ac55c 100644
+--- a/app.go
++++ b/app.go
+@@ -210,8 +210,9 @@ type Config struct { //nolint:govet // Aligning the struct fields is not necessa
+ 	// Warning: middleware never runs for skipped requests. This breaks Use-based
+ 	// responders on unregistered paths (catch-all 404 pages, static, proxy,
+ 	// healthcheck, rewrite and redirect middleware); loggers and metrics will not
+-	// see the skipped requests either. CORS preflight requests are exempt, so cors
+-	// middleware keeps working. Customize the 404/405 responses via ErrorHandler.
++	// see the skipped requests either, and a rate limiter neither counts nor
++	// throttles them. CORS preflight requests are exempt, so cors middleware
++	// keeps working. Customize the 404/405 responses via ErrorHandler.
+ 	//
+ 	// Note: with more than 64 entries in RequestMethods the fast path is disabled
+ 	// and requests fall through to the normal router.
+diff --git a/bind.go b/bind.go
+index ac3dab25bf7..629f12a7be8 100644
+--- a/bind.go
++++ b/bind.go
+@@ -12,7 +12,6 @@ import (
+ 	"github.com/gofiber/fiber/v3/binder"
+ 	"github.com/gofiber/fiber/v3/internal/nilerror"
+ 	"github.com/gofiber/schema"
+-	"github.com/gofiber/utils/v2"
+ )
+ 
+ // CustomBinder An interface to register custom binders.
+@@ -346,12 +345,9 @@ func (b *Bind) XML(out any) error {
+ // If Content-Type is "application/x-www-form-urlencoded" or "multipart/form-data", it will bind the form values.
+ // Multipart file fields are supported using *multipart.FileHeader, []*multipart.FileHeader, or *[]*multipart.FileHeader.
+ func (b *Bind) Form(out any) error {
+-	// Normalize the Content-Type here too, not just in Body: fasthttp locates
+-	// the multipart boundary and the urlencoded body with case-sensitive
+-	// comparisons, so a legal "Multipart/Form-Data" reaching this entry point
+-	// directly would otherwise bind nothing and report no error.
+-	normalizeContentTypeMediaType(&b.ctx.RequestCtx().Request.Header)
+-
++	// The Content-Type is deliberately not normalized here: FormBinding.Bind opens
++	// by doing it itself, so a fold here would be a second pass over the same
++	// header. Body still folds, because it must read the media type to dispatch.
+ 	bind := binder.GetFromThePool[*binder.FormBinding](&binder.FormBinderPool)
+ 	bind.EnableSplitting = b.ctx.App().config.EnableSplittingOnParsers
+ 	bind.MaxBodySize = b.ctx.App().config.BodyLimit
+@@ -401,10 +397,7 @@ func (b *Bind) MsgPack(out any) error {
+ // If none of the content types above are matched, it'll take a look custom binders by checking the MIMETypes() method of custom binder.
+ // If there is no custom binder for mime type of body, it will return a ErrUnprocessableEntity error.
+ func (b *Bind) Body(out any) error {
+-	// Get content-type, folding only the media type so the case-sensitive
+-	// multipart boundary survives (see normalizeContentTypeMediaType).
+-	raw := utils.UnsafeString(normalizeContentTypeMediaType(&b.ctx.RequestCtx().Request.Header))
+-	ctype := binder.FilterFlags(utils.ParseVendorSpecificContentType(raw))
++	ctype := bindMediaType(&b.ctx.RequestCtx().Request.Header)
+ 
+ 	// Check custom binders
+ 	binders := b.ctx.App().customBinders
+diff --git a/binder/form.go b/binder/form.go
+index cbab40b3456..7f142f2f8ae 100644
+--- a/binder/form.go
++++ b/binder/form.go
+@@ -4,6 +4,7 @@ import (
+ 	"mime/multipart"
+ 	"sync"
+ 
++	"github.com/gofiber/fiber/v3/internal/mediatype"
+ 	"github.com/gofiber/utils/v2"
+ 	"github.com/valyala/fasthttp"
+ )
+@@ -40,9 +41,15 @@ func (*FormBinding) Name() string {
+ 
+ // Bind parses the request body and returns the result.
+ func (b *FormBinding) Bind(req *fasthttp.Request, out any) error {
++	// Callers reaching the binder directly skip Fiber's normalization, and
++	// comparing case-insensitively is not enough: PostArgs and MultipartForm match
++	// the media type and "boundary=" case-sensitively. Guarded — the fold writes.
++	if mediatype.IsForm(req.Header.ContentType()) {
++		mediatype.NormalizeRequestContentType(&req.Header)
++	}
++
+ 	// Handle multipart form. Media types are case-insensitive
+-	// (RFC 9110 Section 8.3.1), so compare accordingly — callers that reach
+-	// the binder directly do not go through Fiber's header normalization.
++	// (RFC 9110 Section 8.3.1), so compare accordingly.
+ 	if utils.EqualFold(FilterFlags(utils.UnsafeString(req.Header.ContentType())), MIMEMultipartForm) {
+ 		return b.bindMultipart(req, out)
+ 	}
+diff --git a/client/cookiejar.go b/client/cookiejar.go
+index c729f78593c..fedc8c01521 100644
+--- a/client/cookiejar.go
++++ b/client/cookiejar.go
+@@ -177,6 +177,7 @@ func (cj *CookieJar) getCookiesByHost(host string) []*fasthttp.Cookie {
+ 	if len(kept) == 0 {
+ 		delete(cj.hostCookies, host)
+ 	} else {
++		clearVacated(stored, kept)
+ 		cj.hostCookies[host] = kept
+ 	}
+ 
+@@ -229,6 +230,7 @@ func (cj *CookieJar) cookiesForRequest(host string, path []byte, secure bool) []
+ 		if len(kept) == 0 {
+ 			delete(cj.hostCookies, domain)
+ 		} else {
++			clearVacated(cookies, kept)
+ 			cj.hostCookies[domain] = kept
+ 		}
+ 	}
+@@ -248,6 +250,12 @@ func (cj *CookieJar) cookiesForRequest(host string, path []byte, secure bool) []
+ 		})
+ 	}
+ 
++	if len(matched) == 0 {
++		// Get documents a nil result when nothing matches, and a caller may be
++		// testing for exactly that; make([]T, 0) is not nil.
++		return nil
++	}
++
+ 	out := make([]*fasthttp.Cookie, len(matched))
+ 	for i, m := range matched {
+ 		out[i] = m.cookie
+@@ -319,6 +327,11 @@ func (cj *CookieJar) setByHostAndPath(host, requestPath []byte, cookies ...*fast
+ 
+ 	defaultPath := defaultCookiePathFor(requestPath)
+ 
++	// One clock reading for the whole call, as parseCookiesFromResp already does.
++	// The capacity sweep below runs per cookie, and a fresh time.Now() inside it
++	// bought nothing but a syscall per cookie while cj.mu is held.
++	now := time.Now()
++
+ 	for _, cookie := range cookies {
+ 		// Fold with utilsstrings.ToLower rather than in place: the cookie
+ 		// belongs to the caller, and the jar documents that it only stores
+@@ -342,7 +355,7 @@ func (cj *CookieJar) setByHostAndPath(host, requestPath []byte, cookies ...*fast
+ 			}
+ 		}
+ 
+-		cj.ensureHostCapacityLocked(key, time.Now())
++		cj.ensureHostCapacityLocked(key, now)
+ 		hostCookies := cj.hostCookies[key]
+ 
+ 		// Normalize the path up front so an entry stored through this API is
+@@ -484,15 +497,9 @@ func defaultCookiePathFor(requestPath []byte) []byte {
+ 
+ // setDefaultCookiePath stores path as c's Path attribute.
+ //
+-// fasthttp's Cookie.SetPathBytes runs the value through normalizePath, which
+-// percent-decodes it and turns ';' into a space. The path handed to us came
+-// from URI.Path(), which fasthttp has already decoded once, so setting it
+-// naively decodes twice: a request for "/a%2541b/c" would store the scope
+-// "/aAb" and the cookie could never be sent again, not even to the URL that
+-// set it. Escaping '%' survives the second decode; if the value still does not
+-// round-trip (a path containing ';', which normalizePath rewrites
+-// unconditionally), fall back to leaving the scope at "/" — broader than the
+-// RFC prescribes, but the cookie stays usable instead of being silently lost.
++// SetPathBytes percent-decodes the value, and the path came from URI.Path()
++// already decoded once, so setting it naively decodes twice — "/a%2541b/c"
++// stored "/aAb". A path holding ';' cannot round-trip and falls back to "/".
+ func setDefaultCookiePath(c *fasthttp.Cookie, path []byte) {
+ 	c.SetPathBytes(escapePercent(path))
+ 	if !bytes.Equal(c.Path(), path) {
+@@ -593,7 +600,12 @@ func (cj *CookieJar) parseCookiesFromResp(host, path []byte, resp *fasthttp.Resp
+ 					kept = append(kept, v)
+ 				}
+ 			}
+-			cj.hostCookies[key] = kept
++			if len(kept) == 0 {
++				delete(cj.hostCookies, key)
++			} else {
++				clearVacated(cookies, kept)
++				cj.hostCookies[key] = kept
++			}
+ 			fasthttp.ReleaseCookie(c)
+ 		}
+ 		fasthttp.ReleaseCookie(tmp)
+@@ -675,6 +687,7 @@ func (cj *CookieJar) ensureHostCapacityLocked(key string, now time.Time) {
+ 			}
+ 			continue
+ 		}
++		clearVacated(cookies, kept)
+ 		cj.hostCookies[host] = kept
+ 	}
+ 
+diff --git a/client/core.go b/client/core.go
+index ad08f74f865..c9fb941256f 100644
+--- a/client/core.go
++++ b/client/core.go
+@@ -108,6 +108,13 @@ func (c *core) execFunc() (*Response, error) {
+ 		resp = AcquireResponse()
+ 		resp.setClient(c.client)
+ 		resp.setRequest(c.req)
++		// reqv carries the URI of the hop that produced this response, which after a
++		// redirect is not c.req's. Record it before reqv is pooled so the response
++		// hooks can attribute cookies to its real origin — and only where a jar
++		// will read it, since the copy is otherwise pure cost on every request.
++		if c.client != nil && c.client.cookieJar != nil {
++			resp.setRespondedURI(reqv.URI())
++		}
+ 
+ 		// Swap the fasthttp response with the Fiber response's RawResponse field.
+ 		// This is required, as (*fasthttp.Response).CopyTo() explicitly does not
+diff --git a/client/errors.go b/client/errors.go
+index 47f9f004e6d..45a5d36eca3 100644
+--- a/client/errors.go
++++ b/client/errors.go
+@@ -12,9 +12,8 @@ var (
+ 	errCookieJarTypeAssertion    = errors.New("failed to type-assert to *CookieJar")
+ 	errSyncPoolBuffer            = errors.New("failed to retrieve buffer from a sync.Pool")
+ 
+-	// ErrRedirectDowngrade is returned when DoRedirects encounters a
+-	// redirect from an HTTPS origin to a plaintext HTTP target.
+-	// Following such a redirect would leak any credentials, cookies, or
+-	// session tokens that the original HTTPS handshake protected.
++	// ErrRedirectDowngrade is returned when a redirect leads from an HTTPS origin
++	// to plaintext HTTP, on every transport. Set MaxRedirects to 0 to take such a
++	// hop yourself instead.
+ 	ErrRedirectDowngrade = errors.New("client: HTTPS to HTTP redirect blocked")
+ )
+diff --git a/client/hooks.go b/client/hooks.go
+index 997f428ff0e..20e22964f29 100644
+--- a/client/hooks.go
++++ b/client/hooks.go
+@@ -342,9 +342,12 @@ func parserResponseCookie(c *Client, resp *Response, req *Request) error {
+ 		return err
+ 	}
+ 
+-	// Store cookies in the cookie jar if available.
++	// Store cookies in the jar if available, keyed by the responding URI rather
++	// than the requested one — otherwise a redirect's last hop could plant cookies
++	// for an unrelated origin. Only the final response reaches this hook.
+ 	if c.cookieJar != nil {
+-		c.cookieJar.parseCookiesFromResp(req.RawRequest.URI().Host(), req.RawRequest.URI().Path(), resp.RawResponse)
++		host, path := resp.respondedOrigin(req.RawRequest.URI())
++		c.cookieJar.parseCookiesFromResp(host, path, resp.RawResponse)
+ 	}
+ 
+ 	return nil
+diff --git a/client/response.go b/client/response.go
+index dfe8b6365b3..7543130bdd7 100644
+--- a/client/response.go
++++ b/client/response.go
+@@ -22,6 +22,12 @@ type Response struct {
+ 
+ 	RawResponse *fasthttp.Response
+ 	cookie      []*fasthttp.Cookie
++
++	// respondedHost and respondedPath record where the response was actually served
++	// from, which cookie storage must follow or a redirect target plants cookies
++	// for an origin it does not control. Byte slices: a URI would cost ~296 bytes.
++	respondedHost []byte
++	respondedPath []byte
+ }
+ 
+ // setClient sets the client instance in the response. The client object is used by core functionalities.
+@@ -34,6 +40,42 @@ func (r *Response) setRequest(req *Request) {
+ 	r.request = req
+ }
+ 
++// setRespondedURI records where the response was served from, copying into the
++// pooled Response's own buffers so the values stay valid after the caller
++// releases its request.
++func (r *Response) setRespondedURI(uri *fasthttp.URI) {
++	if uri == nil {
++		return
++	}
++	r.respondedHost = append(r.respondedHost[:0], uri.Host()...)
++	r.respondedPath = append(r.respondedPath[:0], uri.Path()...)
++}
++
++// maxOriginBuf bounds the recorded-origin buffers kept on a pooled Response. A
++// redirect target chooses the path these hold, so a run of long ones would
++// otherwise leave every pooled Response holding a buffer sized to the longest
++// it ever saw.
++const maxOriginBuf = 4 * 1024
++
++// resetOriginBuf empties b for reuse, dropping it outright when it grew past
++// what is worth carrying between requests.
++func resetOriginBuf(b []byte) []byte {
++	if cap(b) > maxOriginBuf {
++		return nil
++	}
++	return b[:0]
++}
++
++// respondedOrigin returns the host and path the response was served from,
++// falling back to fallback when they were not recorded — a Response assembled
++// outside the normal execution path.
++func (r *Response) respondedOrigin(fallback *fasthttp.URI) (host, path []byte) { //nolint:nonamedreturns // names document the two results
++	if len(r.respondedHost) == 0 {
++		return fallback.Host(), fallback.Path()
++	}
++	return r.respondedHost, r.respondedPath
++}
++
+ // Status returns the HTTP status message of the executed request.
+ func (r *Response) Status() string {
+ 	return string(r.RawResponse.Header.StatusMessage())
+@@ -193,6 +235,8 @@ func (r *Response) Save(v any) error {
+ func (r *Response) Reset() {
+ 	r.client = nil
+ 	r.request = nil
++	r.respondedHost = resetOriginBuf(r.respondedHost)
++	r.respondedPath = resetOriginBuf(r.respondedPath)
+ 
+ 	for len(r.cookie) != 0 {
+ 		t := r.cookie[0]
+diff --git a/client/transport.go b/client/transport.go
+index 927ddc8d211..8f0911b0564 100644
+--- a/client/transport.go
++++ b/client/transport.go
+@@ -5,8 +5,11 @@ package client
+ 
+ import (
+ 	"crypto/tls"
++	"fmt"
++	"strings"
+ 	"time"
+ 
++	"github.com/gofiber/fiber/v3/internal/crosshost"
+ 	"github.com/gofiber/utils/v2"
+ 	"github.com/valyala/fasthttp"
+ )
+@@ -59,8 +62,17 @@ func (s *standardClientTransport) DoDeadline(req *fasthttp.Request, resp *fastht
+ 	return s.client.DoDeadline(req, resp, deadline)
+ }
+ 
++// DoRedirects follows redirects through doRedirectsWithClient rather than
++// fasthttp's own loop, so every transport applies the same target validation.
++// fasthttp's loop takes an HTTPS-to-HTTP hop; this one refuses it.
+ func (s *standardClientTransport) DoRedirects(req *fasthttp.Request, resp *fasthttp.Response, maxRedirects int) error {
+-	return s.client.DoRedirects(req, resp, maxRedirects)
++	// Before the loop serializes the URI, as fasthttp's own DoRedirects does:
++	// the setting has to reach req.URI() first or "/a//b" is normalized away on
++	// the very request the transport was configured to leave alone.
++	if s.client.DisablePathNormalizing {
++		req.URI().DisablePathNormalizing = true
++	}
++	return doRedirectsWithClient(req, resp, maxRedirects, s.client)
+ }
+ 
+ func (s *standardClientTransport) CloseIdleConnections() {
+@@ -113,8 +125,14 @@ func (h *hostClientTransport) DoDeadline(req *fasthttp.Request, resp *fasthttp.R
+ 	return h.client.DoDeadline(req, resp, deadline)
+ }
+ 
++// DoRedirects uses the shared loop for the same reasons as
++// standardClientTransport.DoRedirects.
+ func (h *hostClientTransport) DoRedirects(req *fasthttp.Request, resp *fasthttp.Response, maxRedirects int) error {
+-	return h.client.DoRedirects(req, resp, maxRedirects)
++	// See standardClientTransport.DoRedirects.
++	if h.client.DisablePathNormalizing {
++		req.URI().DisablePathNormalizing = true
++	}
++	return doRedirectsWithClient(req, resp, maxRedirects, h.client)
+ }
+ 
+ func (h *hostClientTransport) CloseIdleConnections() {
+@@ -286,29 +304,53 @@ func walkBalancingClientWithBreak(client any, fn func(*fasthttp.HostClient) bool
+ }
+ 
+ // redirectClient describes the minimal Do-capable surface needed by
+-// doRedirectsWithClient so transports that do not expose DoRedirects (such as
+-// fasthttp.LBClient) can participate in redirect handling.
++// doRedirectsWithClient, which every transport satisfies including
++// fasthttp.LBClient, the one that exposes no DoRedirects of its own.
+ type redirectClient interface {
+ 	Do(req *fasthttp.Request, resp *fasthttp.Response) error
+ }
+ 
+-// doRedirectsWithClient mirrors fasthttp's redirect loop for transports that do
+-// not expose DoRedirects (e.g. fasthttp.LBClient). The helper always issues the
+-// initial request, respects zero redirect limits, falls back to the default cap
+-// for negative values, and validates redirect targets before following them.
++// doRedirectsWithClient is the redirect loop behind every transport, so target
++// validation does not depend on which one a caller built. It always issues the
++// initial request, falls back to the default cap for a negative limit, and
++// validates a redirect target before following one.
++//
++// A limit of zero is counted the way fasthttp counts it — the first redirect is
++// the first one counted, so it returns ErrTooManyRedirects. Returning the
++// redirect response instead left a caller unable to tell a request that finished
++// from one that stopped at a hop, and it is what the DoRedirects this stands in
++// for does.
+ func doRedirectsWithClient(req *fasthttp.Request, resp *fasthttp.Response, maxRedirects int, client redirectClient) error {
++	if resp == nil {
++		// "Response is ignored if resp is nil", per fasthttp's own DoRedirects
++		// doc. Its loop reads resp.Header regardless and panics, so honor the
++		// documented contract here rather than inherit that.
++		resp = fasthttp.AcquireResponse()
++		defer fasthttp.ReleaseResponse(resp)
++	}
++
+ 	currentURL := req.URI().String()
++	initialHostname := hostnameWithoutPort(string(req.URI().Host()))
+ 	redirects := 0
+-	singleRequestOnly := maxRedirects <= 0
+ 
+ 	if maxRedirects < 0 {
+ 		maxRedirects = defaultRedirectLimit
+-		singleRequestOnly = false
+ 	}
+ 
+ 	for {
+ 		req.SetRequestURI(currentURL)
+ 
++		// Where fasthttp's own loop calls the error-returning req.parseURI, and
++		// for the same reason: Request.URI swallows the error and hands back a
++		// half-parsed URI, so "http://example.com:abc/x" keeps the malformed
++		// authority as its host and loses the path. A HostClient dials its fixed
++		// Addr regardless, so that host went out as the Host header of a request
++		// the caller never wrote. The redirect targets below are checked as they
++		// are composed; this is the same check for the URI the caller supplied.
++		if err := parsesAsURI([]byte(currentURL)); err != nil {
++			return err
++		}
++
+ 		if err := client.Do(req, resp); err != nil {
+ 			return err
+ 		}
+@@ -318,10 +360,6 @@ func doRedirectsWithClient(req *fasthttp.Request, resp *fasthttp.Response, maxRe
+ 			return nil
+ 		}
+ 
+-		if singleRequestOnly {
+-			return nil
+-		}
+-
+ 		redirects++
+ 		if redirects > maxRedirects {
+ 			return fasthttp.ErrTooManyRedirects
+@@ -332,30 +370,133 @@ func doRedirectsWithClient(req *fasthttp.Request, resp *fasthttp.Response, maxRe
+ 			return fasthttp.ErrMissingLocation
+ 		}
+ 
+-		nextURL, err := composeRedirectURL(currentURL, location, req.DisableRedirectPathNormalizing)
++		nextURL, nextHost, err := composeRedirectURL(currentURL, location, req.DisableRedirectPathNormalizing)
+ 		if err != nil {
+ 			return err
+ 		}
+ 		currentURL = nextURL
+ 
+-		if req.Header.IsPost() && (statusCode == fasthttp.StatusMovedPermanently || statusCode == fasthttp.StatusFound || statusCode == fasthttp.StatusSeeOther) {
+-			req.Header.SetMethod(fasthttp.MethodGet)
+-			req.SetBody(nil)
+-			req.Header.Del(fasthttp.HeaderContentType)
+-			req.Header.Del(fasthttp.HeaderContentLength)
++		// 301, 302 and 303 retry as a GET without the body: net/http's
++		// redirectBehavior. The body goes even when the method already was GET or
++		// HEAD, or it would be replayed to the target, possibly a different host.
++		switch statusCode {
++		case fasthttp.StatusMovedPermanently, fasthttp.StatusFound, fasthttp.StatusSeeOther:
++			if !req.Header.IsGet() && !req.Header.IsHead() {
++				req.Header.SetMethod(fasthttp.MethodGet)
++			}
++			dropRequestBody(req)
++		}
++
++		// Credentials are scoped to the origin that issued them, so drop them once
++		// the chain leaves it. net/http's boundary, which fasthttp also implements:
++		// against the initial host, ignoring the port, subdomains still trusted.
++		if !trustedRedirectTarget(nextHost, initialHostname) {
++			for _, h := range crosshost.SensitiveHeaders {
++				req.Header.Del(h)
++			}
+ 		}
+ 	}
+ }
+ 
++// dropRequestBody removes a request's body and everything framing or describing
++// it: Content-Length, Transfer-Encoding and Trailer signal one (RFC 9112),
++// Content-Type and Content-Encoding describe one no longer there.
++func dropRequestBody(req *fasthttp.Request) {
++	req.Header.Del(fasthttp.HeaderContentLength)
++	req.Header.Del(fasthttp.HeaderContentType)
++	req.Header.Del(fasthttp.HeaderContentEncoding)
++	req.Header.Del(fasthttp.HeaderTransferEncoding)
++	req.Header.Del(fasthttp.HeaderTrailer)
++	// A 100-continue expectation may not be generated without content
++	// (RFC 9110 Section 10.1.1), and a strict target answers the bodyless
++	// follow-up with 417 rather than the redirect the caller was following.
++	req.Header.Del(fasthttp.HeaderExpect)
++	req.ResetBody()
++	// Load-bearing, not bookkeeping: Request.Write falls back to the parsed form
++	// when the body is empty, so a caller that had read PostArgs would have sent
++	// the old "a=1" as the body of the redirected GET.
++	//
++	// fasthttp's own loop clears the parsed flag beside this, which leaves a
++	// reused request re-parsing whatever body it is given next. That half is not
++	// reachable from here: parsedPostArgs is unexported and only Request.Reset
++	// and ReadLimitBody clear it, and Reset would take the URI, headers and TLS
++	// flag this loop is still using. What differs is confined to a caller that
++	// reuses the request without resetting it: its PostArgs reads empty rather
++	// than re-parsing. The body it sends is the new one either way, and an
++	// untouched fasthttp request is worse off there — it hands back the previous
++	// body's values, since SetBody does not invalidate the form either.
++	req.PostArgs().Reset()
++}
++
++// hostnameWithoutPort strips the port from a host[:port] value, leaving a
++// bracketed IPv6 literal's own colons alone.
++func hostnameWithoutPort(host string) string {
++	// More than one colon without brackets is a bare IPv6 literal, where the last
++	// colon belongs to the address: truncating there folds "fe80::1" and
++	// "fe80::2" to one name, and a hop between them would keep its credentials.
++	if strings.HasPrefix(host, "[") || strings.Count(host, ":") <= 1 {
++		if i := strings.LastIndexByte(host, ':'); i >= 0 && strings.IndexByte(host[i:], ']') < 0 {
++			host = host[:i]
++		}
++	}
++	// Exactly one matched pair, not every bracket (strings.Trim folds "[[x]]"
++	// to "x"). Two spellings must never fold to one name here.
++	if len(host) >= 2 && host[0] == '[' && host[len(host)-1] == ']' {
++		host = host[1 : len(host)-1]
++	}
++	return host
++}
++
++// trustedRedirectTarget reports whether credentials issued for initialHostname
++// may still be sent to host, which may carry a port: trusted when it is that
++// host or a subdomain — net/http's rule for forwarding sensitive headers.
++func trustedRedirectTarget(host, initialHostname string) bool {
++	target := hostnameWithoutPort(host)
++	if utils.EqualFold(target, initialHostname) {
++		return true
++	}
++	// No initial hostname means no origin to be a subdomain of, and the suffix
++	// test degenerates: every host matches "", so a name ending in '.' would
++	// back trusted and keep the credentials.
++	if initialHostname == "" {
++		return false
++	}
++	// The same bail-out net/http's isDomainOrSubdomain makes: a ':' or '%' means
++	// this is no hostname, and the suffix test would match inside an IPv6 zone
++	// identifier — "[::1%.example.com]" would come back a subdomain of it.
++	if strings.ContainsAny(target, ":%") {
++		return false
++	}
++	return len(target) > len(initialHostname) &&
++		target[len(target)-len(initialHostname)-1] == '.' &&
++		utils.HasSuffixFold(target, initialHostname)
++}
++
+ // composeRedirectURL resolves a redirect target relative to the current request
+ // URL while rejecting suspicious payloads (e.g. control characters) and
+ // restricting schemes to HTTP/S so caller-provided Location headers cannot
+ // trigger arbitrary transports. Redirects from HTTPS to plaintext HTTP are
+ // rejected to prevent credentials from leaking after a TLS handshake.
+-func composeRedirectURL(base string, location []byte, disablePathNormalizing bool) (string, error) {
++//
++// It returns the resolved URL along with its host, which the caller compares
++// against the previous hop to decide whether origin-scoped credentials still
++// apply.
++// parsesAsURI reports whether fasthttp reads full as a URI at all, returning the
++// reason it does not. Only Parse surfaces that; Update and UpdateBytes discard it.
++func parsesAsURI(full []byte) error {
++	check := fasthttp.AcquireURI()
++	defer fasthttp.ReleaseURI(check)
++
++	if err := check.Parse(nil, full); err != nil {
++		return fmt.Errorf("%w: %w", fasthttp.ErrorInvalidURI, err)
++	}
++	return nil
++}
++
++func composeRedirectURL(base string, location []byte, disablePathNormalizing bool) (redirectURL, host string, err error) { //nolint:nonamedreturns // names document the two string results
+ 	for _, b := range location {
+ 		if b < 0x20 || b == 0x7f {
+-			return "", fasthttp.ErrorInvalidURI
++			return "", "", fasthttp.ErrorInvalidURI
+ 		}
+ 	}
+ 
+@@ -367,18 +508,29 @@ func composeRedirectURL(base string, location []byte, disablePathNormalizing boo
+ 	uri.UpdateBytes(location)
+ 	uri.DisablePathNormalizing = disablePathNormalizing
+ 
++	// UpdateBytes resolves the reference but discards the parse error, leaving
++	// whatever it had read behind: "http://example.com:abc/x" keeps the host
++	// "example.com:abc" and loses the path. fasthttp's own redirect loop returned
++	// that error rather than sending a second request, and a HostClient connects
++	// to its fixed Addr, so following one carries the malformed Host to a server
++	// that would otherwise never have been asked. Parse reports what UpdateBytes
++	// swallowed, so ask it of the result.
++	if err := parsesAsURI(uri.FullURI()); err != nil {
++		return "", "", err
++	}
++
+ 	scheme := uri.Scheme()
+ 	if len(scheme) > 0 && !utils.EqualFold(scheme, httpScheme) && !utils.EqualFold(scheme, httpsScheme) {
+-		return "", fasthttp.ErrorInvalidURI
++		return "", "", fasthttp.ErrorInvalidURI
+ 	}
+ 
+ 	if len(scheme) > 0 && len(uri.Host()) == 0 {
+-		return "", fasthttp.ErrorInvalidURI
++		return "", "", fasthttp.ErrorInvalidURI
+ 	}
+ 
+ 	if wasHTTPS && utils.EqualFold(scheme, httpScheme) {
+-		return "", ErrRedirectDowngrade
++		return "", "", ErrRedirectDowngrade
+ 	}
+ 
+-	return uri.String(), nil
++	return uri.String(), string(uri.Host()), nil
+ }
+diff --git a/ctx_interface_gen.go b/ctx_interface_gen.go
+index 7d3cb3aff28..95ecded0597 100644
+--- a/ctx_interface_gen.go
++++ b/ctx_interface_gen.go
+@@ -301,6 +301,11 @@ type Ctx interface {
+ 	// Make copies or use the Immutable setting instead.
+ 	// When the request is a multipart form, it is parsed using the application's
+ 	// BodyLimit so the configured limit is consistently enforced.
++	//
++	// On a form request this lowercases the case-insensitive parts of the request's
++	// own Content-Type, so a value obtained earlier from Get(HeaderContentType) —
++	// which aliases those bytes unless Immutable is set — can change during the
++	// call. Copy it first if you need it to outlive one.
+ 	FormValue(key string, defaultValue ...string) string
+ 	// Fresh returns true when the response is still “fresh” in the client's cache,
+ 	// otherwise false is returned to indicate that the client cache is now stale
+@@ -366,6 +371,11 @@ type Ctx interface {
+ 	Method(override ...string) string
+ 	// MultipartForm parse form entries from binary.
+ 	// This returns a map[string][]string, so given a key, the value will be a string slice.
++	//
++	// On a form request this lowercases the case-insensitive parts of the request's
++	// own Content-Type, so a value obtained earlier from Get(HeaderContentType) —
++	// which aliases those bytes unless Immutable is set — can change during the
++	// call. Copy it first if you need it to outlive one.
+ 	MultipartForm() (*multipart.Form, error)
+ 	// Params is used to get the route parameters.
+ 	// Defaults to empty string "" if the param doesn't exist.
+@@ -480,6 +490,12 @@ type Ctx interface {
+ 	// JSONP sends a JSON response with JSONP support.
+ 	// This method is identical to JSON, except that it opts-in to JSONP callback support.
+ 	// By default, the callback name is simply callback.
++	//
++	// The callback name is reduced to a JavaScript member expression: everything
++	// outside [A-Za-z0-9_$.[]] is dropped. Callers routinely take the name straight
++	// from the query string, which is what JSONP is for, and the name lands
++	// verbatim in a same-origin text/javascript body — so an unfiltered one would
++	// let a request supply arbitrary script for the app's own origin.
+ 	JSONP(data any, callback ...string) error
+ 	// XML converts any interface or string to XML.
+ 	// This method also sets the content header to application/xml; charset=utf-8.
+diff --git a/docs/api/ctx.md b/docs/api/ctx.md
+index c6827ed9044..b0664d46326 100644
+--- a/docs/api/ctx.md
++++ b/docs/api/ctx.md
+@@ -1032,6 +1032,15 @@ app.Post("/", func(c fiber.Ctx) error {
+ 
+ Form values can be retrieved by name, the **first** value for the given key is returned.
+ 
++:::caution
++
++On a form request this lowercases the case-insensitive parts of the request's
++own `Content-Type`, so a value obtained earlier from `Get(HeaderContentType)` —
++which aliases those bytes unless [Immutable](./fiber.md#immutable) is set — can
++change during the call. Copy it first if you need it to outlive one.
++
++:::
++
+ ```go title="Signature"
+ func (c fiber.Ctx) FormValue(key string, defaultValue ...string) string
+ ```
+@@ -1442,6 +1451,15 @@ app.Post("/override", func(c fiber.Ctx) error {
+ 
+ To access multipart form entries, you can parse the binary with `MultipartForm()`. This returns a `*multipart.Form`, allowing you to access form values and files. Parsing is bounded by the app [BodyLimit](./fiber.md#bodylimit).
+ 
++:::caution
++
++On a form request this lowercases the case-insensitive parts of the request's
++own `Content-Type`, so a value obtained earlier from `Get(HeaderContentType)` —
++which aliases those bytes unless [Immutable](./fiber.md#immutable) is set — can
++change during the call. Copy it first if you need it to outlive one.
++
++:::
++
+ ```go title="Signature"
+ func (c fiber.Ctx) MultipartForm() (*multipart.Form, error)
+ ```
+@@ -1904,6 +1922,19 @@ Contains the request protocol string: `http` or `https` for TLS requests.
+ Please use [`Config.TrustProxy`](fiber.md#trustproxy) to prevent header spoofing if your app is behind a proxy.
+ :::
+ 
++:::note
++
++Only `http` and `https` are ever returned. When the proxy is trusted, the
++forwarding headers (`X-Forwarded-Proto`, `X-Forwarded-Protocol`,
++`X-Forwarded-Ssl`, `X-Url-Scheme`) are read, but a value naming anything else is
++ignored rather than passed through — the result is spliced into
++[`BaseURL`](#baseurl) and compared for origin equality by CSRF and
++`Redirect().Back()`, so a header announcing, say, `javascript` must not become
++part of a URL. A proxy that terminates a different protocol should send the
++scheme the client used to reach it.
++
++:::
++
+ ```go title="Signature"
+ func (c fiber.Ctx) Scheme() string
+ ```
+@@ -2512,6 +2543,8 @@ Sends a JSON response with JSONP support. This method is identical to [JSON](ctx
+ 
+ Override this by passing a **named string** in the method.
+ 
++The callback name is reduced to a JavaScript member expression: every character outside `[A-Za-z0-9_$.[]]` is dropped, so names like `window.cb`, `ns.cb[0]`, and `$.jsonp_1` pass through unchanged. Because the name is written straight into a same-origin `text/javascript` body — and JSONP callers normally take it from the query string — leaving it unfiltered would let a request supply arbitrary script for your own origin. If what survives is not a valid member expression, the default `callback` is used: `cb[0]` is emitted, `cb[0x]` is not.
++
+ ```go title="Signature"
+ func (c fiber.Ctx) JSONP(data any, callback ...string) error
+ ```
+diff --git a/docs/api/fiber.md b/docs/api/fiber.md
+index 911f3ad332c..80bca5392ae 100644
+--- a/docs/api/fiber.md
++++ b/docs/api/fiber.md
+@@ -78,7 +78,7 @@ app := fiber.New(fiber.Config{
+ | <Reference id="regexhandler">RegexHandler</Reference>                                 | `any`                                                           | Configures the compiler used for `regex()` route constraints. Assign `regexp.MustCompile` or `coregex.MustCompile` directly to switch engines. Fiber reuses the compiled matcher across requests, so the returned value must be safe for concurrent use. Fiber may invoke `RegexHandler` more than once per route while parsing raw and normalized route patterns during registration.                                                                                                                                                                                                                                                                                                                                                                                | `regexp.MustCompile`                                                   |
+ | <Reference id="requestmethods">RequestMethods</Reference>                             | `[]string`                                                      | RequestMethods provides customizability for HTTP methods. You can add/remove methods as you wish.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | `DefaultMethods`                                                       |
+ | <Reference id="serverheader">ServerHeader</Reference>                                 | `string`                                                        | Enables the `Server` HTTP header with the given value.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `""`                                                                   |
+-| <Reference id="skipunmatchedroutes">SkipUnmatchedRoutes</Reference>                   | `bool`                                                          | When enabled, requests whose path and method match no registered route are answered with `404` (or `405` when the path exists for other methods) before the middleware chain runs, avoiding work on requests to unregistered paths (bots, scanners, bad URLs). Warning: middleware never runs for skipped requests, so Use-based responders on unregistered paths (catch-all 404 pages, static, proxy, healthcheck, rewrite/redirect middleware) and logger/metrics visibility stop working for them; CORS preflight requests are exempt so cors middleware keeps working. Customize the responses via `ErrorHandler`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `false`                                                                |
++| <Reference id="skipunmatchedroutes">SkipUnmatchedRoutes</Reference>                   | `bool`                                                          | When enabled, requests whose path and method match no registered route are answered with `404` (or `405` when the path exists for other methods) before the middleware chain runs, avoiding work on requests to unregistered paths (bots, scanners, bad URLs). Warning: middleware never runs for skipped requests, so Use-based responders on unregistered paths (catch-all 404 pages, static, proxy, healthcheck, rewrite/redirect middleware) and logger/metrics visibility stop working for them. Rate limiters are in the same position: requests to unregistered paths are neither counted nor throttled, and leave no trace in the access log. CORS preflight requests are exempt so cors middleware keeps working. Customize the responses via `ErrorHandler`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `false`                                                                |
+ | <Reference id="streamrequestbody">StreamRequestBody</Reference>                       | `bool`                                                          | StreamRequestBody enables request body streaming, and calls the handler sooner when given body is larger than the current limit.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `false`                                                                |
+ | <Reference id="strictrouting">StrictRouting</Reference>                               | `bool`                                                          | When enabled, the router treats `/foo` and `/foo/` as different. Otherwise, the router treats `/foo` and `/foo/` as the same.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `false`                                                                |
+ | <Reference id="structvalidator">StructValidator</Reference>                           | `StructValidator`                                               | If you want to validate header/form/query... automatically when to bind, you can define struct validator. Fiber doesn't have default validator, so it'll skip validator step if you don't use any validator.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | `nil`                                                                  |
+@@ -111,7 +111,7 @@ app.Listen(":8080", fiber.ListenConfig{
+ | Property                                                                | Type                          | Description                                                                                                                                                                                                                                                                                                                  | Default            |
+ |-------------------------------------------------------------------------|-------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------|
+ | <Reference id="beforeservefunc">BeforeServeFunc</Reference>             | `func(app *App) error`        | Allows customizing and accessing fiber app before serving the app.                                                                                                                                                                                                                                                           | `nil`              |
+-| <Reference id="certclientfile">CertClientFile</Reference>               | `string`                      | Path of the client certificate. If you want to use mTLS, you must enter this field.                                                                                                                                                                                                                                          | `""`               |
++| <Reference id="certclientfile">CertClientFile</Reference>               | `string`                      | Path of the CA bundle used to verify client certificates, for mTLS on the `CertFile`/`CertKeyFile` path. Ignored when `TLSConfig` is set: that config is served as supplied and this field does not modify it, so a client certificate is required only if its `ClientAuth` is a Require mode, verified against its `ClientCAs`. Fiber logs a warning when both are supplied.             | `""`               |
+ | <Reference id="certfile">CertFile</Reference>                           | `string`                      | Path of the certificate file. If you want to use TLS, you must enter this field.                                                                                                                                                                                                                                             | `""`               |
+ | <Reference id="certkeyfile">CertKeyFile</Reference>                     | `string`                      | Path of the certificate's private key. If you want to use TLS, you must enter this field.                                                                                                                                                                                                                                    | `""`               |
+ | <Reference id="disablestartupmessage">DisableStartupMessage</Reference> | `bool`                        | When set to true, it will not print out the «Fiber» ASCII art and listening address.                                                                                                                                                                                                                                         | `false`            |
+@@ -233,7 +233,7 @@ app.Listen(":443", fiber.ListenConfig{
+ 
+ #### Mutual TLS with TLSConfig
+ 
+-Use `TLSConfig` to configure mutual TLS by setting `ClientAuth` and `ClientCAs`. This replaces `CertClientFile` when you manage TLS configuration directly.
++Use `TLSConfig` to configure mutual TLS by setting `ClientAuth` to a Require mode and `ClientCAs` to the roots it verifies against. This replaces `CertClientFile` when you manage TLS configuration directly.
+ 
+ ```go title="TLSConfig with client CA pool"
+ certPEM := []byte(certPEMString)
+diff --git a/docs/client/examples.md b/docs/client/examples.md
+index 28de1ca6468..7f2cce20001 100644
+--- a/docs/client/examples.md
++++ b/docs/client/examples.md
+@@ -246,7 +246,15 @@ The jar follows RFC 6265 for storage and retrieval:
+   specific first, so a host cannot inflate the `Cookie` header by spreading
+   cookies across the `Domain=` keys of its parent labels.
+ - Cookies are attached once per request, before any redirect is followed, so a
+-  redirect chain carries the cookies selected for the original URL.
++  redirect chain carries the cookies selected for the original URL. A hop to an
++  unrelated host drops them, but a hop to a subdomain keeps them — matching
++  `net/http`, which permits `Cookie` from `foo.com` to `sub.foo.com`. That is
++  wider than the jar's own rule: a cookie set without a `Domain=` attribute is
++  host-only and the jar would not send it to `sub.foo.com`, yet a redirect
++  there carries it. This only arises once redirects are being followed, which
++  is not the default: leave `MaxRedirects` unset — or set `0`, via
++  `Request.SetMaxRedirects` or `Config{MaxRedirects: 0}` — and issue each hop
++  yourself, so the jar decides for each one.
+ 
+ ### Request
+ 
+diff --git a/docs/extra/internal.md b/docs/extra/internal.md
+index cc7a20632b2..d940ffd2069 100644
+--- a/docs/extra/internal.md
++++ b/docs/extra/internal.md
+@@ -364,8 +364,8 @@ When performing redirections, Fiber can send flash messages or preserve old inpu
+ 
+ 1. Collecting Flash Data: When a redirect is initiated, developers can add flash messages via Redirect.With() or old input data via Redirect.WithInput().
+ 2. Serialization: The flash messages and input data are serialized (using a fast marshalling method) into a byte sequence.
+-3. Setting a Cookie: The serialized data is stored in a special cookie (named fiber_flash) that will be sent to the client.
+-4. Retrieval & Clearing: On the subsequent request, the flash data is read from the cookie, deserialized, and then cleared.
++3. Setting a Cookie: The serialized data is stored in a special cookie (named fiber_flash) that will be sent to the client. The cookie is set `HttpOnly`, so the payload stays out of `document.cookie`. It is `Secure` only when the request that produced it arrived over TLS: a redirect that starts on plain HTTP sets a cookie without that attribute, which the browser will send over HTTP as well. It is hex-encoded rather than encrypted or signed, so treat everything in it as visible to the client.
++4. Retrieval & Clearing: On the subsequent request, the flash data is read from the cookie, deserialized, and then cleared. The cookie is expired on every read, including when the stored value fails to decode, so a malformed payload is not re-parsed on later requests.
+ 
+ ```mermaid
+ flowchart TD
+diff --git a/docs/middleware/cache.md b/docs/middleware/cache.md
+index e0d2e1e1fe8..8f30a7ce0d4 100644
+--- a/docs/middleware/cache.md
++++ b/docs/middleware/cache.md
+@@ -124,6 +124,96 @@ Cache lookup/storage is applied only for `GET` and `HEAD` requests by default. O
+ 
+ If a response sets `Vary`, request lookup/storage is also partitioned by those header values unless `DisableVaryHeaders` is `true`. Responses with `Vary: *` remain uncacheable.
+ 
++### Cached redirects
++
++`300` and `301` are cacheable statuses, so a redirect can be served from the
++cache. Its `Location` is kept with the entry even when `StoreResponseHeaders` is
++off, since the status means nothing without it.
++
++`Location` joins a set the entry always carries, each in a field of its own
++rather than in the stored header list: `Content-Type`, `Content-Encoding`,
++`Cache-Control`, `Expires`, `ETag`, `Date` and `Age`. Those are what the entry
++needs to be replayed and revalidated at all. `StoreResponseHeaders` is about
++every other response header, none of which is kept without it.
++
++### Header names
++
++Response field names are matched case-insensitively, as
++[RFC 9110 §5.1](https://www.rfc-editor.org/rfc/rfc9110.html#section-5.1)
++requires, so a handler is free to write `cache-control` or `expires` in lower
++case under
++[`DisableHeaderNormalizing`](../api/fiber.md#config). Those values decide what
++they would decide either way, and the fields this middleware writes itself —
++`Cache-Control`, `Age`, `Date`, `ETag`, `Expires` — replace whatever spelling
++the response already carries rather than being added beside it.
++
++### Responses that are never stored
++
++One entry is served to every client whose request matches its key, so a response
++that identifies a single client is not stored at all:
++
++- **A response that sets a cookie.** `Set-Cookie` means the response has been
++  personalized for the client that caused the miss, and the body — not just the
++  header — is what would be replayed to everyone else. The response still
++  reaches that client normally; only the entry is skipped, and `X-Cache` reads
++  `unreachable`.
++- **A response to a request carrying `Authorization`,** unless the response
++  permits shared caching, per
++  [RFC 9111 §3.5](https://www.rfc-editor.org/rfc/rfc9111.html#section-3.5).
++- **`Cache-Control: no-store`, `private`, `no-cache`, or `Vary: *`.**
++
++A route that genuinely wants both a cookie and a shared entry can say so with
++`Cache-Control: public` or an `s-maxage` — directives only a shared cache acts
++on, so neither is written by accident. `must-revalidate` and `proxy-revalidate`
++do **not** lift the cookie restriction, even though RFC 9111 §3.5 accepts
++`must-revalidate` for the `Authorization` case: that allowance holds because a
++revalidating cache returns to the origin and the origin re-checks the
++credential, and this middleware never revalidates — it serves the stored body
++for the whole configured `Expiration`.
++
++Applications that refresh a session cookie on every response will find that most
++routes stop being cached — that is the point, since those responses are
++per-client. Set the cookie only where it changes, or mark the genuinely public
++routes `public`.
++
++:::caution Register the cache outside any middleware that writes cookies
++
++The check above reads the response as it stands when the cache decides to store
++it, which is the moment `c.Next()` returns to the cache middleware. A middleware
++registered **outside** the cache does its post-`c.Next()` work later, so a cookie
++it writes then is not there to be seen — the entry is stored and the next client
++reads the first one's body.
++
++Fiber's own [session](./session.md) middleware writes its cookie exactly that
++way, so the order matters:
++
++```go
++app.Use(cache.New())    // correct: the cookie is written before the cache decides
++app.Use(session.New())
++
++app.Use(session.New())  // leaks: the cookie is written after the cache stored
++app.Use(cache.New())
++```
++
++The same applies to any handler wrapper of the form
++`err := c.Next(); c.Cookie(...); return err`. Note also that a response
++personalized from a **request** cookie without setting one is cached and shared
++by design — use `KeyCookies` or `Vary: Cookie` to key those apart.
++
++:::
++
++### Vary and `Content-Type`
++
++A request `Content-Type` naming a form is folded to lower case before it is used
++in the cache key, so the key is the same whether it is built before or after the
++handler runs — the form accessors fold that header in place, and without this
++the entry would be stored under a key no lookup produces.
++
++A handler on such a route therefore sees the folded media type even if it never
++reads a form value: on every request when `KeyHeaders` names `Content-Type`, and
++from the second request on when only `Vary` does. The boundary keeps its case,
++and a non-form `Content-Type` is left alone.
++
+ ## Config
+ 
+ | Property             | Type                                           | Description                                                                                                                                                                                                                                                                                                    | Default                                                          |
+@@ -134,15 +224,15 @@ If a response sets `Vary`, request lookup/storage is also partitioned by those h
+ | DisableCacheControl  | `bool`                                          | DisableCacheControl omits the `Cache-Control` header when set to `true`. | `false`                                                         |
+ | CacheInvalidator     | `func(fiber.Ctx) bool`                         | CacheInvalidator defines a function that is executed before checking the cache entry. It can be used to invalidate the existing cache manually by returning true. | `nil`                                                            |
+ | DisableValueRedaction | `bool`                                        | Turns off cache key redaction in logs and error messages when set to `true`. | `false`                                             |
+-| KeyGenerator         | `func(fiber.Ctx) string`                       | KeyGenerator allows you to generate custom keys. The HTTP method is partitioned internally by the middleware. | structured key from path + canonical query + selected headers/cookies |
++| KeyGenerator         | `func(fiber.Ctx) string`                       | KeyGenerator allows you to generate custom keys. The HTTP method and a key-format version are partitioned internally by the middleware. | structured key from path + canonical query + selected headers/cookies |
+ | DisableQueryKeys     | `bool`                                         | Disables canonicalized query params in keys. | `false` |
+ | KeyHeaders           | `[]string`                                     | Header allow-list used for key partitioning. Names are normalized case-insensitively and sorted. Use `[]string{}` to disable header-based partitioning. | `[]string{"accept","accept-encoding","accept-language"}` |
+ | KeyCookies           | `[]string`                                     | Optional cookie allow-list for key partitioning. Explicit opt-in only; names remain case-sensitive. | `nil` |
+ | Methods              | `[]string`                                     | HTTP methods eligible for caching. Requests whose method is not in this list bypass the cache. Names are normalized to uppercase. | `[]string{fiber.MethodGet, fiber.MethodHead}` |
+ | DisableVaryHeaders   | `bool`                                         | Disables response `Vary` dimensions in cache lookup/storage partitioning. | `false` |
+ | ExpirationGenerator  | `func(fiber.Ctx, *cache.Config) time.Duration` | ExpirationGenerator allows you to generate custom expiration keys based on the request.                                                                                                                                                                                                                        | `nil`                                                            |
+-| Storage              | `fiber.Storage`                                | Storage is used to store the state of the middleware.                                                                                                                                                                                                                                                            | In-memory store                                                  |
+-| StoreResponseHeaders | `bool`                                         | StoreResponseHeaders allows you to store additional headers generated by next middlewares & handler.                                                                                                                                                                                                           | `false`                                                          |
++| Storage              | `fiber.Storage`                                | Storage is used to store the state of the middleware. Entries are namespaced by a key-format version, so an external store that survives an upgrade starts cold rather than serving entries an older version partitioned by different rules.                                                                                                                                                                                                                                                            | In-memory store                                                  |
++| StoreResponseHeaders | `bool`                                         | StoreResponseHeaders allows you to store additional headers generated by next middlewares & handler. Connection-scoped headers and `Set-Cookie` are never stored, since a cache entry is replayed to every client that matches its key.                                                                          | `false`                                                          |
+ | MaxBytes             | `uint`                                         | MaxBytes is the maximum number of bytes of response bodies simultaneously stored in cache. | `1 * 1024 * 1024` (~1 MB)                                                  |
+ 
+ ## Default Config
+diff --git a/docs/middleware/logger.md b/docs/middleware/logger.md
+index d1d758394c6..82aae06af57 100644
+--- a/docs/middleware/logger.md
++++ b/docs/middleware/logger.md
+@@ -299,6 +299,31 @@ Logger provides predefined formats that you can use by name or directly by speci
+ `${bytesSent}` returns the value of the `Content-Length` response header. If the header is missing or the response is streaming (e.g., chunked encoding), the value will be `-1`. Fiber does not calculate the actual response body size for performance reasons.
+ :::
+ 
++## The `${ips}` tag
++
++`${ips}` logs the chain the framework parsed, `Ctx.IPs()`, joined with `,`.
++Reading `X-Forwarded-For` here separately meant reading it a second way, and
++under [`DisableHeaderNormalizing`](../api/fiber.md#config) a lower-case
++`x-forwarded-for:` logged an empty chain while `Ctx.IPs()` went on returning it.
++
++It is not the list any trust decision is made from. `Ctx.IPs()` parses
++`X-Forwarded-For` unconditionally, while `Ctx.IP()` consults
++[`TrustProxy`](../api/fiber.md#config) and reads
++[`ProxyHeader`](../api/fiber.md#config), which need not be `X-Forwarded-For` at
++all — so `${ips}` and the address Fiber acted on can name different hosts.
++
++Because the entries are split and trimmed rather than echoed as sent, repeated
++`X-Forwarded-For` header lines and a single comma-joined one log identically,
++which is what [RFC 9110 §5.2](https://www.rfc-editor.org/rfc/rfc9110.html#section-5.2)
++says they are.
++
++Treat a logged chain as attacker-controlled, trusted peer or not. A proxy you
++trust appends the address it saw to whatever the client already put in
++`X-Forwarded-For`, and `Ctx.IPs()` returns every element without the
++right-to-left walk `Ctx.IP()` uses, so the entries to the left of the ones your
++own infrastructure added are still the client's to choose. Use `${ip}`, which is
++the peer address, when you need one you can rely on.
++
+ ## Control-Character Sanitization
+ 
+ Values that come from the request are scrubbed before they reach the log stream: every ASCII control byte (C0 and DEL) is replaced with a space, and horizontal tab is preserved. Without this, a percent-decoded query parameter, form field, or request body containing `\r\n` could forge additional access-log lines and corrupt an audit trail.
+@@ -312,11 +337,10 @@ Tags whose values the framework controls — `${status}`, `${method}`, `${protoc
+ Only ASCII controls are replaced. Bytes at or above `0x80` pass through untouched, so C1 controls (U+0080–U+009F, including NEL U+0085, which some log pipelines treat as a line break) survive scrubbing. Handle those yourself if your values can carry them.
+ 
+ :::caution
+-Four paths bypass the built-in scrubbing, because each one replaces the renderer rather than wrapping it:
++Three paths bypass the built-in scrubbing, because each one replaces the renderer rather than wrapping it:
+ 
+ - `Config.CustomTags`
+ - `RegisterTag` / `MustRegisterTag`
+-- `RegisterContextTag`
+ - `Config.LoggerFunc`, which replaces the rendering pipeline wholesale
+ 
+ Anything request-derived that you write from one of these needs scrubbing. Use `logger.SanitizeValue`, which applies exactly what the built-in tags apply:
+@@ -327,7 +351,7 @@ logger.MustRegisterTag("tenant", func(output logger.Buffer, c fiber.Ctx, _ *logg
+ })
+ ```
+ 
+-Fiber's own context tags — `${username}`, `${api-key}`, `${csrf-token}`, `${requestid}`, `${session-id}` — are safe because the middleware behind each one validates or redacts at the source, not because `RegisterContextTag` scrubs.
++`RegisterContextTag` is not on that list: it wraps your extractor rather than being one, so what the extractor returns is scrubbed on the way out — in both the access-log renderer and the `log` package one. Fiber's own context tags — `${username}`, `${api-key}`, `${csrf-token}`, `${requestid}`, `${session-id}` — are registered through it, and the middleware behind each one validates or redacts at the source as well.
+ :::
+ 
+ ## Constants
+diff --git a/docs/middleware/proxy.md b/docs/middleware/proxy.md
+index 125c0ccbc82..369f46f9ecb 100644
+--- a/docs/middleware/proxy.md
++++ b/docs/middleware/proxy.md
+@@ -51,7 +51,7 @@ Only `http` and `https` upstream schemes are accepted by default; `file://`, `go
+ 
+ `DoRedirects` rejects redirects from HTTPS origins to plaintext HTTP targets with `ErrRedirectDowngrade`. Following such a redirect would leak any cookies or `Authorization` headers established under TLS. Set `SecurityPolicy.AllowHTTPSDowngrade = true` to override.
+ 
+-When a redirect crosses to a **different host**, `DoRedirects` strips the `Authorization`, `Proxy-Authorization`, and `Cookie` headers so credentials bound to the original origin are not forwarded to a third-party upstream. Same-host redirects retain these headers.
++When a redirect crosses to a **different host**, `DoRedirects` strips `Authorization`, `Proxy-Authorization`, `Proxy-Authenticate`, `WWW-Authenticate`, `Cookie` and the obsolete `Cookie2`, so credentials bound to the original origin are not forwarded to a third-party upstream. This is `net/http`'s own set. Same-host redirects retain these headers.
+ 
+ ### RFC 7230 hop-by-hop header stripping
+ 
+@@ -72,9 +72,53 @@ When a redirect crosses to a **different host**, `DoRedirects` strips the `Autho
+ If you're using `Balancer` with the `Config` struct, you can replicate the protection in `ModifyRequest`. When using `Do`, `DoRedirects`, `DoDeadline`, or `DoTimeout` directly, the `X-Real-IP` header is not set automatically — set it manually if needed:
+ 
+ ```go
+-c.Request().Header.Set("X-Real-IP", c.IP())
++ip := c.IP()
++c.Request().Header.Del("X-Real-IP")
++c.Request().Header.Add("X-Real-IP", ip)
+ ```
+ 
++`Set` alone is not enough here. It replaces the first field line with that name
++and leaves any others in place, so a client that sends `X-Real-IP` twice keeps
++one of its own values on the wire, and the upstream — which may read the last
++line, or join the pair per RFC 9110 §5.2 — attributes the request to an address
++the client chose. Delete first so exactly one line survives. Resolve `c.IP()`
++before the delete as well: with `Config.ProxyHeader` set to `X-Real-IP`, `c.IP()`
++reads the very header being replaced.
++
++:::caution With `DisableHeaderNormalizing`, delete every spelling
++
++`Del` matches the stored key byte for byte. That finds every line while Fiber
++canonicalizes header names, which is the default — but under
++[`DisableHeaderNormalizing`](../api/fiber.md#config) the store keeps the
++spelling the client sent, and lower case is what HTTP/2 and HTTP/3 put on the
++wire. `Del("X-Real-IP")` then leaves a client-sent `x-real-ip` untouched and the
++`Add` lands beside it, which is the pair the delete exists to prevent.
++
++The middleware's own `Forward`, `DomainForward` and `BalancerForward` handle
++this. Doing it by hand takes one pass to collect the spellings and another to
++remove them, since deleting while iterating the store is not safe:
++
++```go
++ip := c.IP()
++h := &c.Request().Header
++
++var spellings []string
++for k := range h.All() {
++    if utils.EqualFold(utils.UnsafeString(k), "X-Real-IP") {
++        spellings = append(spellings, string(k))
++    }
++}
++for _, name := range spellings {
++    h.Del(name)
++}
++
++h.Add("X-Real-IP", ip)
++```
++
++`utils` here is `github.com/gofiber/utils/v2`.
++
++:::
++
+ ### Path concatenation safety
+ 
+ `DomainForward` and `BalancerForward` previously concatenated the configured upstream with `c.OriginalURL()`. Crafted request paths beginning with `//` could exploit URL parsing to redirect the proxy at a different host (network-path reference injection). The proxy now sanitises the joined path so the upstream host pinned in configuration is preserved regardless of the inbound request.
+diff --git a/extractors/extractors.go b/extractors/extractors.go
+index 7efe1caccb0..1964516bbbf 100644
+--- a/extractors/extractors.go
++++ b/extractors/extractors.go
+@@ -30,6 +30,7 @@ import (
+ 	"net/url"
+ 
+ 	"github.com/gofiber/fiber/v3"
++	"github.com/gofiber/fiber/v3/internal/headerlookup"
+ 	"github.com/gofiber/utils/v2"
+ )
+ 
+@@ -157,8 +158,11 @@ type chainGuardKey struct {
+ func FromAuthHeader(authScheme string) Extractor {
+ 	return Extractor{
+ 		Extract: func(c fiber.Ctx) (string, error) {
+-			authHeader := c.Get(fiber.HeaderAuthorization)
+-			if authHeader == "" {
++			// A second Authorization line, whatever it is spelled like, makes
++			// the credential ambiguous — including where middleware cleared this
++			// field and a line the client sent stayed behind it.
++			authHeader, ok := headerlookup.Value(c, fiber.HeaderAuthorization)
++			if !ok || authHeader == "" {
+ 				return "", ErrNotFound
+ 			}
+ 
+@@ -344,7 +348,16 @@ func FromForm(param string) Extractor {
+ func FromHeader(header string) Extractor {
+ 	return Extractor{
+ 		Extract: func(c fiber.Ctx) (string, error) {
+-			value := c.Get(header)
++			// Not Ctx.Get: it is byte-exact, so under DisableHeaderNormalizing a token
++			// sent under the lower-case name HTTP/2 and 3 use was not found, and the
++			// request refused for carrying no token when it carried one.
++			// Combined, not Value: the name comes from the application's
++			// config, and a field it names may be a list one a peer is allowed
++			// to send twice — Accept and Forwarded among them. Two lines there
++			// are one value rather than two answers, so they are joined the way
++			// RFC 9110 §5.3 says a recipient may. A repeated token still fails
++			// the comparison the caller makes, so nothing is loosened.
++			value := headerlookup.Combined(c, header)
+ 			if value == "" {
+ 				return "", ErrNotFound
+ 			}
+diff --git a/helpers.go b/helpers.go
+index 6a9e7e04ffa..654535f82d4 100644
+--- a/helpers.go
++++ b/helpers.go
+@@ -24,9 +24,12 @@ import (
+ 
+ 	"github.com/gofiber/utils/v2"
+ 	utilsbytes "github.com/gofiber/utils/v2/bytes"
++	utilsstrings "github.com/gofiber/utils/v2/strings"
+ 	"github.com/gofiber/utils/v2/swar"
+ 
++	"github.com/gofiber/fiber/v3/binder"
+ 	"github.com/gofiber/fiber/v3/internal/contextvalue"
++	"github.com/gofiber/fiber/v3/internal/mediatype"
+ 	"github.com/gofiber/fiber/v3/log"
+ 
+ 	"github.com/valyala/bytebufferpool"
+@@ -282,69 +285,6 @@ func appendLowerASCII(dst, src []byte) []byte {
+ 	return dst
+ }
+ 
+-// normalizeContentTypeMediaType lowercases the case-insensitive parts of a
+-// request's Content-Type in place and returns the full header value.
+-//
+-// The fold has to land on the request's own bytes rather than on a copy:
+-// fasthttp locates the multipart boundary and the urlencoded form body with
+-// case-sensitive comparisons (Request.MultipartFormBoundary matches a
+-// lowercase "boundary=", Request.PostArgs a lowercase media type), as does
+-// binder.FormBinding — so a perfectly legal "Multipart/Form-Data" or
+-// "BOUNDARY=" would otherwise parse as an empty form.
+-//
+-// Both the media type and the parameter *names* are case-insensitive
+-// (RFC 9110 Sections 8.3.1 and 5.6.6) and are folded. Parameter *values* are
+-// left untouched: a multipart boundary is case-sensitive, and folding it
+-// detaches the header from the body it describes.
+-func normalizeContentTypeMediaType(h *fasthttp.RequestHeader) []byte {
+-	ct := h.ContentType()
+-
+-	i := bytes.IndexByte(ct, ';')
+-	if i == -1 {
+-		utilsbytes.UnsafeToLower(ct)
+-		return ct
+-	}
+-	utilsbytes.UnsafeToLower(ct[:i])
+-
+-	for i < len(ct) {
+-		i++ // step over the ';'
+-		for i < len(ct) && (ct[i] == ' ' || ct[i] == '\t') {
+-			i++
+-		}
+-
+-		nameStart := i
+-		for i < len(ct) && ct[i] != '=' && ct[i] != ';' {
+-			i++
+-		}
+-		utilsbytes.UnsafeToLower(ct[nameStart:i])
+-		if i >= len(ct) || ct[i] == ';' {
+-			continue
+-		}
+-
+-		// Step over the value without touching it. A quoted-string may
+-		// contain ';' (RFC 9110 Section 5.6.6), so it has to be consumed as a
+-		// unit or the next parameter name would be mislocated.
+-		i++ // step over the '='
+-		if i < len(ct) && ct[i] == '"' {
+-			i++
+-			for i < len(ct) && ct[i] != '"' {
+-				if ct[i] == '\\' && i+1 < len(ct) {
+-					i++
+-				}
+-				i++
+-			}
+-			if i < len(ct) {
+-				i++ // closing quote
+-			}
+-		}
+-		for i < len(ct) && ct[i] != ';' {
+-			i++
+-		}
+-	}
+-
+-	return ct
+-}
+-
+ // defaultString returns the value or a default value if it is set
+ func defaultString(value string, defaultValue []string) string {
+ 	if value == "" && len(defaultValue) > 0 {
+@@ -1429,3 +1369,18 @@ type GenericTypeIntegerUnsigned interface {
+ type GenericTypeFloat interface {
+ 	float32 | float64
+ }
++
++// bindMediaType returns the request's media type, lowered for comparison against
++// the MIME constants. The request's own bytes are folded only for a form, the
++// one case needing it in place; anything else is compared on a copy.
++func bindMediaType(h *fasthttp.RequestHeader) string {
++	if mediatype.IsForm(h.ContentType()) {
++		raw := utils.UnsafeString(mediatype.NormalizeRequestContentType(h))
++		return binder.FilterFlags(utils.ParseVendorSpecificContentType(raw))
++	}
++
++	// ToLower returns its input unchanged when there is nothing to fold, so the
++	// common path costs no allocation.
++	lowered := utilsstrings.ToLower(utils.UnsafeString(h.ContentType()))
++	return binder.FilterFlags(utils.ParseVendorSpecificContentType(lowered))
++}
+diff --git a/internal/crosshost/crosshost.go b/internal/crosshost/crosshost.go
+new file mode 100644
+index 00000000000..6453ccd78a7
+--- /dev/null
++++ b/internal/crosshost/crosshost.go
+@@ -0,0 +1,24 @@
++// Package crosshost names the request headers that must not survive a redirect
++// to a host other than the one they were sent to.
++package crosshost
++
++import (
++	"github.com/valyala/fasthttp"
++)
++
++// SensitiveHeaders lists the headers carrying credentials scoped to one origin.
++// A redirect off it must drop every one, or the client's secret reaches a host
++// it never addressed — and the responding server chooses where that goes.
++//
++// net/http's set, which fasthttp also implements. Shared because the client's
++// redirect loop and the proxy's had already drifted: the proxy was missing
++// Cookie2 and both Authenticate headers.
++var SensitiveHeaders = []string{
++	fasthttp.HeaderAuthorization,
++	fasthttp.HeaderProxyAuthorization,
++	fasthttp.HeaderProxyAuthenticate,
++	fasthttp.HeaderWWWAuthenticate,
++	fasthttp.HeaderCookie,
++	// fasthttp has no constant for the obsolete spelling.
++	"Cookie2",
++}
+diff --git a/internal/fieldname/fieldname.go b/internal/fieldname/fieldname.go
+new file mode 100644
+index 00000000000..e5d80cc01c5
+--- /dev/null
++++ b/internal/fieldname/fieldname.go
+@@ -0,0 +1,228 @@
++// Package fieldname reads and removes HTTP header fields by name
++// case-insensitively (RFC 9110 §5.1).
++//
++// fasthttp's Peek, PeekAll and Del are byte-exact, which finds every line only
++// while it canonicalizes the key; under DisableHeaderNormalizing the store keeps
++// the spelling the peer sent, which for HTTP/2 and 3 is lower case.
++//
++// canonical says whether the caller knows the keys to be canonical — fasthttp
++// keeps that private, so it is passed in; see headerlookup.Canonical.
++package fieldname
++
++import (
++	"iter"
++
++	"github.com/gofiber/utils/v2"
++	"github.com/valyala/fasthttp"
++)
++
++// Peeker is the part of fasthttp's headers needed to read field lines by name.
++type Peeker interface {
++	Peek(key string) []byte
++	PeekAll(key string) [][]byte
++	All() iter.Seq2[[]byte, []byte]
++	// VisitAll is deprecated in fasthttp in favor of All, but All builds an
++	// iterator per call while this walks the store directly. Kept for the reads
++	// that run per request and do not need to stop early.
++	VisitAll(f func(key, value []byte))
++}
++
++// Deleter is the part of fasthttp's headers needed to remove a field by name.
++type Deleter interface {
++	Del(key string)
++	PeekAll(key string) [][]byte
++	All() iter.Seq2[[]byte, []byte]
++}
++
++// Lines returns every field line stored under name. The walk replaces the
++// byte-exact lookup rather than backing it up: a message can carry both
++// spellings, and an empty canonical line would hide the value beside it.
++//
++//nolint:revive // flag-parameter: canonical is a property of the header store, not a mode of operation
++func Lines(h Peeker, name string, canonical bool) [][]byte {
++	if canonical {
++		// PeekAll hands back the header's own slice without allocating.
++		return h.PeekAll(name)
++	}
++
++	// Walked rather than ranged: this runs per key header on every cacheable
++	// request, and All's iterator costs more than the match itself does.
++	var values [][]byte
++	h.VisitAll(func(k, v []byte) {
++		if utils.EqualFold(utils.UnsafeString(k), name) {
++			values = append(values, v)
++		}
++	})
++	return values
++}
++
++// First returns the first field line stored under name that holds anything, or
++// nil if there is none. The names fasthttp keeps in a slot of their own are
++// unaffected either way: every spelling is routed into the slot on the way in.
++//
++// Empty lines are stepped over rather than answered with, because a message can
++// carry the name more than once and Peek reports the first line whether or not
++// it holds a value: an empty "Cache-Control:" ahead of "Cache-Control: private"
++// read as a response saying nothing about caching. A field line that is present
++// and empty says nothing a caller can act on, so nothing is lost by looking past
++// it for one that does.
++//
++// Repetition itself is left to the caller to judge, because what it means
++// depends on the field: a response may carry Cache-Control twice and mean the
++// list, while a second Origin or Authorization line is malformed and cannot be
++// resolved by picking one. headerlookup.Value refuses that case for the request
++// fields where it arises.
++//
++//nolint:revive // flag-parameter: canonical is a property of the header store
++func First(h Peeker, name string, canonical bool) []byte {
++	if canonical {
++		v := h.Peek(name)
++		if len(v) > 0 {
++			return v
++		}
++		if v == nil {
++			// Nothing is stored under the name, so there is nothing beside it
++			// to find and the walk below is skipped: a nil answer means absent,
++			// a non-nil empty one means a line that is present and empty. That
++			// distinction is fasthttp's to keep, so Test_First_EmptyLineIsNotNil
++			// pins it — if it ever stops holding, that test says so rather than
++			// this quietly reverting to reading only the first line.
++			return nil
++		}
++
++		// Reached only for a field that is present and empty, which is the shape
++		// being guarded against rather than one anything sends by accident.
++		// PeekAll costs no allocation and resolves the slotted names.
++		for _, v := range h.PeekAll(name) {
++			if len(v) > 0 {
++				return v
++			}
++		}
++		return nil
++	}
++
++	// Split out rather than written below: All's iterator is heap-allocated
++	// where the compiler cannot see the branch is dead, so holding it in this
++	// function cost the canonical path an allocation it never used.
++	return firstFold(h, name)
++}
++
++// firstFold answers First for a store whose field names are spelled however the
++// peer sent them.
++func firstFold(h Peeker, name string) []byte {
++	for k, v := range h.All() {
++		if len(v) > 0 && utils.EqualFold(utils.UnsafeString(k), name) {
++			return v
++		}
++	}
++	return nil
++}
++
++// Canonical reports whether every field name in h is spelled the way fasthttp
++// normalizes it, so the byte-exact Peek and Del find them all.
++//
++// Ask this of a response rather than reading the app config: a proxied response
++// is parsed by an outbound fasthttp.Client carrying its own normalizing setting,
++// so a default-normalizing app can hold a response of lower-case names. It is
++// one walk, against one per field for the case-insensitive reads it saves.
++func Canonical(h *fasthttp.ResponseHeader) bool {
++	canonical := true
++	//nolint:staticcheck // All allocates an iterator per call; this runs per response
++	h.VisitAll(func(k, _ []byte) {
++		if canonical && !isCanonicalName(k) {
++			canonical = false
++		}
++	})
++	return canonical
++}
++
++// isCanonicalName reports whether name is upper case at the start of each
++// "-"-separated token and lower case everywhere else, which is what fasthttp's
++// normalization produces.
++func isCanonicalName(name []byte) bool {
++	upper := true
++	for _, c := range name {
++		if upper {
++			if c >= 'a' && c <= 'z' {
++				return false
++			}
++		} else if c >= 'A' && c <= 'Z' {
++			return false
++		}
++		upper = c == '-'
++	}
++	return true
++}
++
++// Del removes every field line named name, whatever case it is stored under.
++//
++//nolint:revive // flag-parameter: canonical is a property of the header store
++func Del(h Deleter, name string, canonical bool) {
++	h.Del(name)
++	if canonical {
++		// The scan below would only confirm Del found everything, at the cost
++		// of an iterator allocation per name on an otherwise alloc-free path.
++		return
++	}
++
++	// Restart after each removal rather than deleting while ranging over the
++	// store being modified. A field arrives under one spelling essentially
++	// always, so this repeats only for a peer that sent several.
++	for {
++		other := ""
++		for k := range h.All() {
++			if utils.EqualFold(utils.UnsafeString(k), name) {
++				other = string(k)
++				break
++			}
++		}
++		if other == "" {
++			return
++		}
++		h.Del(other)
++	}
++}
++
++// DelOthers removes every stored spelling of name except name itself, which the
++// caller is about to write or delete under that key. Every other one, not just
++// the first: stopping early leaves the rest beside the value the caller writes.
++func DelOthers(h Deleter, name string) {
++	// Collected before deleting: removing while ranging over the store is not safe.
++	var others []string
++	for k := range h.All() {
++		if ks := utils.UnsafeString(k); ks != name && utils.EqualFold(ks, name) {
++			others = append(others, string(k))
++		}
++	}
++
++	for _, k := range others {
++		h.Del(k)
++	}
++}
++
++// DelSet removes every field line matching any of names in a single pass, which
++// beats Del's per-name scan when the whole set is known up front.
++func DelSet(h Deleter, names []string) {
++	var removed []string
++	for k := range h.All() {
++		if ContainsFold(names, utils.UnsafeString(k)) {
++			removed = append(removed, string(k))
++		}
++	}
++
++	// A repeated name is deleted twice; Del removes every line at once, so
++	// scanning to avoid that costs more than making the call.
++	for _, name := range removed {
++		h.Del(name)
++	}
++}
++
++// ContainsFold reports whether needle equals any of haystack, case-insensitively.
++func ContainsFold(haystack []string, needle string) bool {
++	for _, h := range haystack {
++		if utils.EqualFold(h, needle) {
++			return true
++		}
++	}
++	return false
++}
+diff --git a/internal/headerlookup/headerlookup.go b/internal/headerlookup/headerlookup.go
+new file mode 100644
+index 00000000000..65bfe2e0cb2
+--- /dev/null
++++ b/internal/headerlookup/headerlookup.go
+@@ -0,0 +1,159 @@
++// Package headerlookup answers, for a caller holding a fiber.Ctx, the two
++// questions the byte-exact header API cannot: whether the stored field names are
++// canonical, and what a named request header holds if they are not.
++package headerlookup
++
++import (
++	"github.com/gofiber/fiber/v3"
++	"github.com/gofiber/fiber/v3/internal/fieldname"
++	"github.com/gofiber/utils/v2"
++	"github.com/valyala/fasthttp"
++)
++
++// Canonical reports whether fasthttp normalized this request's header names.
++//
++// fasthttp keeps the answer private, so take it from the app config that set
++// it. This answers for the request store only: a proxied response is parsed by
++// an outbound fasthttp.Client carrying its own setting.
++func Canonical(c fiber.Ctx) bool {
++	return !c.App().Config().DisableHeaderNormalizing
++}
++
++// Value returns the named request header, matching the field name
++// case-insensitively (RFC 9110 §5.1). Ctx.Get is byte-exact, so a lower-case
++// "origin:" read as absent and the CSRF check found nothing to verify.
++//
++// ok is false where the message carries the field more than once, whatever the
++// lines are spelled like or hold. Every caller here reads a field defined as a
++// single value — Origin, Referer, Sec-Fetch-Site, Authorization — for which
++// RFC 9110 §5.2 says a sender must not generate a second line at all, so such a
++// message is malformed and what it means is not a question with an answer.
++// Answering with any one of the lines lets whoever wrote the other one decide:
++// picking the first hides a value behind an empty line, and picking the first
++// non-empty defeats a middleware that cleared the field while a differently
++// spelled line from the client remained.
++//
++// ok is true for a single line that is present and empty, which is not
++// ambiguous — it says the field holds nothing, and "" is that answer.
++//
++// A caller must not read a false ok as an absent header: absent is a state
++// these fields are allowed to be in and some checks skip themselves for it,
++// which is the opposite of what a malformed message should get. Refuse instead.
++// The value is empty whenever ok is false, so a caller that only refuses empty
++// values still fails closed.
++func Value(c fiber.Ctx, name string) (string, bool) {
++	cfg := c.App().Config()
++	h := &c.Request().Header
++
++	var (
++		found []byte
++		ok    bool
++	)
++	if cfg.DisableHeaderNormalizing {
++		found, ok = foldValue(h, name)
++	} else {
++		found, ok = canonicalValue(h, name)
++	}
++	if !ok || len(found) == 0 {
++		return "", ok
++	}
++
++	// The bytes live as long as the request, so a copy is made only where
++	// Immutable promises the caller one — matching what Ctx.Get hands back.
++	if cfg.Immutable {
++		return string(found), true
++	}
++	return utils.UnsafeString(found), true
++}
++
++// Combined returns the named request header as the one value RFC 9110 §5.3
++// gives a field carried on several lines: their values in the order received,
++// separated by ", ".
++//
++// This is for a caller naming a field it does not choose — extractors take the
++// name from the application's config, and Accept, Forwarded and the rest are
++// list fields a peer may legally send twice. Value's refusal is wrong for them,
++// because two lines there are one value, not two answers. Where the field is a
++// single value the combination is still not one: a credential joined with
++// another does not match the one that was issued, so a caller comparing it
++// refuses, which is the outcome Value reaches directly.
++func Combined(c fiber.Ctx, name string) string {
++	cfg := c.App().Config()
++	h := &c.Request().Header
++
++	if utils.EqualFold(name, fiber.HeaderCookie) {
++		// Cookie is not a comma-separated list — RFC 6265 §5.4 joins its
++		// crumbs with "; " — and fasthttp keeps them in a store of their own,
++		// which PeekAll enumerates one cookie at a time. Joining those would
++		// hand the caller "a=1, b=2" for a request that said "a=1; b=2".
++		// Collecting first makes fasthttp reassemble the field, so what is read
++		// below is the one line it actually holds. The lookup is expected to
++		// miss; collecting is the point of the call, as it is in the cache's
++		// keyFieldLines.
++		h.Cookie("")
++	}
++
++	lines := fieldname.Lines(h, name, !cfg.DisableHeaderNormalizing)
++
++	switch len(lines) {
++	case 0:
++		return ""
++	case 1:
++		if len(lines[0]) == 0 {
++			return ""
++		}
++		if cfg.Immutable {
++			return string(lines[0])
++		}
++		return utils.UnsafeString(lines[0])
++	}
++
++	n := 2 * (len(lines) - 1)
++	for _, line := range lines {
++		n += len(line)
++	}
++	joined := make([]byte, 0, n)
++	for i, line := range lines {
++		if i > 0 {
++			joined = append(joined, ',', ' ')
++		}
++		joined = append(joined, line...)
++	}
++	// The buffer is this function's own, so no copy is owed to Immutable.
++	return utils.UnsafeString(joined)
++}
++
++// canonicalValue answers Value for a store whose field names fasthttp folded on
++// the way in, so one PeekAll — which costs no allocation and resolves the names
++// kept in a slot of their own — sees every spelling at once.
++func canonicalValue(h *fasthttp.RequestHeader, name string) ([]byte, bool) {
++	lines := h.PeekAll(name)
++	if len(lines) > 1 {
++		return nil, false
++	}
++	if len(lines) == 0 {
++		return nil, true
++	}
++	return lines[0], true
++}
++
++// foldValue answers Value for a store keeping whatever spelling the peer sent.
++//
++// Split out rather than written beside canonicalValue: All's iterator is
++// heap-allocated where the compiler cannot see the branch is dead, so holding it
++// in Value would cost the normalized path an allocation it never uses.
++func foldValue(h *fasthttp.RequestHeader, name string) ([]byte, bool) {
++	var found []byte
++	seen := 0
++	for k, v := range h.All() {
++		if !utils.EqualFold(utils.UnsafeString(k), name) {
++			continue
++		}
++		seen++
++		if seen > 1 {
++			return nil, false
++		}
++		found = v
++	}
++	return found, true
++}
+diff --git a/internal/mediatype/mediatype.go b/internal/mediatype/mediatype.go
+new file mode 100644
+index 00000000000..268d0be04a7
+--- /dev/null
++++ b/internal/mediatype/mediatype.go
+@@ -0,0 +1,104 @@
++// Package mediatype canonicalizes the case-insensitive parts of a request's
++// Content-Type, so the case-sensitive parsers downstream — fasthttp's form and
++// multipart readers above all — see the value they expect.
++package mediatype
++
++import (
++	"bytes"
++
++	"github.com/gofiber/utils/v2"
++	utilsbytes "github.com/gofiber/utils/v2/bytes"
++	"github.com/valyala/fasthttp"
++)
++
++// NormalizeRequestContentType lowercases the case-insensitive parts of a
++// request's Content-Type in place. The fold must land on the request's own
++// bytes: fasthttp locates the boundary and the urlencoded body case-sensitively.
++func NormalizeRequestContentType(h *fasthttp.RequestHeader) []byte {
++	ct := h.ContentType()
++
++	// Nothing to fold is both the common and the repeat case: after the first
++	// FormValue the header is already lowercase. Uppercase confined to a parameter
++	// value still takes the full walk, which leaves it alone.
++	if !hasUpper(ct) {
++		return ct
++	}
++
++	i := bytes.IndexByte(ct, ';')
++	if i == -1 {
++		utilsbytes.UnsafeToLower(ct)
++		return ct
++	}
++	utilsbytes.UnsafeToLower(ct[:i])
++
++	for i < len(ct) {
++		i++ // step over the ';'
++		for i < len(ct) && (ct[i] == ' ' || ct[i] == '\t') {
++			i++
++		}
++
++		nameStart := i
++		for i < len(ct) && ct[i] != '=' && ct[i] != ';' {
++			i++
++		}
++		utilsbytes.UnsafeToLower(ct[nameStart:i])
++		if i >= len(ct) || ct[i] == ';' {
++			continue
++		}
++
++		// Step over the value untouched: a quoted-string may contain ';' (RFC 9110
++		// §5.6.6), and a quoted-pair may contain '"'. Ending the string at an
++		// escaped quote would fold the rest as parameters, and fasthttp matches
++		// "boundary" case-sensitively, so lowercasing a decoy inside a value is
++		// what makes it the one fasthttp picks: on
++		// `X="\"; BOUNDARY=bogus"; BOUNDARY=Real` it took bogus over Real.
++		i++ // step over the '='
++		if i < len(ct) && ct[i] == '"' {
++			i++
++			for i < len(ct) && ct[i] != '"' {
++				if ct[i] == '\\' && i+1 < len(ct) {
++					i++ // the escaped byte cannot close the string
++				}
++				i++
++			}
++			if i < len(ct) {
++				i++ // closing quote
++			}
++		}
++		for i < len(ct) && ct[i] != ';' {
++			i++
++		}
++	}
++
++	return ct
++}
++
++// Form media types, duplicated from package fiber because that package imports
++// this one.
++const (
++	applicationForm = "application/x-www-form-urlencoded"
++	multipartForm   = "multipart/form-data"
++)
++
++// IsForm reports whether ct names one of the two media types fasthttp's form
++// parsers handle. Callers gate NormalizeRequestContentType on it, since the fold
++// lands on the request's own bytes. Compared folded, parameters ignored.
++func IsForm(ct []byte) bool {
++	if i := bytes.IndexByte(ct, ';'); i >= 0 {
++		ct = ct[:i]
++	}
++	ct = bytes.TrimRight(ct, " \t")
++
++	name := utils.UnsafeString(ct)
++	return utils.EqualFold(name, applicationForm) || utils.EqualFold(name, multipartForm)
++}
++
++// hasUpper reports whether b holds an ASCII uppercase byte.
++func hasUpper(b []byte) bool {
++	for _, c := range b {
++		if c >= 'A' && c <= 'Z' {
++			return true
++		}
++	}
++	return false
++}
+diff --git a/listen.go b/listen.go
+index 8ffb0672f2d..511adcbf014 100644
+--- a/listen.go
++++ b/listen.go
+@@ -55,11 +55,14 @@ type ListenConfig struct {
+ 
+ 	// TLSConfigFunc allows customizing tls.Config as you want.
+ 	//
++	// Ignored when TLSConfig is set: configure that tls.Config directly instead.
++	//
+ 	// Default: nil
+ 	TLSConfigFunc func(tlsConfig *tls.Config) `json:"tls_config_func"`
+ 
+-	// TLSConfig allows providing a tls.Config used as the base for TLS settings.
+-	// This enables external certificate providers via GetCertificate.
++	// TLSConfig is cloned and served as supplied, enabling external certificate
++	// providers via GetCertificate. It replaces the other TLS settings rather than
++	// seeding them, so there is no mutual TLS unless its ClientAuth requires it.
+ 	//
+ 	// Default: nil
+ 	TLSConfig *tls.Config `json:"tls_config"`
+@@ -98,8 +101,9 @@ type ListenConfig struct {
+ 	// Default : ""
+ 	CertKeyFile string `json:"cert_key_file"`
+ 
+-	// CertClientFile is a path of client certificate.
+-	// If you want to use mTLS, you have to enter this field.
++	// CertClientFile is a path of the CA bundle used to verify client
++	// certificates, which is how ListenConfig asks for mTLS. Ignored when
++	// TLSConfig is set: its ClientAuth decides instead, against its ClientCAs.
+ 	//
+ 	// Default : ""
+ 	CertClientFile string `json:"cert_client_file"`
+@@ -132,6 +136,8 @@ type ListenConfig struct {
+ 
+ 	// TLSMinVersion allows to set TLS minimum version.
+ 	//
++	// Ignored when TLSConfig is set: set MinVersion on that tls.Config instead.
++	//
+ 	// Default: tls.VersionTLS12
+ 	// WARNING: TLS1.0 and TLS1.1 versions are not supported.
+ 	TLSMinVersion uint16 `json:"tls_min_version"`
+@@ -183,11 +189,18 @@ func listenConfigDefault(config ...ListenConfig) ListenConfig {
+ 		cfg.TLSMinVersion = tls.VersionTLS12
+ 	}
+ 
++	return cfg
++}
++
++// validateTLSMinVersion rejects a version this package will not build a
++// tls.Config from. Asked only where the field is read: rejecting it in the
++// defaults panicked before warnSupersededTLSFields or
++// warnIgnoredTLSFieldsOnListener could say the value was being ignored anyway,
++// which is the diagnostic a stale TLS 1.1 most needs.
++func validateTLSMinVersion(cfg *ListenConfig) {
+ 	if cfg.TLSMinVersion != tls.VersionTLS12 && cfg.TLSMinVersion != tls.VersionTLS13 {
+ 		panic("unsupported TLS version, please use tls.VersionTLS12 or tls.VersionTLS13")
+ 	}
+-
+-	return cfg
+ }
+ 
+ // Listen serves HTTP requests from the given addr.
+@@ -204,7 +217,10 @@ func (app *App) Listen(addr string, config ...ListenConfig) error {
+ 	var tlsHandler *TLSHandler
+ 	if cfg.TLSConfig != nil {
+ 		tlsConfig = cfg.TLSConfig.Clone()
++		warnSupersededTLSFields(&cfg)
+ 	} else {
++		validateTLSMinVersion(&cfg)
++
+ 		switch {
+ 		case cfg.AutoCertManager != nil && (cfg.CertFile != "" || cfg.CertKeyFile != ""):
+ 			return ErrAutoCertWithCertFile
+@@ -299,6 +315,80 @@ func (app *App) Listen(addr string, config ...ListenConfig) error {
+ 	return app.server.Serve(ln)
+ }
+ 
++// warnSupersededTLSFields logs the ListenConfig TLS fields a supplied TLSConfig
++// supersedes. CertClientFile is where silence is dangerous: it is the only way
++// ListenConfig asks for mTLS, and a TLSConfig says nothing about it by default.
++func warnSupersededTLSFields(cfg *ListenConfig) {
++	if cfg.CertClientFile != "" {
++		log.Warn("[Listen] TLSConfig supersedes CertClientFile: a client certificate is required only if " +
++			"TLSConfig sets ClientAuth to a Require mode, with ClientCAs as the roots it verifies against.")
++	}
++
++	var ignored []string
++	if cfg.CertFile != "" || cfg.CertKeyFile != "" {
++		ignored = append(ignored, "CertFile/CertKeyFile")
++	}
++	// Zero is unset and listenConfigDefault fills in TLS 1.2, so only a caller who
++	// asked for something else is losing anything here.
++	if cfg.TLSMinVersion != 0 && cfg.TLSMinVersion != tls.VersionTLS12 {
++		ignored = append(ignored, "TLSMinVersion")
++	}
++	if cfg.AutoCertManager != nil {
++		ignored = append(ignored, "AutoCertManager")
++	}
++	if cfg.TLSConfigFunc != nil {
++		ignored = append(ignored, "TLSConfigFunc")
++	}
++	if len(ignored) > 0 {
++		log.Warnf("[Listen] TLSConfig supersedes %s.", strings.Join(ignored, ", "))
++	}
++}
++
++// warnIgnoredTLSFieldsOnListener reports TLS settings App.Listener cannot honor.
++// It serves the listener it is handed, so CertClientFile buys no client-
++// certificate verification — and unless the caller wrapped it, no TLS either.
++func warnIgnoredTLSFieldsOnListener(cfg *ListenConfig, ln net.Listener) {
++	if cfg.CertClientFile != "" {
++		log.Warn("[Listener] CertClientFile is ignored: a client certificate is required only if the supplied " +
++			"listener already asks for one. Wrap it with tls.NewListener using a tls.Config whose ClientAuth " +
++			"is a Require mode.")
++	}
++
++	var ignored []string
++	if cfg.TLSConfig != nil {
++		ignored = append(ignored, "TLSConfig")
++	}
++	if cfg.CertFile != "" || cfg.CertKeyFile != "" {
++		ignored = append(ignored, "CertFile/CertKeyFile")
++	}
++	if cfg.TLSMinVersion != 0 && cfg.TLSMinVersion != tls.VersionTLS12 {
++		ignored = append(ignored, "TLSMinVersion")
++	}
++	if cfg.AutoCertManager != nil {
++		ignored = append(ignored, "AutoCertManager")
++	}
++	if cfg.TLSConfigFunc != nil {
++		ignored = append(ignored, "TLSConfigFunc")
++	}
++	if len(ignored) == 0 {
++		return
++	}
++
++	suffix := "."
++	if getTLSConfig(ln) == nil {
++		suffix = "; this listener is not serving TLS."
++	}
++	log.Warnf("[Listener] serves the supplied listener as-is, so %s %s ignored%s",
++		strings.Join(ignored, ", "), pluralIsAre(len(ignored)), suffix)
++}
++
++func pluralIsAre(n int) string {
++	if n == 1 {
++		return "is"
++	}
++	return "are"
++}
++
+ func applyClientCert(tlsConfig *tls.Config, certClientFile string) error {
+ 	if certClientFile == "" {
+ 		return nil
+@@ -322,8 +412,13 @@ func applyClientCert(tlsConfig *tls.Config, certClientFile string) error {
+ 
+ // Listener serves HTTP requests from the given listener.
+ // You should enter custom ListenConfig to customize startup. (prefork, startup message, graceful shutdown...)
++//
++// The listener is served exactly as supplied, so every TLS field of the config
++// is ignored — including CertClientFile. Wrap it with tls.NewListener yourself
++// to serve TLS or require a client certificate.
+ func (app *App) Listener(ln net.Listener, config ...ListenConfig) error {
+ 	cfg := listenConfigDefault(config...)
++	warnIgnoredTLSFieldsOnListener(&cfg, ln)
+ 
+ 	// Graceful shutdown
+ 	if cfg.GracefulContext != nil {
+diff --git a/middleware/adaptor/adaptor.go b/middleware/adaptor/adaptor.go
+index 605870cdc71..0548fb78c79 100644
+--- a/middleware/adaptor/adaptor.go
++++ b/middleware/adaptor/adaptor.go
+@@ -10,6 +10,7 @@ import (
+ 	"net/http"
+ 	"net/textproto"
+ 	"reflect"
++	"strings"
+ 	"sync"
+ 	"time"
+ 	"unsafe"
+@@ -333,6 +334,95 @@ func CopyContextToFiberContext(src any, requestContext *fasthttp.RequestCtx) {
+ 	}
+ }
+ 
++// framingHeaders delimit and address the message rather than describe what it
++// carries, and are excluded from the snapshot and the clear: the wrapped
++// middleware sees a copy, so clearing one corrupts the body still being read.
++//
++// Connection is not among them. It frames the hop rather than the body, and
++// naming which fields are hop-by-hop is something middleware rewrites — dropping
++// that edit left the handler reading the client's own list. fasthttp re-derives
++// its close flag when the line is written back, so the round trip keeps it.
++var framingHeaders = [...]string{
++	fiber.HeaderHost,
++	fiber.HeaderContentLength,
++	fiber.HeaderTransferEncoding,
++}
++
++// headerPair is one owned copy of a header line taken from the converted
++// net/http request.
++type headerPair struct {
++	key   string
++	value string
++}
++
++// hasCloseToken reports whether a Connection field value lists "close" among its
++// tokens, which RFC 9110 Section 7.6.1 matches case-insensitively.
++func hasCloseToken(value string) bool {
++	for token := range strings.SplitSeq(value, ",") {
++		if utils.EqualFold(utils.TrimSpace(token), "close") {
++			return true
++		}
++	}
++	return false
++}
++
++// snapshotHeaders copies the non-framing headers of the converted request into
++// owned strings. fasthttpadaptor builds r.Header with b2s, so its keys and values
++// alias buffers the fiber header owns — writing back in place corrupted them.
++func snapshotHeaders(h http.Header) []headerPair {
++	// One entry per field line, not per name: len(h) regrows the slice for
++	// every multi-valued header, which is what these tend to be.
++	lines := 0
++	for _, vals := range h {
++		lines += len(vals)
++	}
++
++	pairs := make([]headerPair, 0, lines)
++	for key, vals := range h {
++		if isFramingHeader(key) {
++			continue
++		}
++		ownedKey := strings.Clone(key)
++		for _, v := range vals {
++			pairs = append(pairs, headerPair{key: ownedKey, value: strings.Clone(v)})
++		}
++	}
++	return pairs
++}
++
++// clearCopiedHeaders deletes every non-framing header from the fiber request so
++// the copy that follows rebuilds the set as the wrapped middleware left it.
++// Set-then-Add cannot: Set replaces only the first entry, and removals never did.
++func clearCopiedHeaders(fhdr *fasthttp.RequestHeader) {
++	// Not sized from fhdr.Len(): that counts by walking every header, so
++	// pre-sizing would traverse them twice — and the walk also collects the
++	// cookie store and re-serializes it, on a per-request path.
++	var removed []string
++	for key := range fhdr.All() {
++		name := utils.UnsafeString(key)
++		if isFramingHeader(name) {
++			continue
++		}
++		// Repeated names are Del'd repeatedly; Del removes every line at once, so
++		// the second finds nothing. Skipping it costs more — a slices.Contains scan
++		// measured 17% slower at twenty headers and 61% at a hundred.
++		removed = append(removed, string(key))
++	}
++
++	for _, name := range removed {
++		fhdr.Del(name)
++	}
++}
++
++func isFramingHeader(name string) bool {
++	for _, h := range framingHeaders {
++		if utils.EqualFold(name, h) {
++			return true
++		}
++	}
++	return false
++}
++
+ // HTTPMiddleware wraps net/http middleware to fiber middleware
+ func HTTPMiddleware(mw func(http.Handler) http.Handler) fiber.Handler {
+ 	return func(c fiber.Ctx) error {
+@@ -342,6 +432,12 @@ func HTTPMiddleware(mw func(http.Handler) http.Handler) fiber.Handler {
+ 
+ 			freq := c.Request()
+ 			fhdr := &freq.Header
++
++			// Snapshot before mutating: fasthttpadaptor fills r.Header with b2s views
++			// into fhdr's storage, so every Set, Del or SetHost below rewrites bytes the
++			// remaining entries point at. The method/URI/host writes follow for that.
++			pairs := snapshotHeaders(r.Header)
++
+ 			fhdr.SetMethod(r.Method)
+ 			freq.SetRequestURI(r.RequestURI)
+ 			freq.SetHost(r.Host)
+@@ -349,16 +445,35 @@ func HTTPMiddleware(mw func(http.Handler) http.Handler) fiber.Handler {
+ 
+ 			// Remove all cookies before setting, see https://github.com/valyala/fasthttp/pull/1864
+ 			fhdr.DelAllCookies()
+-			for key, vals := range r.Header {
+-				if len(vals) == 0 {
++			clearCopiedHeaders(fhdr)
++			// Connection lives in a slot of its own, so a second Add replaces the
++			// first rather than appending: net/http represents a combined value as
++			// several entries, and ["keep-alive", "X-Internal"] arrived as
++			// "X-Internal" alone — dropping the token that marks a field hop-by-hop,
++			// which a proxy downstream would then forward. ["close", …] lost the
++			// close signal the same way. A recipient may combine field lines with
++			// commas (RFC 9110 §5.3), so they are joined and set once.
++			var connection []string
++			for _, p := range pairs {
++				if utils.EqualFold(p.key, fiber.HeaderConnection) {
++					connection = append(connection, p.value)
+ 					continue
+ 				}
+-				// Set replaces whatever the key held on the fiber request,
+-				// then Add appends the remaining values so multi-value
+-				// headers survive instead of collapsing to the last value.
+-				fhdr.Set(key, vals[0])
+-				for _, v := range vals[1:] {
+-					fhdr.Add(key, v)
++				fhdr.Add(p.key, p.value)
++			}
++			if len(connection) > 0 {
++				joined := strings.Join(connection, ", ")
++				fhdr.Set(fiber.HeaderConnection, joined)
++				if hasCloseToken(joined) {
++					// fasthttp holds either the close flag or an arbitrary value,
++					// never both: setting the flag makes Peek answer "close" and
++					// hides the rest, while Set of anything but a bare "close"
++					// clears the flag. Where the two conflict the flag has to win —
++					// Set alone left a connection the client asked to close being
++					// kept open, since the server reads the flag and nothing else.
++					// The cost is that a field named beside "close" stops being
++					// visible as hop-by-hop for this request.
++					fhdr.SetConnectionClose()
+ 				}
+ 			}
+ 			CopyContextToFiberContext(r.Context(), c.RequestCtx())
+diff --git a/middleware/cache/cache.go b/middleware/cache/cache.go
+index 3edf4b4ee86..0aeb9e4cebf 100644
+--- a/middleware/cache/cache.go
++++ b/middleware/cache/cache.go
+@@ -16,6 +16,8 @@ import (
+ 	"github.com/valyala/fasthttp"
+ 
+ 	"github.com/gofiber/fiber/v3"
++	"github.com/gofiber/fiber/v3/internal/fieldname"
++	"github.com/gofiber/fiber/v3/internal/headerlookup"
+ )
+ 
+ // buffer size for hexpool
+@@ -32,6 +34,19 @@ const (
+ 	cacheMiss        = "miss"
+ )
+ 
++// cacheKeyVersion namespaces every key this version writes, so an entry a
++// previous one stored is never read rather than being reinterpreted.
++//
++// Bumped because the rules for what shares a partition changed. An earlier
++// version detected Authorization byte-exactly, so under DisableHeaderNormalizing
++// a request bearing a lower-case "authorization" was taken for anonymous and its
++// response cached under the anonymous key. Only lookups that carry the header
++// now move to a partition of their own — so on an external store that survived
++// the upgrade, an anonymous request would still find that entry and be served an
++// authenticated body. Bump this whenever what a key stands for changes; the cost
++// is one cold cache after a deploy.
++const cacheKeyVersion = "v2"
++
+ type expirationSource uint8
+ 
+ const (
+@@ -75,10 +90,18 @@ var ignoreHeaders = map[string]struct{}{
+ 	"Keep-Alive":          {},
+ 	"Proxy-Authenticate":  {},
+ 	"Proxy-Authorization": {},
+-	"TE":                  {},
+-	"Trailers":            {},
+-	"Transfer-Encoding":   {},
+-	"Upgrade":             {},
++	// Served to every client matching the key, so a captured Set-Cookie hands one
++	// client's session to all the others. It still reaches the client that caused
++	// the miss. Set-Cookie2 is the obsolete RFC 2965 spelling and leaks the same.
++	"Set-Cookie":  {},
++	"Set-Cookie2": {},
++	"TE":          {},
++	// "Trailer", not "Trailers": the hop-by-hop header is Trailer (RFC 9110
++	// §6.6.2), so the old spelling matched nothing and replayed one connection's
++	// chunked framing to every later hit.
++	"Trailer":           {},
++	"Transfer-Encoding": {},
++	"Upgrade":           {},
+ }
+ 
+ var cacheableStatusCodes = map[int]struct{}{
+@@ -201,11 +224,22 @@ func New(config ...Config) fiber.Handler {
+ 
+ 	// Return new handler
+ 	return func(c fiber.Ctx) error {
+-		hasAuthorization := len(c.Request().Header.Peek(fiber.HeaderAuthorization)) > 0
+-		reqCacheControl := c.Request().Header.Peek(fiber.HeaderCacheControl)
++		// Every field line, like the hash below: an empty first Authorization line
++		// would otherwise read as anonymous. canonical is app config, fixed for the
++		// life of the handler, so read it once.
++		canonical := headerlookup.Canonical(c)
++
++		hasAuthorization := false
++		for _, v := range fieldname.Lines(&c.Request().Header, fiber.HeaderAuthorization, canonical) {
++			if len(v) > 0 {
++				hasAuthorization = true
++				break
++			}
++		}
++		reqCacheControl := joinedHeader(&c.Request().Header, fiber.HeaderCacheControl, canonical)
+ 		reqDirectives := parseRequestCacheControl(reqCacheControl)
+ 		if !reqDirectives.noCache {
+-			reqPragma := utils.UnsafeString(c.Request().Header.Peek(fiber.HeaderPragma))
++			reqPragma := utils.UnsafeString(joinedHeader(&c.Request().Header, fiber.HeaderPragma, canonical))
+ 			if hasDirective(reqPragma, noCache) {
+ 				reqDirectives.noCache = true
+ 			}
+@@ -225,10 +259,18 @@ func New(config ...Config) fiber.Handler {
+ 		}
+ 
+ 		// Get key from request
+-		baseKey := requestMethod + "|" + cfg.KeyGenerator(c)
++		baseKey := cacheKeyVersion + "|" + requestMethod + "|" + cfg.KeyGenerator(c)
+ 		manifestKey := baseKey + "|vary"
+ 		if hasAuthorization {
+-			authHash := hashAuthorization(c.Request().Header.Peek(fiber.HeaderAuthorization))
++			// Read at the point of use: the result aliases the header's storage, and
++			// cfg.KeyGenerator is user code that may recycle the slot. Every field
++			// line, or two credentials differing past the first would share a key.
++			//
++			// Length-prefixed, not comma-joined: a lone "Bearer a,Bearer b" renders
++			// the same as two lines carrying one each, and the two are different
++			// principals, so a comma would put them in one partition.
++			authLines := fieldname.Lines(&c.Request().Header, fiber.HeaderAuthorization, canonical)
++			authHash := hashAuthorization(authLines)
+ 			baseKey += "|auth=" + authHash
+ 			manifestKey = baseKey + "|vary"
+ 		}
+@@ -245,7 +287,7 @@ func New(config ...Config) fiber.Handler {
+ 				return err
+ 			}
+ 			if len(varyNames) > 0 {
+-				key += buildVaryKey(varyNames, &c.Request().Header)
++				key += buildVaryKey(varyNames, &c.Request().Header, canonical)
+ 			}
+ 		}
+ 
+@@ -340,6 +382,12 @@ func New(config ...Config) fiber.Handler {
+ 					entryHasPrivate = true
+ 				}
+ 			}
++			// An entry written before Set-Cookie joined ignoreHeaders carries one
++			// beside a body that is personalized for whoever caused that miss.
++			// Dropping the cookie on replay leaves that body, so the entry goes.
++			if !entryHasPrivate && len(e.headers) > 0 && cachedHeadersSetCookie(e.headers) {
++				entryHasPrivate = true
++			}
+ 			requestNoCache := reqDirectives.noCache
+ 
+ 			// Invalidate cache if requested
+@@ -443,23 +491,42 @@ func New(config ...Config) fiber.Handler {
+ 					c.Response().Header.SetBytesV(fiber.HeaderContentEncoding, e.cencoding)
+ 				}
+ 				if len(e.cacheControl) > 0 {
+-					c.Response().Header.SetBytesV(fiber.HeaderCacheControl, e.cacheControl)
++					setFieldLine(&c.Response().Header, fiber.HeaderCacheControl, e.cacheControl, canonical)
+ 				}
+ 				if len(e.expires) > 0 {
+-					c.Response().Header.SetBytesV(fiber.HeaderExpires, e.expires)
++					setFieldLine(&c.Response().Header, fiber.HeaderExpires, e.expires, canonical)
+ 				}
+ 				if len(e.etag) > 0 {
+-					c.Response().Header.SetBytesV(fiber.HeaderETag, e.etag)
++					setFieldLine(&c.Response().Header, fiber.HeaderETag, e.etag, canonical)
+ 				}
+ 				clampedDate := clampDateSeconds(e.date, ts)
+ 				dateValue := utils.AppendHTTPDate(nil, secondsToTime(clampedDate))
+-				c.Response().Header.SetBytesV(fiber.HeaderDate, dateValue)
++				setFieldLine(&c.Response().Header, fiber.HeaderDate, dateValue, canonical)
++				// One entry per field line, so Set collapsed a repeated name — a Vary
++				// sent twice came back varying only on the second. Clear every stored
++				// name first, then append; a per-entry scan would be quadratic here.
+ 				for i := range e.headers {
+-					h := e.headers[i]
+-					c.Response().Header.SetBytesKV(h.key, h.value)
++					if isIgnoredHeader(e.headers[i].key) {
++						// An entry stored before Set-Cookie joined ignoreHeaders still
++						// carries one, and DelBytes on it clears fasthttp's whole cookie
++						// store — wiping the session an outer middleware just set.
++						continue
++					}
++					if !canonical {
++						// DelBytes is byte-exact, so a line under another spelling survives
++						// it and the append lands beside it — the pair this clear prevents.
++						fieldname.DelOthers(&c.Response().Header, utils.UnsafeString(e.headers[i].key))
++					}
++					c.Response().Header.DelBytes(e.headers[i].key)
++				}
++				for i := range e.headers {
++					if isIgnoredHeader(e.headers[i].key) {
++						continue
++					}
++					c.Response().Header.AddBytesKV(e.headers[i].key, e.headers[i].value)
+ 				}
+ 				// Set Cache-Control header if not disabled and not already set
+-				if !cfg.DisableCacheControl && len(c.Response().Header.Peek(fiber.HeaderCacheControl)) == 0 {
++				if !cfg.DisableCacheControl && len(fieldname.First(&c.Response().Header, fiber.HeaderCacheControl, canonical)) == 0 {
+ 					remaining := uint64(0)
+ 					if e.exp > ts {
+ 						remaining = e.exp - ts
+@@ -473,7 +540,7 @@ func New(config ...Config) fiber.Handler {
+ 
+ 				// RFC-compliant Age header (RFC 9111)
+ 				age := utils.FormatUint(ageSeconds)
+-				c.Response().Header.Set(fiber.HeaderAge, age)
++				setFieldLine(&c.Response().Header, fiber.HeaderAge, utils.UnsafeBytes(age), canonical)
+ 				appendWarningHeaders(&c.Response().Header, servedStale, isHeuristicFreshness(e, &cfg, entryAge))
+ 
+ 				c.Set(cfg.CacheHeader, cacheHit)
+@@ -514,16 +581,31 @@ func New(config ...Config) fiber.Handler {
+ 			return err
+ 		}
+ 
+-		cacheControlBytes := c.Response().Header.Peek(fiber.HeaderCacheControl)
++		markUnreachable := func() {
++			// manager.release is a no-op for in-memory storage, so no guard.
++			if e != nil {
++				manager.release(e)
++				e = nil
++			}
++			c.Set(cfg.CacheHeader, cacheUnreachable)
++		}
++
++		// The response's own spelling, not the app's: a proxy hands c.Response()
++		// to an outbound fasthttp.Client, which stamps its own normalizing setting
++		// on it. Reading a lower-case "cache-control: private" as absent cached
++		// one client's body and replayed it to the next under "public, max-age".
++		respCanonical := fieldname.Canonical(&c.Response().Header)
++
++		cacheControlBytes := joinedHeader(&c.Response().Header, fiber.HeaderCacheControl, respCanonical)
+ 		respCacheControl := parseResponseCacheControl(cacheControlBytes)
+-		varyHeader := utils.UnsafeString(c.Response().Header.Peek(fiber.HeaderVary))
++		varyHeader := utils.UnsafeString(joinedHeader(&c.Response().Header, fiber.HeaderVary, respCanonical))
+ 		hasPrivate := respCacheControl.hasPrivate
+ 		hasNoCache := respCacheControl.hasNoCache
+ 		varyNames, varyHasStar := parseVary(varyHeader)
+ 
+ 		// Respect server cache-control: no-store
+ 		if respCacheControl.hasNoStore {
+-			c.Set(cfg.CacheHeader, cacheUnreachable)
++			markUnreachable()
+ 			return nil
+ 		}
+ 
+@@ -559,7 +641,7 @@ func New(config ...Config) fiber.Handler {
+ 		shouldStoreVaryManifest := !cfg.DisableVaryHeaders && len(varyNames) > 0
+ 		if !cfg.DisableVaryHeaders && len(varyNames) > 0 {
+ 			if key == baseKey {
+-				key += buildVaryKey(varyNames, &c.Request().Header)
++				key += buildVaryKey(varyNames, &c.Request().Header, canonical)
+ 			}
+ 		} else if !cfg.DisableVaryHeaders && hasVaryManifest {
+ 			if err := manager.del(reqCtx, manifestKey); err != nil {
+@@ -567,9 +649,20 @@ func New(config ...Config) fiber.Handler {
+ 			}
+ 		}
+ 
++		// unreachable marks the response uncacheable and hands back any entry still
++		// held from the lookup: each decision below is a decision not to store, so
++		// the unmarshalled copy would otherwise be dropped rather than pooled.
+ 		isSharedCacheAllowed := allowsSharedCacheDirectives(respCacheControl)
+ 		if hasAuthorization && !isSharedCacheAllowed {
+-			c.Set(cfg.CacheHeader, cacheUnreachable)
++			markUnreachable()
++			return nil
++		}
++
++		// A cookie personalizes the response for the one client that caused this
++		// miss, and the body is the payload. Stricter than the test above: RFC 9111
++		// §3.5 allows must-revalidate on a cache that re-checks, and this never does.
++		if !allowsSharedCacheStorage(respCacheControl) && responseSetsCookie(&c.Response().Header, respCanonical) {
++			markUnreachable()
+ 			return nil
+ 		}
+ 
+@@ -577,20 +670,20 @@ func New(config ...Config) fiber.Handler {
+ 
+ 		// Don't cache response if status code is not cacheable
+ 		if _, ok := cacheableStatusCodes[c.Response().StatusCode()]; !ok {
+-			c.Set(cfg.CacheHeader, cacheUnreachable)
++			markUnreachable()
+ 			return nil
+ 		}
+ 
+ 		// Don't cache response if Next returns true
+ 		if cfg.Next != nil && cfg.Next(c) {
+-			c.Set(cfg.CacheHeader, cacheUnreachable)
++			markUnreachable()
+ 			return nil
+ 		}
+ 
+ 		// Don't try to cache if body won't fit into cache
+ 		bodySize := uint(len(c.Response().Body()))
+ 		if cfg.MaxBytes > 0 && bodySize > cfg.MaxBytes {
+-			c.Set(cfg.CacheHeader, cacheUnreachable)
++			markUnreachable()
+ 			return nil
+ 		}
+ 
+@@ -686,6 +779,12 @@ func New(config ...Config) fiber.Handler {
+ 			}
+ 		}
+ 
++		// Hand back whatever the lookup left holding. A stale entry survives to here
++		// whenever the request said no-cache or it carried no expiry, and dropping
++		// it would leak one pooled item per such request.
++		if e != nil {
++			manager.release(e)
++		}
+ 		e = manager.acquire()
+ 		// Cache response
+ 		e.body = utils.CopyBytes(c.Response().Body())
+@@ -694,29 +793,32 @@ func New(config ...Config) fiber.Handler {
+ 		e.cencoding = utils.CopyBytes(c.Response().Header.Peek(fiber.HeaderContentEncoding))
+ 		e.private = false
+ 		e.cacheControl = utils.CopyBytes(cacheControlBytes)
+-		e.expires = utils.CopyBytes(c.Response().Header.Peek(fiber.HeaderExpires))
+-		e.etag = utils.CopyBytes(c.Response().Header.Peek(fiber.HeaderETag))
++		e.expires = utils.CopyBytes(fieldname.First(&c.Response().Header, fiber.HeaderExpires, respCanonical))
++		e.etag = utils.CopyBytes(fieldname.First(&c.Response().Header, fiber.HeaderETag, respCanonical))
+ 		e.date = 0
+ 
+ 		ageVal := uint64(0)
+-		if b := c.Response().Header.Peek(fiber.HeaderAge); len(b) > 0 {
++		if b := fieldname.First(&c.Response().Header, fiber.HeaderAge, respCanonical); len(b) > 0 {
+ 			if v, err := fasthttp.ParseUint(b); err == nil {
+ 				if v >= 0 {
+ 					ageVal = uint64(v)
+ 				}
+ 			}
+ 		} else {
+-			c.Response().Header.Set(fiber.HeaderAge, "0")
++			setFieldLine(&c.Response().Header, fiber.HeaderAge, []byte("0"), respCanonical)
+ 		}
+ 		e.age = ageVal
+ 		e.shareable = isSharedCacheAllowed
+ 		now := cfg.now().UTC()
+ 		nowUnix := safeUnixSeconds(now)
+-		dateHeader := c.Response().Header.Peek(fiber.HeaderDate)
++		dateHeader := fieldname.First(&c.Response().Header, fiber.HeaderDate, respCanonical)
++		// The second result says whether the date parsed, which is not asked: an
++		// absent or unparsable Date leaves parsedDate zero, which clampDateSeconds
++		// resolves to the receipt timestamp — the same answer either way.
+ 		parsedDate, _ := parseHTTPDate(dateHeader)
+ 		e.date = clampDateSeconds(parsedDate, nowUnix)
+ 		dateBytes := utils.AppendHTTPDate(nil, secondsToTime(e.date))
+-		c.Response().Header.SetBytesV(fiber.HeaderDate, dateBytes)
++		setFieldLine(&c.Response().Header, fiber.HeaderDate, dateBytes, respCanonical)
+ 
+ 		// Store all response headers
+ 		// (more: https://datatracker.ietf.org/doc/html/rfc2616#section-13.5.1)
+@@ -724,16 +826,26 @@ func New(config ...Config) fiber.Handler {
+ 			allHeaders := c.Response().Header.All()
+ 			e.headers = e.headers[:0]
+ 			for key, value := range allHeaders {
+-				keyStr := string(key)
+-				if _, ok := ignoreHeaders[keyStr]; ok {
++				if isIgnoredHeader(key) {
+ 					continue
+ 				}
+ 
+ 				e.headers = append(e.headers, cachedHeader{
+-					key:   utils.CopyBytes(utils.UnsafeBytes(keyStr)),
++					key:   utils.CopyBytes(key),
+ 					value: utils.CopyBytes(value),
+ 				})
+ 			}
++		} else {
++			// Keep a redirect's destination even when headers are not stored: 300 and
++			// 301 are cacheable, so without this the first client got
++			// "301 Location: /new" and every one after it a bare 301.
++			e.headers = e.headers[:0]
++			if location := fieldname.First(&c.Response().Header, fiber.HeaderLocation, respCanonical); len(location) > 0 {
++				e.headers = append(e.headers, cachedHeader{
++					key:   utils.CopyBytes(utils.UnsafeBytes(fiber.HeaderLocation)),
++					value: utils.CopyBytes(location),
++				})
++			}
+ 		}
+ 
+ 		expirationSource := expirationSourceConfig
+@@ -749,7 +861,7 @@ func New(config ...Config) fiber.Handler {
+ 			if respCacheControl.maxAgeSet {
+ 				expiration = secondsToDuration(respCacheControl.maxAge)
+ 				expirationSource = expirationSourceMaxAge
+-			} else if expiresBytes := c.Response().Header.Peek(fiber.HeaderExpires); len(expiresBytes) > 0 {
++			} else if expiresBytes := fieldname.First(&c.Response().Header, fiber.HeaderExpires, respCanonical); len(expiresBytes) > 0 {
+ 				// Same parser as the Date header (utils.go parseHTTPDate) so
+ 				// both share one acceptance set: IMF-fixdate plus the obsolete
+ 				// RFC 850 and asctime forms RFC 9110 §5.6.7 requires.
+@@ -779,7 +891,7 @@ func New(config ...Config) fiber.Handler {
+ 		}
+ 
+ 		if expiration <= 0 && !expiresParseError {
+-			c.Set(cfg.CacheHeader, cacheUnreachable)
++			markUnreachable()
+ 			return nil
+ 		}
+ 
+@@ -806,7 +918,7 @@ func New(config ...Config) fiber.Handler {
+ 		remainingExpiration := expiration - ageDuration
+ 		if remainingExpiration <= 0 {
+ 			if expirationSource != expirationSourceExpires {
+-				c.Set(cfg.CacheHeader, cacheUnreachable)
++				markUnreachable()
+ 				return nil
+ 			}
+ 			remainingExpiration = 0
+diff --git a/middleware/cache/cachecontrol.go b/middleware/cache/cachecontrol.go
+index 48d55d936b6..49c86708037 100644
+--- a/middleware/cache/cachecontrol.go
++++ b/middleware/cache/cachecontrol.go
+@@ -65,8 +65,27 @@ func parseCacheControlDirectives(cc []byte, fn func(key, value []byte)) {
+ 			break
+ 		}
+ 
++		// A directive value may be a quoted-string (RFC 9111 §5.2), and a comma
++		// inside one is data rather than the end of the directive. Scanning past
++		// it read the tokens in an extension value as directives of their own,
++		// so `ext="a, public, b"` said public and authorized sharing.
++		// Unterminated quotes swallow the rest of the field, which is the safe
++		// way round: what follows is read as one value rather than as directives
++		// a sender never separated.
+ 		start := i
+-		for i < len(cc) && cc[i] != ',' {
++		inQuotes := false
++		for i < len(cc) {
++			if inQuotes && cc[i] == '\\' && i+1 < len(cc) {
++				// A quoted-pair: the byte after the backslash is data, a quote
++				// among it, so the string does not end there.
++				i += 2
++				continue
++			}
++			if cc[i] == '"' {
++				inQuotes = !inQuotes
++			} else if cc[i] == ',' && !inQuotes {
++				break
++			}
+ 			i++
+ 		}
+ 		partEnd := i
+@@ -250,3 +269,15 @@ func allowsSharedCacheDirectives(cc responseCacheControl) bool {
+ 	// an Expires header alone MUST NOT allow sharing when Authorization is present.
+ 	return false
+ }
++
++// allowsSharedCacheStorage reports whether a response says outright that a
++// shared cache may hold it. Stricter than allowsSharedCacheDirectives, which
++// accepts must-revalidate on a bargain this middleware never keeps.
++func allowsSharedCacheStorage(cc responseCacheControl) bool {
++	// The store path rejects private long before the cookie gate; this arm just
++	// keeps the predicate self-contained.
++	if cc.hasPrivate {
++		return false
++	}
++	return cc.hasPublic || cc.sMaxAgeSet
++}
+diff --git a/middleware/cache/keygen.go b/middleware/cache/keygen.go
+index 26d42a7cb87..5fe1ca7275e 100644
+--- a/middleware/cache/keygen.go
++++ b/middleware/cache/keygen.go
+@@ -2,9 +2,11 @@ package cache
+ 
+ import (
+ 	"crypto/sha256"
++	"encoding/binary"
+ 	"encoding/hex"
+ 	"net/url"
+ 	"sort"
++	"strconv"
+ 	"strings"
+ 	"sync"
+ 
+@@ -12,6 +14,7 @@ import (
+ 	"github.com/valyala/fasthttp"
+ 
+ 	"github.com/gofiber/fiber/v3"
++	"github.com/gofiber/fiber/v3/internal/headerlookup"
+ )
+ 
+ const (
+@@ -58,7 +61,7 @@ func defaultKeyGenerator(c fiber.Ctx, cfg *Config) string {
+ 
+ 	if len(cfg.KeyHeaders) > 0 {
+ 		buf = append(buf, '|', 'h', '=')
+-		buf = appendCanonicalHeaderSubset(buf, &c.Request().Header, cfg.KeyHeaders)
++		buf = appendCanonicalHeaderSubset(buf, &c.Request().Header, cfg.KeyHeaders, headerlookup.Canonical(c))
+ 	}
+ 
+ 	if len(cfg.KeyCookies) > 0 {
+@@ -173,7 +176,7 @@ func appendCanonicalQueryString(dst []byte, uri *fasthttp.URI) []byte {
+ 	return dst
+ }
+ 
+-func appendCanonicalHeaderSubset(dst []byte, header *fasthttp.RequestHeader, names []string) []byte {
++func appendCanonicalHeaderSubset(dst []byte, header *fasthttp.RequestHeader, names []string, normalized bool) []byte {
+ 	for idx, name := range names {
+ 		if idx > 0 {
+ 			dst = append(dst, '|')
+@@ -181,15 +184,55 @@ func appendCanonicalHeaderSubset(dst []byte, header *fasthttp.RequestHeader, nam
+ 		// Escape name (though names are normalized and trusted)
+ 		dst = append(dst, escapeKeyDelimiters(name)...)
+ 		dst = append(dst, ':')
+-		headerValue := header.Peek(name)
+-		// Escape value to prevent delimiter injection
+-		escapedValue := escapeKeyDelimiters(utils.UnsafeString(headerValue))
+-		dst = appendBoundKeySegment(dst, escapedValue)
++
++		// Every field line, not just the first: the split and comma-joined forms are
++		// equivalent (RFC 9110 §5.2), so a key header sent twice keyed like one sent
++		// once and was served its cached response.
++		values := keyFieldLines(header, name, normalized)
++
++		// The count keeps the framing injective: without it an absent header and
++		// an empty one both emit nothing, and a list could not be told from a
++		// single value containing the separator.
++		dst = strconv.AppendInt(dst, int64(len(values)), 10)
++
++		// Each value is bounded, but not how many there are, and a few hundred field
++		// lines build a multi-kilobyte map key. Hash past the bound; the hash covers
++		// raw lines, which the verbatim form never is, so the two cannot collide.
++		total := 0
++		for _, value := range values {
++			total += len(value) + 1
++		}
++		if total > maxKeyDimensionSegmentLength {
++			dst = appendHashedKeySegment(dst, joinKeyHeaderValues(values))
++			continue
++		}
++
++		for _, value := range values {
++			dst = append(dst, '|')
++			// Escape value to prevent delimiter injection
++			dst = appendBoundKeySegment(dst, escapeKeyDelimiters(utils.UnsafeString(value)))
++		}
+ 	}
+ 
+ 	return dst
+ }
+ 
++// joinKeyHeaderValues concatenates field lines with a length prefix each, so
++// the digest taken over the result distinguishes value lists that a plain
++// concatenation would not (["ab"] from ["a","b"]).
++func joinKeyHeaderValues(values [][]byte) []byte {
++	n := 0
++	for _, v := range values {
++		n += len(v) + binary.MaxVarintLen64
++	}
++	joined := make([]byte, 0, n)
++	for _, v := range values {
++		joined = binary.AppendUvarint(joined, uint64(len(v)))
++		joined = append(joined, v...)
++	}
++	return joined
++}
++
+ func appendCanonicalCookieSubset(dst []byte, c fiber.Ctx, names []string) []byte {
+ 	for idx, name := range names {
+ 		if idx > 0 {
+diff --git a/middleware/cache/utils.go b/middleware/cache/utils.go
+index 7f573f61af7..b9d27a1d07e 100644
+--- a/middleware/cache/utils.go
++++ b/middleware/cache/utils.go
+@@ -2,14 +2,18 @@ package cache
+ 
+ import (
+ 	"crypto/sha256"
++	"encoding/binary"
+ 	"encoding/hex"
+ 	"errors"
+ 	"fmt"
+ 	"math"
++	"strings"
+ 	"sync"
+ 	"time"
+ 
+ 	"github.com/gofiber/fiber/v3"
++	"github.com/gofiber/fiber/v3/internal/fieldname"
++	"github.com/gofiber/fiber/v3/internal/mediatype"
+ 	"github.com/gofiber/utils/v2"
+ 	"github.com/valyala/fasthttp"
+ )
+@@ -86,6 +90,136 @@ func lookupCachedHeader(headers []cachedHeader, name string) ([]byte, bool) {
+ 	return nil, false
+ }
+ 
++// setCookie2 is the obsolete RFC 2965 spelling of Set-Cookie. fasthttp keeps it
++// as an ordinary field rather than in its cookie store, so it has to be looked
++// up separately.
++const setCookie2 = "Set-Cookie2"
++
++// cachedHeadersSetCookie reports whether a stored entry carries a cookie. Only
++// an entry written before Set-Cookie joined ignoreHeaders can, so this asks
++// about a persisted store an older version filled, not about anything this one
++// would write.
++func cachedHeadersSetCookie(headers []cachedHeader) bool {
++	if _, ok := lookupCachedHeader(headers, fiber.HeaderSetCookie); ok {
++		return true
++	}
++	_, ok := lookupCachedHeader(headers, setCookie2)
++	return ok
++}
++
++// responseSetsCookie reports whether the response hands a cookie to the client
++// that caused this miss.
++func responseSetsCookie(h *fasthttp.ResponseHeader, normalized bool) bool { //nolint:revive // flag-parameter: normalized is a property of the header store
++	for range h.Cookies() {
++		return true
++	}
++	// Not PeekAll(Set-Cookie): fasthttp answers that from its cookie store and
++	// returns one empty entry when there is none. Set-Cookie2 has no store, so it
++	// is found only under the spelling the handler wrote.
++	for _, v := range fieldname.Lines(h, setCookie2, normalized) {
++		if len(v) > 0 {
++			return true
++		}
++	}
++	return false
++}
++
++// keyFieldLines returns the field lines of name to key a cache entry on.
++//
++// Cookie is answered from fasthttp's store, which reports raw lines before
++// collection and one merged entry after — so force the collection, the only
++// representation both states agree on. Collecting is idempotent.
++func keyFieldLines(h *fasthttp.RequestHeader, name string, normalized bool) [][]byte {
++	switch {
++	case utils.EqualFold(name, fiber.HeaderCookie):
++		h.Cookie("") // collectCookies; the lookup itself is expected to miss
++
++	case utils.EqualFold(name, fiber.HeaderContentType) && mediatype.IsForm(h.ContentType()):
++		// Fold here rather than read whatever arrived: the key is built once before
++		// the handler and once after, and the form accessors lowercase this header
++		// in between, so the entry landed under a key no lookup would produce.
++		mediatype.NormalizeRequestContentType(h)
++	}
++
++	return fieldname.Lines(h, name, normalized)
++}
++
++// setFieldLine writes value as the field line for name, replacing whichever
++// spelling the response carries. Set is byte-exact, so it otherwise left a
++// differently-spelled line and nothing reconciles two Age or two Date lines.
++func setFieldLine(h *fasthttp.ResponseHeader, name string, value []byte, normalized bool) { //nolint:revive // flag-parameter: normalized is a property of the header store
++	if !normalized {
++		fieldname.DelOthers(h, name)
++	}
++
++	h.SetBytesV(name, value)
++}
++
++// ignoredHeaderNames is ignoreHeaders keyed the way a field name has to be
++// matched, since the spellings reaching isIgnoredHeader are the ones a handler
++// chose rather than the ones fasthttp canonicalized.
++var ignoredHeaderNames = func() map[string]struct{} {
++	folded := make(map[string]struct{}, len(ignoreHeaders))
++	for name := range ignoreHeaders {
++		folded[strings.ToLower(name)] = struct{}{}
++	}
++	return folded
++}()
++
++// maxIgnoredHeaderLen is the longest name in ignoredHeaderNames. Anything
++// longer cannot be one of them, so it never needs folding.
++const maxIgnoredHeaderLen = 32
++
++// isIgnoredHeader reports whether key names a field this cache must not carry
++// between requests. Matched case-insensitively (RFC 9110 §5.1): a byte-exact
++// lookup missed a handler's lower-case "cache-control" and replayed it.
++func isIgnoredHeader(key []byte) bool {
++	if len(key) > maxIgnoredHeaderLen {
++		return false
++	}
++
++	var buf [maxIgnoredHeaderLen]byte
++	lower := buf[:len(key)]
++	for i := range key {
++		c := key[i]
++		if c >= 'A' && c <= 'Z' {
++			c += 'a' - 'A'
++		}
++		lower[i] = c
++	}
++
++	_, ok := ignoredHeaderNames[string(lower)]
++	return ok
++}
++
++// joinedHeader returns every field line for key, comma-joined, since a recipient
++// may combine them into that form (RFC 9110 §5.2). Peek returns only the first,
++// so a second "Vary:" line was cached as if it had never been sent.
++func joinedHeader(h fieldname.Peeker, key string, normalized bool) []byte {
++	values := fieldname.Lines(h, key, normalized)
++	switch len(values) {
++	case 0:
++		return nil
++	case 1:
++		return values[0]
++	}
++
++	n := 0
++	for _, v := range values {
++		n += len(v) + 1
++	}
++	joined := make([]byte, 0, n)
++	for i, v := range values {
++		if i > 0 {
++			// A bare comma, matching package fiber's own field-line joiner, so
++			// the two render a combined value identically.
++			joined = append(joined, ',')
++		}
++		joined = append(joined, v...)
++	}
++	return joined
++}
++
+ func parseHTTPDate(dateBytes []byte) (uint64, bool) {
+ 	if len(dateBytes) == 0 {
+ 		return 0, false
+@@ -138,9 +272,40 @@ func secondsToDuration(sec uint64) time.Duration {
+ 	return time.Duration(sec) * time.Second
+ }
+ 
+-func makeHashAuthFunc(hexBufPool *sync.Pool) func([]byte) string {
+-	return func(authHeader []byte) string {
+-		sum := sha256.Sum256(authHeader)
++// maxAuthScratch bounds the framing buffer kept between requests, so one
++// oversized Authorization header does not pin a large allocation for the life of
++// the process.
++const maxAuthScratch = 8 * 1024
++
++// authScratchPool holds the buffer the field lines are framed into. The framing
++// has to exist somewhere before it is hashed, and a fresh buffer per request put
++// an allocation on the cache path for every authenticated request.
++var authScratchPool = sync.Pool{
++	New: func() any {
++		b := make([]byte, 0, 256)
++		return &b
++	},
++}
++
++// makeHashAuthFunc returns the digest of a request's Authorization field lines,
++// each length-prefixed so that ["ab"] and ["a","b"] do not collide.
++func makeHashAuthFunc(hexBufPool *sync.Pool) func([][]byte) string {
++	return func(lines [][]byte) string {
++		scratchPtr, ok := authScratchPool.Get().(*[]byte)
++		if !ok || scratchPtr == nil {
++			b := make([]byte, 0, 256)
++			scratchPtr = &b
++		}
++		framed := (*scratchPtr)[:0]
++		for _, v := range lines {
++			framed = binary.AppendUvarint(framed, uint64(len(v)))
++			framed = append(framed, v...)
++		}
++		sum := sha256.Sum256(framed)
++		if cap(framed) <= maxAuthScratch {
++			*scratchPtr = framed
++			authScratchPool.Put(scratchPtr)
++		}
+ 
+ 		v := hexBufPool.Get()
+ 		bufPtr, ok := v.(*[]byte)
+diff --git a/middleware/cache/vary.go b/middleware/cache/vary.go
+index c389218e92c..81668384e81 100644
+--- a/middleware/cache/vary.go
++++ b/middleware/cache/vary.go
+@@ -3,6 +3,7 @@ package cache
+ import (
+ 	"context"
+ 	"crypto/sha256"
++	"encoding/binary"
+ 	"encoding/hex"
+ 	"errors"
+ 	"sort"
+@@ -48,14 +49,28 @@ func parseVary(vary string) ([]string, bool) {
+ 	return names, false
+ }
+ 
+-func makeBuildVaryKeyFunc(hexBufPool *sync.Pool) func([]string, *fasthttp.RequestHeader) string {
+-	return func(names []string, hdr *fasthttp.RequestHeader) string {
++func makeBuildVaryKeyFunc(hexBufPool *sync.Pool) func([]string, *fasthttp.RequestHeader, bool) string {
++	return func(names []string, hdr *fasthttp.RequestHeader, normalized bool) string {
+ 		sum := sha256.New()
++		// Written inline rather than through a closure: capturing lenBuf would
++		// force the array to the heap, adding two allocations to every request
++		// that has a Vary manifest.
++		var lenBuf [binary.MaxVarintLen64]byte
+ 		for _, name := range names {
+-			_, _ = sum.Write(utils.UnsafeBytes(name)) //nolint:errcheck // hash.Hash.Write for std hashes never errors
+-			_, _ = sum.Write([]byte{0})               //nolint:errcheck // hash.Hash.Write for std hashes never errors
+-			_, _ = sum.Write(hdr.Peek(name))          //nolint:errcheck // hash.Hash.Write for std hashes never errors
+-			_, _ = sum.Write([]byte{0})               //nolint:errcheck // hash.Hash.Write for std hashes never errors
++			_, _ = sum.Write(binary.AppendUvarint(lenBuf[:0], uint64(len(name)))) //nolint:errcheck // hash.Hash.Write for std hashes never errors
++			_, _ = sum.Write(utils.UnsafeBytes(name))                             //nolint:errcheck // hash.Hash.Write for std hashes never errors
++
++			// Every field line, not just the first: the split and comma-joined forms
++			// are equivalent (RFC 9110 §5.2), so a request sending X-Tenant twice
++			// hashed like one sending just the first value.
++			values := keyFieldLines(hdr, name, normalized)
++			_, _ = sum.Write(binary.AppendUvarint(lenBuf[:0], uint64(len(values)))) //nolint:errcheck // hash.Hash.Write for std hashes never errors
++			for _, v := range values {
++				// Length-prefixed so the framing stays injective: without it
++				// two lines "a" and "b" would hash like a single line "a\x00b".
++				_, _ = sum.Write(binary.AppendUvarint(lenBuf[:0], uint64(len(v)))) //nolint:errcheck // hash.Hash.Write for std hashes never errors
++				_, _ = sum.Write(v)                                                //nolint:errcheck // hash.Hash.Write for std hashes never errors
++			}
+ 		}
+ 
+ 		var hashBytes [sha256.Size]byte
+diff --git a/middleware/csrf/csrf.go b/middleware/csrf/csrf.go
+index bda87425074..ffae52dd9d8 100644
+--- a/middleware/csrf/csrf.go
++++ b/middleware/csrf/csrf.go
+@@ -14,6 +14,7 @@ import (
+ 
+ 	"github.com/gofiber/fiber/v3"
+ 	"github.com/gofiber/fiber/v3/extractors"
++	"github.com/gofiber/fiber/v3/internal/headerlookup"
+ 	"github.com/gofiber/fiber/v3/internal/redact"
+ 	"github.com/gofiber/fiber/v3/internal/schemehost"
+ 	"github.com/gofiber/fiber/v3/middleware/logger"
+@@ -138,7 +139,9 @@ func New(config ...Config) fiber.Handler {
+ 		default:
+ 			// Assume that anything not defined as 'safe' by RFC7231 needs protection
+ 
+-			// Evaluate Sec-Fetch-Site to reject cross-site requests earlier when available.
++			// Reject a Sec-Fetch-Site the browser would never have sent. It does not
++			// decide cross-site on its own — only originMatchesHost knows which
++			// origins are trusted.
+ 			if err := validateSecFetchSite(c); err != nil {
+ 				return cfg.ErrorHandler(c, err)
+ 			}
+@@ -340,8 +343,17 @@ func (handler *Handler) DeleteToken(c fiber.Ctx) error {
+ 	return nil
+ }
+ 
++// validateSecFetchSite rejects a Sec-Fetch-Site carrying anything but the four
++// values the Fetch standard defines. Not "cross-site": a browser sends that for
++// a legitimate request to a TrustedOrigins entry. What is left, no browser sends.
+ func validateSecFetchSite(c fiber.Ctx) error {
+-	secFetchSite := utils.Trim(c.Get(fiber.HeaderSecFetchSite), ' ')
++	raw, ok := headerlookup.Value(c, fiber.HeaderSecFetchSite)
++	if !ok {
++		// More than one line: refused rather than read, and refused here rather
++		// than skipped as an absent header would be.
++		return ErrFetchSiteInvalid
++	}
++	secFetchSite := utils.Trim(raw, ' ')
+ 
+ 	if secFetchSite == "" {
+ 		return nil
+@@ -364,7 +376,12 @@ func validateSecFetchSite(c fiber.Ctx) error {
+ // returns an error if the origin header is not present or is invalid
+ // returns nil if the origin header is valid
+ func originMatchesHost(c fiber.Ctx, trustedOrigins []string, trustedSubOrigins []subdomain) error {
+-	origin := c.Get(fiber.HeaderOrigin)
++	origin, ok := headerlookup.Value(c, fiber.HeaderOrigin)
++	if !ok {
++		// Not errOriginNotFound: an absent Origin is skipped on a plaintext
++		// request, and a malformed message must not buy that.
++		return ErrOriginInvalid
++	}
+ 	// "null" is set by some browsers when the origin is a secure context https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Origin#description
+ 	if origin == "" || utils.EqualFold(origin, "null") {
+ 		return errOriginNotFound
+@@ -398,7 +415,10 @@ func originMatchesHost(c fiber.Ctx, trustedOrigins []string, trustedSubOrigins [
+ // returns an error if the referer header is not present or is invalid
+ // returns nil if the referer header is valid
+ func refererMatchesHost(c fiber.Ctx, trustedOrigins []string, trustedSubOrigins []subdomain) error {
+-	referer := c.Get(fiber.HeaderReferer)
++	referer, ok := headerlookup.Value(c, fiber.HeaderReferer)
++	if !ok {
++		return ErrRefererInvalid
++	}
+ 	if referer == "" {
+ 		return ErrRefererNotFound
+ 	}
+diff --git a/middleware/logger/context_tag.go b/middleware/logger/context_tag.go
+index 87017ecda61..86a50007d55 100644
+--- a/middleware/logger/context_tag.go
++++ b/middleware/logger/context_tag.go
+@@ -2,6 +2,7 @@ package logger
+ 
+ import (
+ 	"github.com/gofiber/fiber/v3"
++	"github.com/gofiber/fiber/v3/internal/logtemplate"
+ 	fiberlog "github.com/gofiber/fiber/v3/log"
+ )
+ 
+@@ -49,12 +50,15 @@ func RegisterContextTag(name string, extract func(ctx any) string) {
+ 		panic("logger: RegisterContextTag requires a non-empty name and extractor")
+ 	}
+ 
++	// Sanitized like every built-in tag: what extract returns is whatever the
++	// application pulled out of the context, in practice request data, so writing
++	// it raw lets a CR or LF close the line and start another.
+ 	fiberlog.MustRegisterContextTag(name, func(output fiberlog.Buffer, ctx any, _ *fiberlog.ContextData, _ string) (int, error) {
+ 		v := extract(ctx)
+ 		if v == "" {
+ 			return 0, nil
+ 		}
+-		return output.WriteString(v)
++		return logtemplate.WriteSanitizedString(output, v)
+ 	})
+ 
+ 	MustRegisterTag(name, func(output Buffer, c fiber.Ctx, _ *Data, _ string) (int, error) {
+@@ -62,6 +66,6 @@ func RegisterContextTag(name string, extract func(ctx any) string) {
+ 		if v == "" {
+ 			return 0, nil
+ 		}
+-		return output.WriteString(v)
++		return writeSanitizedString(output, v)
+ 	})
+ }
+diff --git a/middleware/logger/tags.go b/middleware/logger/tags.go
+index 61266fbdb22..fda09d438f8 100644
+--- a/middleware/logger/tags.go
++++ b/middleware/logger/tags.go
+@@ -108,7 +108,26 @@ func createTagMap(cfg *Config) map[string]LogFunc {
+ 			return writeSanitizedString(output, c.IP())
+ 		},
+ 		TagIPs: func(output Buffer, c fiber.Ctx, _ *Data, _ string) (int, error) {
+-			return writeSanitizedString(output, c.Get(fiber.HeaderXForwardedFor))
++			// Ask the framework for the chain rather than read the header a second way:
++			// a lower-case "x-forwarded-for:" logged an empty chain while the trust
++			// decisions used it. c.IPs() splits and trims, so both wire forms match.
++			ips := c.IPs()
++			n := 0
++			for i, ip := range ips {
++				if i > 0 {
++					m, err := output.WriteString(",")
++					n += m
++					if err != nil {
++						return n, err
++					}
++				}
++				m, err := writeSanitizedString(output, ip)
++				n += m
++				if err != nil {
++					return n, err
++				}
++			}
++			return n, nil
+ 		},
+ 		TagHost: func(output Buffer, c fiber.Ctx, _ *Data, _ string) (int, error) {
+ 			return writeSanitizedString(output, c.Hostname())
+diff --git a/middleware/proxy/proxy.go b/middleware/proxy/proxy.go
+index 8952b290a47..9dab8d7d3f6 100644
+--- a/middleware/proxy/proxy.go
++++ b/middleware/proxy/proxy.go
+@@ -13,7 +13,10 @@ import (
+ 	"github.com/gofiber/utils/v2/swar"
+ 
+ 	"github.com/gofiber/fiber/v3"
++	"github.com/gofiber/fiber/v3/internal/crosshost"
+ 
++	"github.com/gofiber/fiber/v3/internal/fieldname"
++	"github.com/gofiber/fiber/v3/internal/headerlookup"
+ 	"github.com/valyala/fasthttp"
+ )
+ 
+@@ -80,12 +83,13 @@ func Balancer(config ...Config) fiber.Handler {
+ 		// Set request and response
+ 		req := c.Request()
+ 		res := c.Response()
++		normalized := headerlookup.Canonical(c)
+ 
+ 		if !policy.KeepHopByHopHeaders {
+ 			if cfg.KeepConnectionHeader {
+-				stripHopByHopRequestHeaders(req, fiber.HeaderConnection)
++				stripHopByHopRequestHeaders(req, normalized, fiber.HeaderConnection)
+ 			} else {
+-				stripHopByHopRequestHeaders(req)
++				stripHopByHopRequestHeaders(req, normalized)
+ 			}
+ 		}
+ 
+@@ -234,6 +238,26 @@ func WithClient(cli *fasthttp.Client) {
+ 	client.Store(cli)
+ }
+ 
++// realIPHeader is the field the proxy overwrites with the peer address Fiber
++// derived, so an upstream reading it sees this hop's view rather than the
++// client's claim.
++const realIPHeader = "X-Real-IP"
++
++// setRealIP replaces every inbound X-Real-IP field line with the peer address
++// Fiber derived. Set alone overwrites the first and leaves the rest, so a client
++// sending it twice kept a value of its own on the wire.
++func setRealIP(c fiber.Ctx) {
++	// Resolve the address before deleting anything: with ProxyHeader set to
++	// "X-Real-IP", c.IP() reads the very header being replaced, and deleting first
++	// handed the upstream an empty value.
++	ip := c.IP()
++	// Add, not Set: nothing is left to replace, and Add says what is meant.
++	// fieldname.Del rather than Del so a differently-spelled line does not
++	// survive beside it.
++	fieldname.Del(&c.Request().Header, realIPHeader, headerlookup.Canonical(c))
++	c.Request().Header.Add(realIPHeader, ip)
++}
++
+ // Forward performs the given http request and fills the given http response.
+ // This method will return a fiber.Handler
+ //
+@@ -244,7 +268,7 @@ func WithClient(cli *fasthttp.Client) {
+ // a private one between validation and connection.
+ func Forward(addr string, clients ...*fasthttp.Client) fiber.Handler {
+ 	return func(c fiber.Ctx) error {
+-		c.Request().Header.Set("X-Real-IP", c.IP())
++		setRealIP(c)
+ 		return Do(c, addr, clients...)
+ 	}
+ }
+@@ -286,8 +310,9 @@ func Do(c fiber.Ctx, addr string, clients ...*fasthttp.Client) error {
+ // cannot be rebound to a private IP between validation and connection.
+ func DoRedirects(c fiber.Ctx, addr string, maxRedirectsCount int, clients ...*fasthttp.Client) error {
+ 	policy := currentSecurityPolicy()
++	normalized := headerlookup.Canonical(c)
+ 	return doActionWithPolicy(c, addr, policy, func(cli *fasthttp.Client, req *fasthttp.Request, resp *fasthttp.Response, u *url.URL) error {
+-		return followRedirects(cli, req, resp, maxRedirectsCount, u, policy)
++		return followRedirects(cli, req, resp, maxRedirectsCount, u, policy, normalized)
+ 	}, clients...)
+ }
+ 
+@@ -368,6 +393,7 @@ func doActionWithPolicy(
+ 
+ 	req := c.Request()
+ 	res := c.Response()
++	normalized := headerlookup.Canonical(c)
+ 	originalURL := utils.CopyString(c.OriginalURL())
+ 	defer req.SetRequestURI(originalURL)
+ 
+@@ -380,7 +406,7 @@ func doActionWithPolicy(
+ 	req.URI().SetScheme(u.Scheme)
+ 
+ 	if !policy.KeepHopByHopHeaders {
+-		stripHopByHopRequestHeaders(req)
++		stripHopByHopRequestHeaders(req, normalized)
+ 	}
+ 	// The upstream connection speaks HTTP/1.1: reset a protocol token
+ 	// inherited from the inbound request (e.g. "HTTP/2" propagated by the
+@@ -406,7 +432,7 @@ func doActionWithPolicy(
+ // guaranteeing every SetRequestURI is fed a string from a
+ // validateUpstream output — the property CodeQL's go/request-forgery
+ // query needs to see.
+-func followRedirects(cli *fasthttp.Client, req *fasthttp.Request, resp *fasthttp.Response, maxRedirects int, initialURL *url.URL, policy SecurityPolicy) error {
++func followRedirects(cli *fasthttp.Client, req *fasthttp.Request, resp *fasthttp.Response, maxRedirects int, initialURL *url.URL, policy SecurityPolicy, normalized bool) error { //nolint:revive // flag-parameter: normalized is a property of the header store
+ 	if maxRedirects < 0 {
+ 		maxRedirects = 0
+ 	}
+@@ -453,24 +479,16 @@ func followRedirects(cli *fasthttp.Client, req *fasthttp.Request, resp *fasthttp
+ 		// secrets bound to the original origin are not leaked to a third
+ 		// party (RFC 9110 §15.4 advisory; matches browser behavior).
+ 		if !utils.EqualFold(nextURL.Host, currentHost) {
+-			stripCrossHostHeaders(req)
++			stripCrossHostHeaders(req, normalized)
+ 			currentHost = nextURL.Host
+ 		}
+ 		currentURL = nextURL
+ 	}
+ }
+ 
+-// crossHostSensitiveHeaders lists headers that carry credentials bound to
+-// a specific origin and must not survive a redirect to a different host.
+-var crossHostSensitiveHeaders = []string{
+-	fiber.HeaderAuthorization,
+-	fiber.HeaderProxyAuthorization,
+-	fiber.HeaderCookie,
+-}
+-
+-func stripCrossHostHeaders(req *fasthttp.Request) {
+-	for _, h := range crossHostSensitiveHeaders {
+-		req.Header.Del(h)
++func stripCrossHostHeaders(req *fasthttp.Request, normalized bool) { //nolint:revive // flag-parameter: normalized is a property of the header store
++	for _, h := range crosshost.SensitiveHeaders {
++		fieldname.Del(&req.Header, h, normalized)
+ 	}
+ }
+ 
+@@ -585,7 +603,7 @@ func DomainForward(hostname, addr string, clients ...*fasthttp.Client) fiber.Han
+ 		if !utils.EqualFold(host, hostname) {
+ 			return nil
+ 		}
+-		c.Request().Header.Set("X-Real-IP", c.IP())
++		setRealIP(c)
+ 		return doActionWithPolicy(c, joinUpstreamPath(base, c.OriginalURL()), currentSecurityPolicy(),
+ 			func(cli *fasthttp.Client, req *fasthttp.Request, resp *fasthttp.Response, _ *url.URL) error {
+ 				return cli.Do(req, resp)
+@@ -602,6 +620,9 @@ type urlRoundrobin struct {
+ 	next atomic.Uint64
+ }
+ 
++// Compare-and-swap rather than a bare Add, so the counter holds the next index
++// already reduced into the pool and the sequence stays a strict round-robin
++// across a wrap. The modulo also reduces a counter this loop did not produce.
+ func (r *urlRoundrobin) get() *url.URL {
+ 	poolSize := uint64(len(r.pool))
+ 	for {
+@@ -644,7 +665,7 @@ func BalancerForward(servers []string, clients ...*fasthttp.Client) fiber.Handle
+ 	r := &urlRoundrobin{pool: bases}
+ 	return func(c fiber.Ctx) error {
+ 		base := r.get()
+-		c.Request().Header.Set("X-Real-IP", c.IP())
++		setRealIP(c)
+ 		return doActionWithPolicy(c, joinUpstreamPath(base, c.OriginalURL()), currentSecurityPolicy(),
+ 			func(cli *fasthttp.Client, req *fasthttp.Request, resp *fasthttp.Response, _ *url.URL) error {
+ 				return cli.Do(req, resp)
+diff --git a/middleware/proxy/security.go b/middleware/proxy/security.go
+index e0394df1005..f125c6ec505 100644
+--- a/middleware/proxy/security.go
++++ b/middleware/proxy/security.go
+@@ -12,6 +12,7 @@ import (
+ 	"time"
+ 
+ 	"github.com/gofiber/fiber/v3"
++	"github.com/gofiber/fiber/v3/internal/fieldname"
+ 	"github.com/gofiber/utils/v2"
+ 	"github.com/valyala/fasthttp"
+ )
+@@ -224,43 +225,38 @@ var hopByHopHeaders = []string{
+ // headers — used by the legacy KeepConnectionHeader option to retain the
+ // literal Connection header while still dropping the other hop-by-hop
+ // headers.
+-func stripHopByHopRequestHeaders(req *fasthttp.Request, except ...string) {
++func stripHopByHopRequestHeaders(req *fasthttp.Request, normalized bool, except ...string) { //nolint:revive // flag-parameter: normalized is a property of the header store
+ 	// Headers listed in Connection must be removed first so the
+ 	// listing is honored before the Connection field itself is dropped.
+-	delConnectionListedHeaders(&req.Header, req.Header.PeekAll(fiber.HeaderConnection))
++	delConnectionListedHeaders(&req.Header, fieldname.Lines(&req.Header, fiber.HeaderConnection, normalized), normalized)
+ 	for _, h := range hopByHopHeaders {
+-		if containsFold(except, h) {
++		if fieldname.ContainsFold(except, h) {
+ 			continue
+ 		}
+-		req.Header.Del(h)
++		fieldname.Del(&req.Header, h, normalized)
+ 	}
+ }
+ 
+-// stripHopByHopResponseHeaders applies the same filtering on the way
+-// back, so upstream cannot leak connection-scoped state to the client.
++// stripHopByHopResponseHeaders applies the same filtering on the way back.
++//
++// It takes no normalized argument: a proxied response is parsed by the outbound
++// fasthttp.Client, whose own setting is independent of the app's, so ask the
++// header. One pass finds every spelling, cheaper than the per-name scan.
+ func stripHopByHopResponseHeaders(res *fasthttp.Response, except ...string) {
+-	delConnectionListedHeaders(&res.Header, res.Header.PeekAll(fiber.HeaderConnection))
+-	for _, h := range hopByHopHeaders {
+-		if containsFold(except, h) {
+-			continue
+-		}
+-		res.Header.Del(h)
+-	}
+-}
+-
+-func containsFold(haystack []string, needle string) bool {
+-	for _, h := range haystack {
+-		if utils.EqualFold(h, needle) {
+-			return true
++	// Headers listed in Connection must be removed first so the listing is
++	// honored before the Connection field itself is dropped.
++	delConnectionListedHeaders(&res.Header, fieldname.Lines(&res.Header, fiber.HeaderConnection, false), false)
++
++	names := hopByHopHeaders
++	if len(except) > 0 {
++		names = make([]string, 0, len(hopByHopHeaders))
++		for _, h := range hopByHopHeaders {
++			if !fieldname.ContainsFold(except, h) {
++				names = append(names, h)
++			}
+ 		}
+ 	}
+-	return false
+-}
+-
+-// headerDeleter is the Del method shared by fasthttp's request and
+-// response header types.
+-type headerDeleter interface {
+-	Del(key string)
++	fieldname.DelSet(&res.Header, names)
+ }
+ 
+ // delConnectionListedHeaders deletes every comma-separated header name
+@@ -270,12 +266,12 @@ type headerDeleter interface {
+ // because fasthttp's Del only re-slices the header's entry list — it never
+ // rewrites other entries' key/value buffers — and Del does not retain the
+ // name after returning.
+-func delConnectionListedHeaders(h headerDeleter, values [][]byte) {
++func delConnectionListedHeaders(h fieldname.Deleter, values [][]byte, normalized bool) { //nolint:revive // flag-parameter: normalized is a property of the header store
+ 	for _, v := range values {
+ 		for name := range strings.SplitSeq(utils.UnsafeString(v), ",") {
+ 			name = utils.TrimSpace(name)
+ 			if name != "" {
+-				h.Del(name)
++				fieldname.Del(h, name, normalized)
+ 			}
+ 		}
+ 	}
+diff --git a/redirect.go b/redirect.go
+index 53c6f4e491b..7d267ff52b1 100644
+--- a/redirect.go
++++ b/redirect.go
+@@ -11,11 +11,11 @@ import (
+ 	"strings"
+ 	"sync"
+ 
+-	"github.com/gofiber/fiber/v3/binder"
+ 	"github.com/gofiber/utils/v2"
+ 	"github.com/valyala/bytebufferpool"
+ 	"github.com/valyala/fasthttp"
+ 
++	"github.com/gofiber/fiber/v3/internal/fieldname"
+ 	"github.com/gofiber/fiber/v3/internal/schemehost"
+ )
+ 
+@@ -195,10 +195,7 @@ func (r *Redirect) With(key, value string, level ...uint8) *Redirect {
+ // This method can send form, multipart form, query data to redirected route.
+ // You can get them by using: Redirect().OldInputs(), Redirect().OldInput()
+ func (r *Redirect) WithInput() *Redirect {
+-	// Get content-type, folding only the media type so the case-sensitive
+-	// multipart boundary survives (see normalizeContentTypeMediaType).
+-	raw := utils.UnsafeString(normalizeContentTypeMediaType(&r.c.RequestCtx().Request.Header))
+-	ctype := binder.FilterFlags(utils.ParseVendorSpecificContentType(raw))
++	ctype := bindMediaType(&r.c.RequestCtx().Request.Header)
+ 
+ 	oldInput := acquireOldInput()
+ 	defer releaseOldInput(oldInput)
+@@ -448,12 +445,7 @@ func (r *Redirect) refererHeader() string {
+ 		return ""
+ 	}
+ 
+-	for k, v := range r.c.fasthttp.Request.Header.All() {
+-		if utils.EqualFold(utils.UnsafeString(k), HeaderReferer) {
+-			return r.c.app.toString(v)
+-		}
+-	}
+-	return ""
++	return r.c.app.toString(fieldname.First(&r.c.fasthttp.Request.Header, HeaderReferer, false))
+ }
+ 
+ // sameOriginReferer reports whether the Referer resolves back to the origin now
+diff --git a/req.go b/req.go
+index 8621be9496d..2bbbcdb1744 100644
+--- a/req.go
++++ b/req.go
+@@ -14,6 +14,8 @@ import (
+ 	"github.com/valyala/bytebufferpool"
+ 	"github.com/valyala/fasthttp"
+ 	"golang.org/x/net/idna"
++
++	"github.com/gofiber/fiber/v3/internal/mediatype"
+ )
+ 
+ // Pre-allocated byte slices for common header comparisons to avoid allocations
+@@ -163,15 +165,9 @@ func (r *DefaultReq) Body() []byte {
+ 		return r.getBody()
+ 	}
+ 
+-	// Get Content-Encoding header. Multiple field lines form one combined
+-	// list (RFC 9110 Section 5.2), so join them before splitting.
+-	// The single-line result aliases the header storage, so fold into a new
+-	// string rather than rewriting the request's own bytes. utilsstrings.ToLower
+-	// returns its input unchanged when there is no uppercase byte, which every
+-	// real value ("gzip", "br", "deflate", "identity") satisfies — so the common
+-	// path stays allocation-free. A stack scratch buffer is not an option here:
+-	// the substrings flow into encodingOrder and on into tryDecodeBodyInOrder,
+-	// which forces the array to the heap on every call.
++	// Multiple field lines form one list (RFC 9110 §5.2), so join before splitting.
++	// The result aliases the header storage, so fold into a new string; ToLower
++	// returns its input unchanged without an uppercase byte, so this stays free.
+ 	encodedBytes := peekJoinedRequestHeader(&request.Header, HeaderContentEncoding)
+ 	headerEncoding = utilsstrings.ToLower(utils.UnsafeString(encodedBytes))
+ 
+@@ -417,7 +413,19 @@ func (r *DefaultReq) FormFile(key string) (*multipart.FileHeader, error) {
+ // Make copies or use the Immutable setting instead.
+ // When the request is a multipart form, it is parsed using the application's
+ // BodyLimit so the configured limit is consistently enforced.
++//
++// On a form request this lowercases the case-insensitive parts of the request's
++// own Content-Type, so a value obtained earlier from Get(HeaderContentType) —
++// which aliases those bytes unless Immutable is set — can change during the
++// call. Copy it first if you need it to outlive one.
+ func (r *DefaultReq) FormValue(key string, defaultValue ...string) string {
++	// fasthttp locates the urlencoded body and multipart boundary
++	// case-sensitively, so a legal "Multipart/Form-Data" yielded nothing here.
++	// Guarded, because the fold rewrites the request's own bytes.
++	if mediatype.IsForm(r.c.fasthttp.Request.Header.ContentType()) {
++		mediatype.NormalizeRequestContentType(&r.c.fasthttp.Request.Header)
++	}
++
+ 	if r.c.IsMultipart() {
+ 		// For multipart requests, parse the form using the application's BodyLimit.
+ 		// fasthttp's FormValue would otherwise re-parse with its default 8 MiB limit,
+@@ -961,7 +969,19 @@ func currentMethod(c *DefaultCtx) string {
+ 
+ // MultipartForm parse form entries from binary.
+ // This returns a map[string][]string, so given a key, the value will be a string slice.
++//
++// On a form request this lowercases the case-insensitive parts of the request's
++// own Content-Type, so a value obtained earlier from Get(HeaderContentType) —
++// which aliases those bytes unless Immutable is set — can change during the
++// call. Copy it first if you need it to outlive one.
+ func (r *DefaultReq) MultipartForm() (*multipart.Form, error) {
++	// fasthttp matches both "multipart/form-data" and the "boundary=" parameter
++	// name case-sensitively, so fold first. FormFile and SaveFile come through
++	// here too. Guarded like FormValue: the fold writes.
++	if mediatype.IsForm(r.c.fasthttp.Request.Header.ContentType()) {
++		mediatype.NormalizeRequestContentType(&r.c.fasthttp.Request.Header)
++	}
++
+ 	return r.c.fasthttp.MultipartFormWithLimit(r.c.app.config.BodyLimit)
+ }
+ 
+@@ -1048,21 +1068,39 @@ func (r *DefaultReq) Scheme() string {
+ 				utils.EqualFold(key, xForwardedProtocolBytes) {
+ 				v := app.toString(val)
+ 				if before, _, found := strings.Cut(v, ","); found {
+-					scheme = utils.TrimSpace(before)
+-				} else {
+-					scheme = utils.TrimSpace(v)
++					v = before
++				}
++				if forwarded, ok := forwardedScheme(v); ok {
++					scheme = forwarded
+ 				}
+ 			} else if utils.EqualFold(key, xForwardedSslBytes) && utils.EqualFold(val, onBytes) {
+ 				scheme = schemeHTTPS
+ 			}
+ 
+ 		case utils.EqualFold(key, xURLSchemeBytes):
+-			scheme = utils.TrimSpace(app.toString(val))
++			if forwarded, ok := forwardedScheme(app.toString(val)); ok {
++				scheme = forwarded
++			}
+ 		default:
+ 			continue
+ 		}
+ 	}
+-	return utilsstrings.ToLower(utils.TrimSpace(scheme))
++	return scheme
++}
++
++// forwardedScheme canonicalizes a scheme announced by a proxy header. Only
++// "http" and "https": the value is spliced into a URL (BaseURL) and compared for
++// origin equality (CSRF, Redirect.Back). Rejecting leaves the prior scheme.
++func forwardedScheme(value string) (string, bool) {
++	value = utils.TrimSpace(value)
++	switch {
++	case utils.EqualFold(value, schemeHTTPS):
++		return schemeHTTPS, true
++	case utils.EqualFold(value, schemeHTTP):
++		return schemeHTTP, true
++	default:
++		return "", false
++	}
+ }
+ 
+ // Protocol returns the HTTP protocol of request: HTTP/1.1 and HTTP/2.
+diff --git a/req_interface_gen.go b/req_interface_gen.go
+index b536507f215..d2b58fb3fd6 100644
+--- a/req_interface_gen.go
++++ b/req_interface_gen.go
+@@ -63,6 +63,11 @@ type Req interface {
+ 	// Make copies or use the Immutable setting instead.
+ 	// When the request is a multipart form, it is parsed using the application's
+ 	// BodyLimit so the configured limit is consistently enforced.
++	//
++	// On a form request this lowercases the case-insensitive parts of the request's
++	// own Content-Type, so a value obtained earlier from Get(HeaderContentType) —
++	// which aliases those bytes unless Immutable is set — can change during the
++	// call. Copy it first if you need it to outlive one.
+ 	FormValue(key string, defaultValue ...string) string
+ 	// Fresh returns true when the response is still “fresh” in the client's cache,
+ 	// otherwise false is returned to indicate that the client cache is now stale
+@@ -137,6 +142,11 @@ type Req interface {
+ 	Method(override ...string) string
+ 	// MultipartForm parse form entries from binary.
+ 	// This returns a map[string][]string, so given a key, the value will be a string slice.
++	//
++	// On a form request this lowercases the case-insensitive parts of the request's
++	// own Content-Type, so a value obtained earlier from Get(HeaderContentType) —
++	// which aliases those bytes unless Immutable is set — can change during the
++	// call. Copy it first if you need it to outlive one.
+ 	MultipartForm() (*multipart.Form, error)
+ 	// OriginalURL contains the original request URL.
+ 	// Returned value is only valid within the handler. Do not store any references.
+diff --git a/res.go b/res.go
+index 43035e98aa5..c147abd9abc 100644
+--- a/res.go
++++ b/res.go
+@@ -421,6 +421,10 @@ func (r *DefaultRes) Response() *fasthttp.Response {
+ 	return &r.c.fasthttp.Response
+ }
+ 
++// formatDefaultMediaType is the sentinel MediaType marking a Format handler as
++// the fallback. It is not a media type and is never emitted as a Content-Type.
++const formatDefaultMediaType = "default"
++
+ // Format performs content-negotiation on the Accept HTTP header.
+ // It uses Accepts to select a proper format and calls the matching
+ // user-provided handler function.
+@@ -450,7 +454,7 @@ func (r *DefaultRes) Format(handlers ...ResFmt) error {
+ 		// use its media type. The literal "default" is not a media type and
+ 		// must not be emitted as a Content-Type value.
+ 		for _, h := range handlers {
+-			if h.MediaType != "default" {
++			if h.MediaType != formatDefaultMediaType {
+ 				r.c.fasthttp.Response.Header.SetContentType(h.MediaType)
+ 				return h.Handler(r.c)
+ 			}
+@@ -465,7 +469,7 @@ func (r *DefaultRes) Format(handlers ...ResFmt) error {
+ 	types := make([]string, 0, 8)
+ 	var defaultHandler Handler
+ 	for _, h := range handlers {
+-		if h.MediaType == "default" {
++		if h.MediaType == formatDefaultMediaType {
+ 			defaultHandler = h.Handler
+ 			continue
+ 		}
+@@ -626,15 +630,23 @@ func (r *DefaultRes) CBOR(data any, ctype ...string) error {
+ // JSONP sends a JSON response with JSONP support.
+ // This method is identical to JSON, except that it opts-in to JSONP callback support.
+ // By default, the callback name is simply callback.
++//
++// The callback name is reduced to a JavaScript member expression: everything
++// outside [A-Za-z0-9_$.[]] is dropped. Callers routinely take the name straight
++// from the query string, which is what JSONP is for, and the name lands
++// verbatim in a same-origin text/javascript body — so an unfiltered one would
++// let a request supply arbitrary script for the app's own origin.
+ func (r *DefaultRes) JSONP(data any, callback ...string) error {
+ 	raw, err := r.c.app.config.JSONEncoder(data)
+ 	if err != nil {
+ 		return err
+ 	}
+ 
+-	cb := "callback"
++	cb := defaultJSONPCallback
+ 	if len(callback) > 0 {
+-		cb = callback[0]
++		if sanitized := sanitizeJSONPCallback(callback[0]); sanitized != "" {
++			cb = sanitized
++		}
+ 	}
+ 
+ 	// Build JSONP response: callback(data);
+@@ -653,6 +665,146 @@ func (r *DefaultRes) JSONP(data any, callback ...string) error {
+ 	return nil
+ }
+ 
++const defaultJSONPCallback = "callback"
++
++// isJSONPCallbackByte reports whether b may appear in a JSONP callback name. The
++// set spells a JavaScript member expression and admits nothing that could open a
++// string, comment or statement.
++func isJSONPCallbackByte(b byte) bool {
++	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') ||
++		(b >= '0' && b <= '9') ||
++		b == '_' || b == '$' || b == '.' || b == '[' || b == ']'
++}
++
++// sanitizeJSONPCallback drops every byte isJSONPCallbackByte rejects, as Express
++// and Django do, then requires a member expression, returning "" otherwise.
++// Filtering is enough for safety, not correctness: "1.2.3" and "a[" only throw.
++func sanitizeJSONPCallback(cb string) string {
++	i := 0
++	for ; i < len(cb); i++ {
++		if !isJSONPCallbackByte(cb[i]) {
++			break
++		}
++	}
++
++	if i != len(cb) {
++		out := make([]byte, i, len(cb))
++		copy(out, cb[:i])
++		for ; i < len(cb); i++ {
++			if isJSONPCallbackByte(cb[i]) {
++				out = append(out, cb[i])
++			}
++		}
++		cb = utils.UnsafeString(out)
++	}
++
++	if !isJSONPMemberExpression(cb) {
++		return ""
++	}
++	return cb
++}
++
++// isJSONPMemberExpression reports whether cb is a dotted chain of identifiers
++// with optional bracket indexing — the shape a JSONP body may legally call.
++func isJSONPMemberExpression(cb string) bool {
++	if cb == "" {
++		return false
++	}
++	// "let" is a keyword only where a "[" follows it, and only at the head: an
++	// expression statement may not begin "let [", so the body "let[a](…);" is
++	// read as a destructuring declaration and is a syntax error. "let(…)",
++	// "let.a(…)" and an inner "cb[let[a]]" are all calls and stay allowed.
++	if strings.HasPrefix(cb, "let[") {
++		return false
++	}
++
++	depth := 0
++	atStart := true     // expecting the first byte of an identifier
++	inIndex := false    // that first byte follows '[', so a number may stand there
++	afterClose := false // a ']' just closed an index
++	numeric := false    // the open index began with a digit, so it is a number
++	isRef := true       // the open token is read as a name, not written as a property
++	start := 0          // first byte of the open token
++	for i := 0; i < len(cb); i++ {
++		switch c := cb[i]; c {
++		case '.':
++			if atStart || numeric || (isRef && isJSReservedWord(cb[start:i])) {
++				return false
++			}
++			atStart, inIndex, afterClose, isRef = true, false, false, false
++		case '[':
++			if atStart || numeric || (isRef && isJSReservedWord(cb[start:i])) {
++				return false
++			}
++			depth++
++			atStart, inIndex, afterClose, isRef = true, true, false, true
++			start = i + 1
++		case ']':
++			if atStart || depth == 0 {
++				return false
++			}
++			if isRef && !numeric && isJSReservedWord(cb[start:i]) {
++				return false
++			}
++			depth--
++			afterClose, numeric, isRef = true, false, false
++		default:
++			// Only '.', '[' or another ']' may follow a closing bracket, so "cb[0]x"
++			// is no member expression. Without this the machine would accept it and
++			// emit a body that does not parse.
++			if afterClose {
++				return false
++			}
++			if atStart {
++				// An identifier may not start with a digit. A bracket index may, and
++				// then it is that number alone: "cb[0]" parses, "cb[0x]" does not.
++				// Only a token opened by '[' counts — "cb[a.0]" is a property named
++				// after a dot, where a digit is as illegal as it is at the top level.
++				if c >= '0' && c <= '9' {
++					if !inIndex {
++						return false
++					}
++					numeric = true
++				}
++				atStart, inIndex = false, false
++			} else if numeric && (c < '0' || c > '9') {
++				return false
++			}
++		}
++	}
++	if isRef && !numeric && isJSReservedWord(cb[start:]) {
++		return false
++	}
++	return depth == 0 && !atStart
++}
++
++// isJSReservedWord reports whether tok is a word JavaScript will not read as a
++// name. Only the positions that are read matter — the head of the expression and
++// the head inside each index — since "a.for" and "a[b.class]" name properties,
++// which any word may do. Emitting "for({…})" instead just ships a syntax error to
++// the browser, so those spellings fall back to the default callback.
++func isJSReservedWord(tok string) bool {
++	// Only the words a classic script rejects wherever they stand. A JSONP body
++	// is loaded by a script tag, so it is parsed under the script goal in sloppy
++	// mode, and several words that look reserved are ordinary identifiers there.
++	//
++	// Absent on purpose: "this", "true", "false" and "null" are keywords, but
++	// each is a complete expression, so "this.cb" and "cb[true]" parse. "await"
++	// is reserved only in a module or an async function, and "yield" only in
++	// strict mode or a generator, so both name a callback here. "let" is
++	// contextual in a third way and handled where it is read.
++	switch tok {
++	case "break", "case", "catch", "class", "const", "continue",
++		"debugger", "default", "delete", "do", "else", "enum", "export",
++		"extends", "finally", "for", "function", "if", "import", "in",
++		"instanceof", "new", "return", "super", "switch",
++		"throw", "try", "typeof", "var", "void", "while", "with":
++		return true
++	default:
++		return false
++	}
++}
++
+ // XML converts any interface or string to XML.
+ // This method also sets the content header to application/xml; charset=utf-8.
+ func (r *DefaultRes) XML(data any) error {
+diff --git a/res_interface_gen.go b/res_interface_gen.go
+index 6f152c9d03d..910b06f635a 100644
+--- a/res_interface_gen.go
++++ b/res_interface_gen.go
+@@ -86,6 +86,12 @@ type Res interface {
+ 	// JSONP sends a JSON response with JSONP support.
+ 	// This method is identical to JSON, except that it opts-in to JSONP callback support.
+ 	// By default, the callback name is simply callback.
++	//
++	// The callback name is reduced to a JavaScript member expression: everything
++	// outside [A-Za-z0-9_$.[]] is dropped. Callers routinely take the name straight
++	// from the query string, which is what JSONP is for, and the name lands
++	// verbatim in a same-origin text/javascript body — so an unfiltered one would
++	// let a request supply arbitrary script for the app's own origin.
+ 	JSONP(data any, callback ...string) error
+ 	// XML converts any interface or string to XML.
+ 	// This method also sets the content header to application/xml; charset=utf-8.

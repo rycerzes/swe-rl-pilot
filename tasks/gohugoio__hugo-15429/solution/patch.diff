@@ -1,0 +1,101 @@
+diff --git a/.circleci/config.yml b/.circleci/config.yml
+index 1b16a3f7608..aaa2193e53f 100644
+--- a/.circleci/config.yml
++++ b/.circleci/config.yml
+@@ -4,7 +4,7 @@ parameters:
+ defaults: &defaults
+   resource_class: large
+   docker:
+-      - image: bepsays/ci-hugoreleaser:1.22700.20100
++      - image: bepsays/ci-hugoreleaser:1.22700.20200
+ environment: &buildenv
+       GOMODCACHE: /root/project/gomodcache
+ version: 2
+@@ -58,7 +58,7 @@ jobs:
+     environment:
+         <<: [*buildenv]
+     docker:
+-    - image: bepsays/ci-hugoreleaser-linux-arm64:1.22700.20100
++    - image: bepsays/ci-hugoreleaser-linux-arm64:1.22700.20200
+     steps:
+       - *restore-cache
+       - &attach-workspace
+diff --git a/scripts/fork_go_templates/main.go b/scripts/fork_go_templates/main.go
+index f617e48be77..2569ee127ca 100644
+--- a/scripts/fork_go_templates/main.go
++++ b/scripts/fork_go_templates/main.go
+@@ -16,8 +16,8 @@ import (
+ 
+ func main() {
+ 	/*
+-		Previously: with 2dc996f71b0ebafb77e64433e58333e049488a3c go1.26.3
+-		Current:  8af21751f0 [release-branch.go1.27] go1.27.0
++		Previously: 8af21751f0 [release-branch.go1.27] go1.27.0
++		Current: 022c863611 [release-branch.go1.27] go1.27.2
+ 
+ 		Note that the upgrade here is mostly automatic, but:
+ 
+diff --git a/tpl/internal/go_templates/htmltemplate/js.go b/tpl/internal/go_templates/htmltemplate/js.go
+index 374fe9438e1..4de4e9066bc 100644
+--- a/tpl/internal/go_templates/htmltemplate/js.go
++++ b/tpl/internal/go_templates/htmltemplate/js.go
+@@ -97,7 +97,10 @@ func nextJSCtx(s []byte, preceding jsCtx) jsCtx {
+ 		for j > 0 && isJSIdentPart(rune(s[j-1])) {
+ 			j--
+ 		}
+-		if regexpPrecederKeywords[string(s[j:])] {
++		// An IdentifierName after a property-access dot is a property name,
++		// which precedes a div op.
++		if regexpPrecederKeywords[string(s[j:])] &&
++			!bytes.HasSuffix(bytes.TrimRight(s[:j], jsWhitespace), []byte(".")) {
+ 			return jsCtxRegexp
+ 		}
+ 	}
+@@ -107,8 +110,9 @@ func nextJSCtx(s []byte, preceding jsCtx) jsCtx {
+ 	return jsCtxDivOp
+ }
+ 
+-// regexpPrecederKeywords is a set of reserved JS keywords that can precede a
+-// regular expression in JS source.
++// regexpPrecederKeywords is a set of JS keywords that can precede a regular
++// expression in JS source. It deliberately treats the context-sensitive
++// keyword yield as a keyword.
+ var regexpPrecederKeywords = map[string]bool{
+ 	"break":      true,
+ 	"case":       true,
+@@ -124,6 +128,7 @@ var regexpPrecederKeywords = map[string]bool{
+ 	"try":        true,
+ 	"typeof":     true,
+ 	"void":       true,
++	"yield":      true,
+ }
+ 
+ var jsonMarshalType = reflect.TypeFor[json.Marshaler]()
+diff --git a/tpl/internal/go_templates/htmltemplate/transition.go b/tpl/internal/go_templates/htmltemplate/transition.go
+index d9d4f63beba..a49ae700b2c 100644
+--- a/tpl/internal/go_templates/htmltemplate/transition.go
++++ b/tpl/internal/go_templates/htmltemplate/transition.go
+@@ -331,7 +331,14 @@ func tJS(c context, s []byte) (context, int) {
+ 	case '#':
+ 		if i+1 < len(s) && s[i+1] == '!' {
+ 			c.state, i = stateJSLineCmt, i+1
++			break
++		}
++		// A private identifier such as #yield is never a keyword, and
++		// precedes a div op.
++		for i+1 < len(s) && isJSIdentPart(rune(s[i+1])) {
++			i++
+ 		}
++		c.jsCtx = jsCtxDivOp
+ 	case '{':
+ 		// We only care about tracking brace depth if we are inside of a
+ 		// template literal.
+@@ -382,7 +389,7 @@ func tJSTmpl(c context, s []byte) (context, int) {
+ 		case '$':
+ 			if len(s) >= i+2 && s[i+1] == '{' {
+ 				c.jsBraceDepth = append(c.jsBraceDepth, 0)
+-				c.state = stateJS
++				c.state, c.jsCtx = stateJS, jsCtxRegexp
+ 				return c, i + 2
+ 			}
+ 		case '`':

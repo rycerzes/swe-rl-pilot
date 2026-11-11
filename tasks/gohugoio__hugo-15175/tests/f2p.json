@@ -1,0 +1,7 @@
+[
+  "TestBuildDataArtifacts",
+  "TestCSSBuildDataArtifacts",
+  "TestCSSBuildFileLoaderURLRelativeToWebContextRootMultihost",
+  "TestCSSBuildFileLoaderURLRelativeToWebContextRootMultihost/en_first",
+  "TestCSSBuildFileLoaderURLRelativeToWebContextRootMultihost/fr_first"
+]

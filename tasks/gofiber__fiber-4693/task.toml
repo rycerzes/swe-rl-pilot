@@ -1,0 +1,126 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gofiber__fiber-4693"
+description = "🐛 bug: keep idempotency response headers unsplit"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "fiber",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gofiber/fiber"
+ref = "e90c824775a0a0a6cd73a567cb4d1a31f8a13bbc"
+reference = "https://github.com/gofiber/fiber/pull/4693"
+source_access = "auto"
+built_at = "2026-11-11T00:02:15.962246+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:2240510bc63f53d13187d5db61955294a12ca42d5fdfdcfb47f06eb38d10201c"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gofiber/fiber/pull/4693"
+pr_merged_at = "2026-09-21T12:03:55Z"
+base_commit = "e90c824775a0a0a6cd73a567cb4d1a31f8a13bbc"
+fail_to_pass = [
+    "Test_New_StoreRetrieve_HeadersWithCommas",
+]
+pass_to_pass = [
+    "TestEncodeDecoderesponse",
+    "TestMarshalUnmarshalresponse",
+    "Test_Idempotency",
+    "Test_Idempotency_Store_After_Handler_Cancel",
+    "Test_MemoryLock",
+    "Test_MemoryLock/zero_value",
+    "Test_New_Cache_WhenBodyTooLarge",
+    "Test_New_HandlerError",
+    "Test_New_InvalidKey",
+    "Test_New_LockError",
+    "Test_New_NextSkip",
+    "Test_New_SecondPassReadError",
+    "Test_New_StorageGetError",
+    "Test_New_StorageSetError",
+    "Test_New_StoreRetrieve_FilterHeaders",
+    "Test_New_StoreRetrieve_FilterHeadersCaseInsensitiveSnapshot",
+    "Test_New_UnlockError",
+    "Test_New_UnmarshalError",
+    "Test_configDefault_defaults",
+    "Test_configDefault_override",
+    "Test_response_Decode_LimitExceeded",
+    "Test_response_Decode_Truncated",
+    "Test_response_EncodeDecode_Populated",
+    "Test_response_EncodeMsg_WriterErrors",
+    "Test_response_MarshalUnmarshal_Populated",
+    "Test_response_UnmarshalMsg_UnknownField",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gofiber__fiber:959a2e370e62"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "mutants"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 58.521
+measured_overhead_seconds = 2.107
+measured_copy_seconds = 0.049
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 2
+verifier_timeout_sec = 720
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 1
+p2p_count = 26
+source_files = 1
+loc_changed = 9
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:11.828333+00:00"
+inline_recipe_sha256 = "sha256:049ecba115d3c541d20df7e04d4c352c8865f7fd40a96588f5fb4a27a3413e7f"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = [
+    "Test_New_StoreRetrieve_HeadersWithCommas",
+]
+instruction_description_words = 387
+instruction_ok = false
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 720.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gofiber__fiber-4693-80e2024a4874"

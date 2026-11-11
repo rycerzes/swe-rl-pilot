@@ -1,0 +1,115 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15376"
+description = "tpl/partials: Support relative partial paths from within partials"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "9e4059cfca84a3914544476093b86bc06d6028e8"
+reference = "https://github.com/gohugoio/hugo/pull/15376"
+source_access = "auto"
+built_at = "2026-11-10T23:53:42.214419+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:828568fa808db373dc78fe2fcbfe0f3ded60a74ada3d8669499b3b940969e87c"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15376"
+pr_merged_at = "2026-09-24T15:50:37Z"
+base_commit = "9e4059cfca84a3914544476093b86bc06d6028e8"
+fail_to_pass = [
+    "TestIncludeRelativePath",
+    "TestIncludeRelativePathInDecoratorInner",
+    "TestIncludeRelativePathInDeferredBlock",
+    "TestIncludeRelativePathNotFromPartial",
+    "TestIncludeRelativePathOutsidePartials",
+]
+pass_to_pass = [
+    "TestInclude",
+    "TestIncludeCacheHints",
+    "TestIncludeCached",
+    "TestIncludeCachedDifferentKey",
+    "TestIncludeCachedRecursion",
+    "TestIncludeCachedRecursionShortcode",
+    "TestIncludeCachedTimeout",
+    "TestPartialReturnBareStopsEarly",
+    "TestPartialReturnConditional",
+    "TestPartialReturnFromRange",
+    "TestPartialReturnNil",
+    "TestPartialReturnValueFromTemplateInclude",
+    "TestReturnExecuteFromTemplateInPartial",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:ec69d0e64931"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 52.885
+measured_overhead_seconds = 5.701
+measured_copy_seconds = 0.206
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 5
+p2p_count = 13
+source_files = 5
+loc_changed = 73
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:10.160268+00:00"
+inline_recipe_sha256 = "sha256:02957beb7c8f8ed7e41df32c3981c77eac34b9df38c7df2a3f470e514887af2a"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 197
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15376-63f8dfa98f74"

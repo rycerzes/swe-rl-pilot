@@ -1,0 +1,112 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15256"
+description = "config/allconfig: Improve resilience of hugo mod init"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "49835f8fe9496159e84a3f742fd9d6c5c9cd3ae5"
+reference = "https://github.com/gohugoio/hugo/pull/15256"
+source_access = "auto"
+built_at = "2026-11-10T23:30:47.460118+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:ca18914db5ee8dc987cac6890fa30ff373750ddd61b55a15339e934a96fd253e"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15256"
+pr_merged_at = "2026-08-30T16:06:11Z"
+base_commit = "49835f8fe9496159e84a3f742fd9d6c5c9cd3ae5"
+fail_to_pass = [
+    "TestInvalidDefaultOutputFormat",
+]
+pass_to_pass = [
+    "TestConfigAliases",
+    "TestContentTypesDefault",
+    "TestDefaultConfigEnvDisableLanguagesIssue13707",
+    "TestDefaultConfigLanguageBlankWhenNoEnglishExists",
+    "TestDirsMount",
+    "TestInvalidOutputFormat",
+    "TestLegacyEmbeddedRenderHookEnablement",
+    "TestMapUglyURLs",
+    "TestMergeDeep",
+    "TestMergeDeepBuildStats",
+    "TestMergeDeepBuildStatsTheme",
+    "TestPaginationConfig",
+    "TestPaginationConfigDisableAliases",
+    "TestRedefineContentTypes",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:850f11c060b4"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 63.896
+measured_overhead_seconds = 5.859
+measured_copy_seconds = 0.196
+run_timeout_sec = 150
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 1
+p2p_count = 14
+source_files = 3
+loc_changed = 36
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:09.821428+00:00"
+inline_recipe_sha256 = "sha256:c6484c799ea1216557646f51d98b3f691946f59828ef958abebdd612fc41dea5"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 76
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15256-dce41da3fb6b"

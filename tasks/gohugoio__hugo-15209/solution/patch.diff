@@ -1,0 +1,39 @@
+diff --git a/tpl/resources/init.go b/tpl/resources/init.go
+index 9ce9bee2008..0cda68c4c68 100644
+--- a/tpl/resources/init.go
++++ b/tpl/resources/init.go
+@@ -90,6 +90,11 @@ func init() {
+ 			[][2]string{},
+ 		)
+ 
++		ns.AddMethodMapping(ctx.Publish,
++			nil,
++			[][2]string{},
++		)
++
+ 		ns.AddMethodMapping(ctx.PostProcess,
+ 			nil,
+ 			[][2]string{},
+diff --git a/tpl/resources/resources.go b/tpl/resources/resources.go
+index aae6ac1f328..88722fb0726 100644
+--- a/tpl/resources/resources.go
++++ b/tpl/resources/resources.go
+@@ -296,6 +296,18 @@ func (ns *Namespace) Minify(r resources.ResourceTransformer) (resource.Resource,
+ 	return ns.minifyClient.Minify(r)
+ }
+ 
++// Publish publishes r to the destination and returns it.
++func (ns *Namespace) Publish(r resource.Resource) (resource.Resource, error) {
++	s, ok := r.(resource.Source)
++	if !ok {
++		return nil, fmt.Errorf("%T can not be published", r)
++	}
++	if err := s.Publish(); err != nil {
++		return nil, err
++	}
++	return r, nil
++}
++
+ // PostProcess processes r after the build.
+ //
+ // Deprecated: Use templates.Defer instead.

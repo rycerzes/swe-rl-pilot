@@ -1,0 +1,11 @@
+[
+  "TestPartialReturnBareStopsEarly",
+  "TestPartialReturnConditional",
+  "TestPartialReturnFromRange",
+  "TestPartialReturnNil",
+  "TestPartialReturnPanicIssue13600",
+  "TestTemplateReturnEarly",
+  "TestTemplateReturnEarlyFromBlock",
+  "TestTemplateReturnEarlyFromTemplateInclude",
+  "TestTemplateReturnWithValueOutsidePartialFails"
+]

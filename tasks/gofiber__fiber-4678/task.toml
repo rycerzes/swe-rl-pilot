@@ -1,0 +1,255 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gofiber__fiber-4678"
+description = "⚡ perf: cut the per-request cost of the extractors"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "fiber",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gofiber/fiber"
+ref = "ef013fa52a2435224f99b78fddc68f50bdfb71b5"
+reference = "https://github.com/gofiber/fiber/pull/4678"
+source_access = "auto"
+built_at = "2026-11-10T23:31:11.689812+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:7a4588510deccf5edefbf07a5d36ba636f8515a64be4c218061cfb876dcad80a"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gofiber/fiber/pull/4678"
+pr_merged_at = "2026-09-12T14:30:37Z"
+base_commit = "ef013fa52a2435224f99b78fddc68f50bdfb71b5"
+fail_to_pass = [
+    "Test_Combined_DoesNotAllocate",
+    "Test_Store_getSessionID_SkipsChildrenWithoutExtract",
+    "Test_Store_getSessionID_WithoutExtractor",
+]
+pass_to_pass = [
+    "TestAbsoluteTimeoutValidation",
+    "TestConfigDefault",
+    "TestConfigDefaultWithCustomConfig",
+    "TestDefaultErrorHandler",
+    "TestEncodeDecodeitem",
+    "TestGetEffectiveStatusCodeTypedNilCustomError",
+    "TestGetEffectiveStatusCodeTypedNilFiberError",
+    "TestLimiterDefaultConfigNoPanic",
+    "TestLimiterFixedPropagatesRequestContextToStorage",
+    "TestLimiterFixedStorageGetError",
+    "TestLimiterFixedStorageGetErrorDisableRedaction",
+    "TestLimiterFixedStorageSetError",
+    "TestLimiterFixedStorageSetErrorDisableRedaction",
+    "TestLimiterFixedStorageSetErrorOnSkipSuccessfulRequests",
+    "TestLimiterFixedSubSecondExpiration",
+    "TestLimiterSlidingPropagatesRequestContextToStorage",
+    "TestLimiterSlidingSkipsPostUpdateWhenHeadersDisabled",
+    "TestLimiterSlidingSubSecondExpiration",
+    "TestMarshalUnmarshalitem",
+    "TestMultipleKeyLookup",
+    "TestStore_Delete",
+    "TestStore_Delete/delete_non-existing_session",
+    "TestStore_Delete/delete_with_empty_session_ID",
+    "TestStore_Get_SessionAlreadyLoaded",
+    "Test_AuthSchemeBasic",
+    "Test_AuthSchemeToken",
+    "Test_AuthSources",
+    "Test_AuthSources/authHeader",
+    "Test_AuthSources/cookie",
+    "Test_AuthSources/form",
+    "Test_AuthSources/header",
+    "Test_AuthSources/param",
+    "Test_AuthSources/query",
+    "Test_BearerErrorFields",
+    "Test_BearerErrorURIOnly",
+    "Test_BearerInsufficientScope",
+    "Test_Canonical",
+    "Test_ChallengeQuotedStringEscaping",
+    "Test_ChallengeQuotedStringEscaping/Bearer_parameters",
+    "Test_ChallengeQuotedStringEscaping/default_ApiKey_challenge",
+    "Test_Combined",
+    "Test_Combined/Cookie_keeps_its_own_separator",
+    "Test_Combined/Immutable_hands_back_a_copy",
+    "Test_Combined/absent_and_empty_both_read_as_nothing",
+    "Test_Combined/an_empty_line_among_repeated_ones_keeps_its_place",
+    "Test_Combined/repeated_lines_are_one_value",
+    "Test_Combined/single_line_is_unchanged",
+    "Test_Config_currentSecond_NegativeClock",
+    "Test_CustomChallenge",
+    "Test_CustomNextFunc",
+    "Test_CustomSuccessAndFailureHandlers",
+    "Test_DefaultChallengeForNonAuthExtractor",
+    "Test_DefaultErrorHandlerChallenge",
+    "Test_DefaultErrorHandlerInvalid",
+    "Test_ErrorHandlerReturnsErrorChallenge",
+    "Test_ErrorHandlerReturnsErrorChallenge/proxy_auth_required",
+    "Test_ErrorHandlerReturnsErrorChallenge/unauthorized",
+    "Test_HeaderSchemeCaseInsensitive",
+    "Test_HeaderSchemeEmptyTokenAfterTrim",
+    "Test_HeaderSchemeMissingSpace",
+    "Test_HeaderSchemeMultipleSpaces",
+    "Test_HeaderSchemeNoSeparator",
+    "Test_HeaderSchemeNoToken",
+    "Test_KeyAuth_ConfigDefault_CustomConfig",
+    "Test_KeyAuth_ConfigDefault_NoConfig",
+    "Test_KeyAuth_ConfigDefault_PanicWithoutValidator",
+    "Test_KeyAuth_ConfigDefault_WithValidator",
+    "Test_Limiter_Bug_NewErrorf_SkipSuccessfulRequests_FixedWindow",
+    "Test_Limiter_Bug_NewErrorf_SkipSuccessfulRequests_SlidingWindow",
+    "Test_Limiter_Concurrency",
+    "Test_Limiter_Concurrency_Store",
+    "Test_Limiter_Disable_Headers",
+    "Test_Limiter_Fixed_ExpirationFuncOverridesStaticExpiration",
+    "Test_Limiter_Fixed_ExpirationFunc_FallbackOnNegativeDuration",
+    "Test_Limiter_Fixed_ExpirationFunc_FallbackOnZeroDuration",
+    "Test_Limiter_Fixed_Window_Custom_Storage_No_Skip_Choices",
+    "Test_Limiter_Fixed_Window_Custom_Storage_Skip_Failed_Requests",
+    "Test_Limiter_Fixed_Window_Custom_Storage_Skip_Successful_Requests",
+    "Test_Limiter_Fixed_Window_No_Skip_Choices",
+    "Test_Limiter_Fixed_Window_SkipSuccessfulRequests_DoesNotCreditNextWindow",
+    "Test_Limiter_Fixed_Window_Skip_Failed_Requests",
+    "Test_Limiter_Fixed_Window_Skip_Successful_Requests",
+    "Test_Limiter_Headers",
+    "Test_Limiter_Next",
+    "Test_Limiter_Sliding_ExpirationFuncOverridesStaticExpiration",
+    "Test_Limiter_Sliding_ExpirationFunc_FallbackOnNegativeDuration",
+    "Test_Limiter_Sliding_ExpirationFunc_FallbackOnZeroDuration",
+    "Test_Limiter_Sliding_MaxFuncOverridesStaticMax",
+    "Test_Limiter_Sliding_Window_Custom_Storage_No_Skip_Choices",
+    "Test_Limiter_Sliding_Window_Custom_Storage_Skip_Failed_Requests",
+    "Test_Limiter_Sliding_Window_Custom_Storage_Skip_Successful_Requests",
+    "Test_Limiter_Sliding_Window_ExpiresStalePrevHits",
+    "Test_Limiter_Sliding_Window_No_Skip_Choices",
+    "Test_Limiter_Sliding_Window_RecalculatesAfterHandlerDelay",
+    "Test_Limiter_Sliding_Window_SkipFailedRequests_DecrementsPreviousWindow",
+    "Test_Limiter_Sliding_Window_Skip_Failed_Requests",
+    "Test_Limiter_Sliding_Window_Skip_Successful_Requests",
+    "Test_Limiter_SubSecondExpirationIsOneSecondWindow",
+    "Test_Limiter_SubSecondExpirationIsOneSecondWindow/fixed",
+    "Test_Limiter_SubSecondExpirationIsOneSecondWindow/sliding",
+    "Test_Limiter_With_Max_Func",
+    "Test_Limiter_With_Max_Func_With_Zero",
+    "Test_Limiter_With_Max_Func_With_Zero_And_Limiter_Sliding",
+    "Test_LogContextTagRedactsToken",
+    "Test_LogTagsRedactToken",
+    "Test_MultipleKeyAuth",
+    "Test_MultipleWWWAuthenticateChallenges",
+    "Test_New_ErrorDescriptionRequiresError",
+    "Test_New_ErrorURIAbsolute",
+    "Test_New_ErrorURIRequiresError",
+    "Test_New_InvalidErrorToken",
+    "Test_ProxyAuthenticateHeader",
+    "Test_ScopeValidation",
+    "Test_SessionLogContextTagRedactsSessionID",
+    "Test_Session_Concurrency",
+    "Test_Session_Cookie",
+    "Test_Session_Cookie_In_Middleware_Chain",
+    "Test_Session_Custom_Config",
+    "Test_Session_Deletes_Single_Key",
+    "Test_Session_Fresh_Flag_Bug",
+    "Test_Session_KeyTypes",
+    "Test_Session_Multiple_GetSession_Calls",
+    "Test_Session_StoreGetDecodeSessionDataError",
+    "Test_Session_Store_Reset",
+    "Test_Sliding_Window",
+    "Test_TokenFromContext",
+    "Test_TokenFromContext_None",
+    "Test_TokenFromContext_Types",
+    "Test_Value",
+    "Test_Value/Immutable_hands_back_a_copy",
+    "Test_Value/a_line_that_is_present_and_empty",
+    "Test_Value/absent_is_present-and-empty,_not_a_refusal",
+    "Test_Value/matches_the_name_case-insensitively",
+    "Test_Value/repeated_lines_are_refused",
+    "Test_Value/repeated_lines_are_refused_whatever_they_are_spelled_like",
+    "Test_Value/single_line",
+    "Test_WWWAuthenticateHeader",
+    "Test_WWWAuthenticateHeader/chained_extractor_with_auth_header",
+    "Test_WWWAuthenticateHeader/chained_extractor_without_auth_header",
+    "Test_WWWAuthenticateHeader/custom_realm_on_failure",
+    "Test_WWWAuthenticateHeader/default_config_on_failure",
+    "Test_WWWAuthenticateHeader/default_header_for_non-auth-header_extractor",
+    "Test_WWWAuthenticateHeader/no_header_on_success",
+    "Test_WWWAuthenticateOnlyOn401",
+    "Test_bucketForOriginalHit",
+    "Test_getEffectiveStatusCode_FiberError",
+    "Test_item_Decode_Truncated",
+    "Test_item_Decode_UnknownField",
+    "Test_item_EncodeMsg_WriterErrors",
+    "Test_manager_get_MemoryUnexpectedType",
+    "Test_manager_get_RoundTripWithStorage",
+    "Test_manager_get_UnmarshalError",
+    "Test_rotateWindow",
+    "Test_secondsToDuration",
+    "Test_ttlDuration",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gofiber__fiber:9d417a3cad7a"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 60.928
+measured_overhead_seconds = 2.5
+measured_copy_seconds = 0.045
+run_timeout_sec = 150
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 3
+p2p_count = 155
+source_files = 5
+loc_changed = 554
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:11.599093+00:00"
+inline_recipe_sha256 = "sha256:7f49460c84818487b9051a3ecb3fd4cd46629e97452867123116eb894fcb617f"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 656
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gofiber__fiber-4678-a63093ef429c"

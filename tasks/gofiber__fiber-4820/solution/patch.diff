@@ -1,0 +1,226 @@
+diff --git a/ctx_interface_gen.go b/ctx_interface_gen.go
+index 39798aef752..5427192795a 100644
+--- a/ctx_interface_gen.go
++++ b/ctx_interface_gen.go
+@@ -467,6 +467,7 @@ type Ctx interface {
+ 	// header spoofing if your app is behind a proxy.
+ 	IP() string
+ 	// extractIPsFromHeader will return a slice of IPs it found given a header name in the order they appear.
++	// Empty elements are ignored after trimming optional whitespace.
+ 	// When IP validation is enabled, any invalid IPs will be omitted.
+ 	extractIPsFromHeader(header string) []string
+ 	// extractIPFromHeader returns the client IP from the given proxy header by walking the
+diff --git a/docs/api/ctx.md b/docs/api/ctx.md
+index c56b880d89d..8984dcde595 100644
+--- a/docs/api/ctx.md
++++ b/docs/api/ctx.md
+@@ -1897,6 +1897,8 @@ See [`TrustProxy`](fiber.md#trustproxy) and [`TrustProxyConfig`](fiber.md#trustp
+ 
+ Returns an array of IP addresses specified in the [X-Forwarded-For](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Forwarded-For) request header, with repeated field lines read as one comma-joined list and each address's surrounding spaces and tabs trimmed ([RFC 9110 Section 5.6.3](https://www.rfc-editor.org/rfc/rfc9110#section-5.6.3) allows either as optional whitespace). With `EnableIPValidation`, IPv4, IPv6 and IPv4-mapped IPv6 addresses (`::ffff:203.0.113.5`, as dual-stack proxies forward IPv4 clients) are all accepted; whitespace inside an address makes it invalid.
+ 
++Empty elements, including elements containing only spaces and tabs, are ignored regardless of `EnableIPValidation` ([RFC 9110 Section 5.6.1.2](https://www.rfc-editor.org/rfc/rfc9110#section-5.6.1.2)). For example, `proxy1,,,127.0.0.1,` returns `["proxy1", "127.0.0.1"]` with validation disabled, and a header containing only commas, spaces and tabs returns an empty slice.
++
+ ```go title="Signature"
+ func (c fiber.Ctx) IPs() []string
+ func (r fiber.Req) IPs() []string
+diff --git a/docs/whats_new.md b/docs/whats_new.md
+index 7ad2b18c37e..c99adedd8a8 100644
+--- a/docs/whats_new.md
++++ b/docs/whats_new.md
+@@ -915,6 +915,7 @@ resolve to the **request**; use `c.Res().Get()`, `c.Res().GetHeaders()`, `c.Res(
+   the output no longer depends on `Config.Immutable`.
+ - **Context()**: Renamed to `RequestCtx()` to access the underlying `fasthttp.RequestCtx`.
+ - **IP()**: When `EnableIPValidation` is `true` and `TrustProxyConfig` is set, `c.IP()` now walks the `X-Forwarded-For` chain from right to left and returns the first non-trusted IP, instead of the leftmost syntactically valid IP. This closes an IP-spoofing vector where an attacker could prepend a fake address and have it returned by `c.IP()`. An entry that is not an IP address, such as `203.0.113.50:51234` or `unknown`, ends the walk, and `c.IP()` returns the last trusted proxy passed or the TCP remote address instead of an entry further left; a proxy that appends `IP:port` entries has to send the bare address. Repeated field lines of the proxy header are joined in the order they were received. Apps with `EnableIPValidation = false` (the default) are unaffected. See [`Ctx.IP`](./api/ctx.md#ip) and the [reverse proxy guide](./guide/reverse-proxy.md#getting-the-real-client-ip-address) for details.
++- **IPs()**: Empty `X-Forwarded-For` elements are now ignored after trimming spaces and tabs, even when `EnableIPValidation` is disabled. Repeated commas and whitespace-only elements no longer produce empty strings in the returned slice. See [`Ctx.IPs`](./api/ctx.md#ips).
+ - **Scheme()**: Behind a trusted proxy, the scheme headers are ranked instead of read in the order they arrive: `X-Forwarded-Proto` wins over `X-Forwarded-Protocol`, then `X-Forwarded-Ssl: on`, then `X-Url-Scheme`, so a client can no longer override the proxy's `X-Forwarded-Proto` with one of the others. A proxy that sets only a lower-ranked header must drop the ones above it. See the [reverse proxy guide](./guide/reverse-proxy.md#scheme-and-host-behind-a-proxy).
+ 
+ ### SendEarlyHints
+diff --git a/internal/headerlist/headerlist.go b/internal/headerlist/headerlist.go
+index 2ca8e8f887b..df889b59349 100644
+--- a/internal/headerlist/headerlist.go
++++ b/internal/headerlist/headerlist.go
+@@ -20,9 +20,10 @@
+ //     takes CR, LF, VT and FF. [TrimOWS] takes only SP and HTAB, the OWS of
+ //     RFC 9110 Section 5.6.3, for a caller that validates what is left.
+ //
+-// Empty elements are skipped throughout: "a,,b" yields "a" and "b". A list is
++// The iterators skip empty elements: "a,,b" yields "a" and "b". A list is
+ // permitted to carry them (RFC 9110 Section 5.6.1 allows the empty element for
+-// legacy reasons) and no caller here has ever wanted one.
++// legacy reasons). [Next] and [Prev] expose raw elements, including empty ones,
++// for callers with their own whitespace, validation and traversal policies.
+ package headerlist
+ 
+ import (
+@@ -31,6 +32,32 @@ import (
+ 	"github.com/gofiber/utils/v2"
+ )
+ 
++// Next returns the raw comma-separated element starting at start and the next
++// start position. The element aliases list; whitespace and empty elements are
++// preserved. Every comma separates, including commas inside quotes.
++//
++// start must be between zero and len(list), inclusive. The returned position
++// exceeds len(list) after the final element, allowing callers to stop early
++// without allocating a slice of all elements.
++func Next(list string, start int) (element string, next int) { //nolint:nonamedreturns // names distinguish the element from the next position
++	end := start
++	for end < len(list) && list[end] != ',' {
++		end++
++	}
++	return list[start:end], end + 1
++}
++
++// Prev is the reverse of Next. It returns the raw element ending just before
++// end and the next end position. end must be between zero and len(list),
++// inclusive. The returned position is negative after the first element.
++func Prev(list string, end int) (element string, prev int) { //nolint:nonamedreturns // names distinguish the element from the previous position
++	start := end
++	for start > 0 && list[start-1] != ',' {
++		start--
++	}
++	return list[start:end], start - 1
++}
++
+ // All yields each non-empty element of a comma-separated list value, with
+ // leading and trailing whitespace removed.
+ //
+diff --git a/req.go b/req.go
+index cc571ed6eac..22ae4d53bd5 100644
+--- a/req.go
++++ b/req.go
+@@ -863,10 +863,9 @@ func (r *DefaultReq) IP() string {
+ }
+ 
+ // extractIPsFromHeader will return a slice of IPs it found given a header name in the order they appear.
++// Empty elements are ignored after trimming optional whitespace.
+ // When IP validation is enabled, any invalid IPs will be omitted.
+ func (r *DefaultReq) extractIPsFromHeader(header string) []string {
+-	// TODO: Reuse the c.extractIPFromHeader func somehow in here
+-
+ 	headerValue := proxyHeaderValue(r, header)
+ 
+ 	// We can't know how many IPs we will return, but we will try to guess with this constant division.
+@@ -877,44 +876,18 @@ func (r *DefaultReq) extractIPsFromHeader(header string) []string {
+ 		maxEstimatedCount)
+ 
+ 	ipsFound := make([]string, 0, estimatedCount)
+-
+-	i := 0
+-	j := -1
+-
+-	for {
+-		var v4, v6 bool
+-
+-		// Manually splitting string without allocating slice, working with parts directly
+-		i, j = j+1, j+2
+-
+-		if j > len(headerValue) {
+-			break
+-		}
+-
+-		for j < len(headerValue) && headerValue[j] != ',' {
+-			switch headerValue[j] {
+-			case ':':
+-				v6 = true
+-			case '.':
+-				v4 = true
+-			default:
+-				// do nothing
+-			}
+-			j++
+-		}
+-
+-		for i < j && headerValue[i] == ',' {
+-			i++
++	validate := r.c.app.config.EnableIPValidation
++
++	for start := 0; start < len(headerValue); {
++		var s string
++		s, start = headerlist.Next(headerValue, start)
++		s = headerlist.TrimOWS(s)
++		// RFC 9110 Section 5.6.1.2: recipients ignore empty list elements.
++		if s == "" {
++			continue
+ 		}
+-
+-		s := headerlist.TrimOWS(headerValue[i:j])
+-
+-		if r.c.app.config.EnableIPValidation {
+-			// Skip validation if IP is clearly not IPv4/IPv6; otherwise, validate without allocations.
+-			// A colon decides: an IPv4-mapped IPv6 address carries both separators.
+-			if (!v6 && !v4) || (v6 && !utils.IsIPv6(s)) || (!v6 && v4 && !utils.IsIPv4(s)) {
+-				continue
+-			}
++		if validate && !utils.IsIPv4(s) && !utils.IsIPv6(s) {
++			continue
+ 		}
+ 
+ 		ipsFound = append(ipsFound, s)
+@@ -938,34 +911,23 @@ func (r *DefaultReq) extractIPFromHeader(header string) string {
+ 	headerValue := proxyHeaderValue(r, header)
+ 	hasTrustedProxyConfig := r.hasTrustedProxyConfig()
+ 	if !hasTrustedProxyConfig {
+-		start := 0
+-		for {
+-			end := start
+-			for end < len(headerValue) && headerValue[end] != ',' {
+-				end++
+-			}
+-
+-			ipStr := headerlist.TrimOWS(headerValue[start:end])
++		for start := 0; start <= len(headerValue); {
++			var ipStr string
++			ipStr, start = headerlist.Next(headerValue, start)
++			ipStr = headerlist.TrimOWS(ipStr)
+ 			if isValidProxyIP(ipStr) {
+ 				return ipStr
+ 			}
+-			if end == len(headerValue) {
+-				break
+-			}
+-			start = end + 1
+ 		}
+ 	}
+ 
+ 	var leftmostIP string
+ 
+ 	for end := len(headerValue); end > 0; {
+-		start := end
+-		for start > 0 && headerValue[start-1] != ',' {
+-			start--
+-		}
++		ipStr, prev := headerlist.Prev(headerValue, end)
+ 
+ 		// An empty list element is no element (RFC 9110 Section 5.6.1).
+-		if ipStr := headerlist.TrimOWS(headerValue[start:end]); ipStr != "" {
++		if ipStr = headerlist.TrimOWS(ipStr); ipStr != "" {
+ 			if !isValidProxyIP(ipStr) {
+ 				// "IP:port", "unknown" and the like name no trusted proxy, so nothing left of them can be trusted.
+ 				break
+@@ -975,11 +937,10 @@ func (r *DefaultReq) extractIPFromHeader(header string) string {
+ 				return ipStr
+ 			}
+ 		}
+-
+-		if start == 0 {
++		if prev < 0 {
+ 			break
+ 		}
+-		end = start - 1
++		end = prev
+ 	}
+ 
+ 	if leftmostIP != "" {
+diff --git a/req_interface_gen.go b/req_interface_gen.go
+index c6bbaaef569..6f739e2c5b6 100644
+--- a/req_interface_gen.go
++++ b/req_interface_gen.go
+@@ -227,6 +227,7 @@ type Req interface {
+ 	// header spoofing if your app is behind a proxy.
+ 	IP() string
+ 	// extractIPsFromHeader will return a slice of IPs it found given a header name in the order they appear.
++	// Empty elements are ignored after trimming optional whitespace.
+ 	// When IP validation is enabled, any invalid IPs will be omitted.
+ 	extractIPsFromHeader(header string) []string
+ 	// extractIPFromHeader returns the client IP from the given proxy header by walking the

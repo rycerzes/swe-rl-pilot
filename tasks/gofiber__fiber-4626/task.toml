@@ -1,0 +1,252 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gofiber__fiber-4626"
+description = "🩹 Fix: Decode a path parameter exactly once in FromParam"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "fiber",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gofiber/fiber"
+ref = "0e2ce9d260b61f8e9dfa20a5a2fe39741dd7f316"
+reference = "https://github.com/gofiber/fiber/pull/4626"
+source_access = "auto"
+built_at = "2026-11-10T23:47:20.983968+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:594d048142f1ce282a8df81a88d9707d6f4a21533a35f11ee5100bea3611e0b8"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gofiber/fiber/pull/4626"
+pr_merged_at = "2026-08-23T14:06:32Z"
+base_commit = "0e2ce9d260b61f8e9dfa20a5a2fe39741dd7f316"
+fail_to_pass = [
+    "Test_FromParam_DecodesOnce",
+    "Test_FromParam_DecodesOnce/UnescapePath_enabled",
+]
+pass_to_pass = [
+    "Test_ExtractWithSource",
+    "Test_ExtractWithSource/builtin_cookie_source",
+    "Test_ExtractWithSource/builtins_report_static_source_via_ExtractWithSource",
+    "Test_ExtractWithSource/falls_back_to_Extract_with_static_Source",
+    "Test_ExtractWithSource/honors_chain_level_Extract_override",
+    "Test_ExtractWithSource/honors_legacy_Extract_override",
+    "Test_ExtractWithSource/nil_both_returns_ErrNotFound",
+    "Test_ExtractWithSource/unkeyed_literal_still_compiles_without_extra_fields",
+    "Test_Extractor_Chain",
+    "Test_Extractor_Chain/all_extractors_fail",
+    "Test_Extractor_Chain/empty_extractor_returns_not_found",
+    "Test_Extractor_Chain/first_extractor_succeeds",
+    "Test_Extractor_Chain/no_extractors",
+    "Test_Extractor_Chain/second_extractor_succeeds",
+    "Test_Extractor_Chain_AllErrors",
+    "Test_Extractor_Chain_Cycle_Prevention",
+    "Test_Extractor_Chain_Cycle_Prevention/direct_cycle_returns_err_chain_cycle",
+    "Test_Extractor_Chain_Cycle_Prevention/indirect_cycle_returns_err_chain_cycle",
+    "Test_Extractor_Chain_Cycle_Prevention/nested_non_cyclic_chain_still_works",
+    "Test_Extractor_Chain_Error_Propagation",
+    "Test_Extractor_Chain_ExtractSource",
+    "Test_Extractor_Chain_ExtractSource/bare_Extract_does_not_pollute_later_ExtractWithSource",
+    "Test_Extractor_Chain_ExtractSource/chain_override_success_still_reports_winning_source",
+    "Test_Extractor_Chain_ExtractSource/clearing_public_Chain_still_returns_captured_source",
+    "Test_Extractor_Chain_ExtractSource/cross_api_reentry_via_Extract_detects_cycle",
+    "Test_Extractor_Chain_ExtractSource/empty_chain_source_path",
+    "Test_Extractor_Chain_ExtractSource/first_child_source_when_first_wins",
+    "Test_Extractor_Chain_ExtractSource/hand_rolled_in_chain",
+    "Test_Extractor_Chain_ExtractSource/nested_chain_reports_inner_winning_source",
+    "Test_Extractor_Chain_ExtractSource/no_double_extract_of_stateful_custom_child",
+    "Test_Extractor_Chain_ExtractSource/public_Chain_slice_mutation_does_not_affect_Extract",
+    "Test_Extractor_Chain_ExtractSource/recursive_public_Chain_metadata_uses_captured_source",
+    "Test_Extractor_Chain_ExtractSource/rejected_nested_chain_does_not_poison_fallback_source",
+    "Test_Extractor_Chain_ExtractSource/replaced_Extract_without_base_uses_static_Source",
+    "Test_Extractor_Chain_ExtractSource/reports_winning_child_source",
+    "Test_Extractor_Chain_ExtractSource/shared_guard_allows_sequential_Extract_then_ExtractWithSource",
+    "Test_Extractor_Chain_ExtractSource/shared_guard_blocks_cross_entry_during_source_path",
+    "Test_Extractor_Chain_ExtractSource/skips_empty_children_preserves_prior_error",
+    "Test_Extractor_Chain_ExtractSource/source_path_detects_cycle",
+    "Test_Extractor_Chain_Introspection",
+    "Test_Extractor_Chain_MixedScenarios",
+    "Test_Extractor_Chain_MixedScenarios/error_then_success",
+    "Test_Extractor_Chain_MixedScenarios/fail_then_error",
+    "Test_Extractor_Chain_MixedScenarios/fail_then_error_then_success",
+    "Test_Extractor_Chain_NilFunctions",
+    "Test_Extractor_Chain_ReusedAcrossMiddleware",
+    "Test_Extractor_Chain_With_Success",
+    "Test_Extractor_Contains",
+    "Test_Extractor_Contains/cyclic_chain_no_match",
+    "Test_Extractor_Contains/nested_chain_match",
+    "Test_Extractor_Contains/nested_chain_no_match",
+    "Test_Extractor_Contains/nil_predicate",
+    "Test_Extractor_Contains/single_extractor_match",
+    "Test_Extractor_FromAuthHeader_CustomScheme",
+    "Test_Extractor_FromAuthHeader_EdgeCases",
+    "Test_Extractor_FromAuthHeader_EdgeCases/case_insensitive_scheme_matching",
+    "Test_Extractor_FromAuthHeader_EdgeCases/missing_space_after_scheme",
+    "Test_Extractor_FromAuthHeader_EdgeCases/wrong_scheme",
+    "Test_Extractor_FromAuthHeader_NoScheme",
+    "Test_Extractor_FromAuthHeader_NoScheme/empty_header_returns_not_found",
+    "Test_Extractor_FromAuthHeader_NoScheme/returns_header_value",
+    "Test_Extractor_FromAuthHeader_RFC_Compliance",
+    "Test_Extractor_FromAuthHeader_RFC_Compliance/case_insensitive_extractor_scheme",
+    "Test_Extractor_FromAuthHeader_RFC_Compliance/case_insensitive_scheme",
+    "Test_Extractor_FromAuthHeader_RFC_Compliance/header_too_short",
+    "Test_Extractor_FromAuthHeader_RFC_Compliance/mixed_whitespace_after_scheme",
+    "Test_Extractor_FromAuthHeader_RFC_Compliance/multiple_spaces_after_scheme",
+    "Test_Extractor_FromAuthHeader_RFC_Compliance/no_whitespace_after_scheme",
+    "Test_Extractor_FromAuthHeader_RFC_Compliance/only_whitespace_after_scheme",
+    "Test_Extractor_FromAuthHeader_RFC_Compliance/single_space_after_scheme",
+    "Test_Extractor_FromAuthHeader_RFC_Compliance/tab_after_scheme",
+    "Test_Extractor_FromAuthHeader_RepeatedLineIsNotACredential",
+    "Test_Extractor_FromAuthHeader_Token68_Validation",
+    "Test_Extractor_FromAuthHeader_Token68_Validation/bracket_in_token",
+    "Test_Extractor_FromAuthHeader_Token68_Validation/comma_in_token",
+    "Test_Extractor_FromAuthHeader_Token68_Validation/equals_at_start",
+    "Test_Extractor_FromAuthHeader_Token68_Validation/equals_in_middle",
+    "Test_Extractor_FromAuthHeader_Token68_Validation/leading_space_in_token",
+    "Test_Extractor_FromAuthHeader_Token68_Validation/newline_in_token",
+    "Test_Extractor_FromAuthHeader_Token68_Validation/no_space_after_scheme",
+    "Test_Extractor_FromAuthHeader_Token68_Validation/only_scheme",
+    "Test_Extractor_FromAuthHeader_Token68_Validation/quote_in_token",
+    "Test_Extractor_FromAuthHeader_Token68_Validation/semicolon_in_token",
+    "Test_Extractor_FromAuthHeader_Token68_Validation/space_after_scheme",
+    "Test_Extractor_FromAuthHeader_Token68_Validation/space_in_token",
+    "Test_Extractor_FromAuthHeader_Token68_Validation/tab_after_scheme",
+    "Test_Extractor_FromAuthHeader_Token68_Validation/tab_in_token",
+    "Test_Extractor_FromAuthHeader_Token68_Validation/trailing_space_in_token",
+    "Test_Extractor_FromAuthHeader_Token68_Validation/valid_double_equals",
+    "Test_Extractor_FromAuthHeader_Token68_Validation/valid_equals_at_end",
+    "Test_Extractor_FromAuthHeader_WhitespaceToken",
+    "Test_Extractor_FromCustom",
+    "Test_Extractor_FromCustom/extraction_returning_empty_string",
+    "Test_Extractor_FromCustom/extraction_with_error",
+    "Test_Extractor_FromCustom/nil_function",
+    "Test_Extractor_FromCustom/successful_extraction",
+    "Test_Extractor_FromHeader_CombinesRepeatedLines",
+    "Test_Extractor_FromHeader_CombinesRepeatedLines/normalize=false",
+    "Test_Extractor_FromHeader_CombinesRepeatedLines/normalize=true",
+    "Test_Extractor_FromHeader_CookieKeepsItsOwnSeparator",
+    "Test_Extractor_FromHeader_SingleLineIsUnchanged",
+    "Test_Extractor_SourceTypes",
+    "Test_Extractor_SourceTypes/chain_source_metadata",
+    "Test_Extractor_SourceTypes/individual_extractor_sources",
+    "Test_Extractor_URL_Encoded",
+    "Test_Extractor_URL_Encoded/FromForm_with_plus",
+    "Test_Extractor_URL_Encoded/FromParam_with_slashes",
+    "Test_Extractor_URL_Encoded/FromQuery_base64_encoded",
+    "Test_Extractor_URL_Encoded/FromQuery_with_spaces",
+    "Test_Extractors",
+    "Test_Extractors/FromAuthHeader",
+    "Test_Extractors/FromCookie",
+    "Test_Extractors/FromForm",
+    "Test_Extractors/FromHeader",
+    "Test_Extractors/FromParam",
+    "Test_Extractors/FromQuery",
+    "Test_Extractors_Missing",
+    "Test_FromAuthHeader_IgnoresHeaderNameCase",
+    "Test_FromAuthHeader_IgnoresHeaderNameCase/normalize=false",
+    "Test_FromAuthHeader_IgnoresHeaderNameCase/normalize=true",
+    "Test_FromHeader_IgnoresHeaderNameCase",
+    "Test_FromHeader_IgnoresHeaderNameCase/normalize=false",
+    "Test_FromHeader_IgnoresHeaderNameCase/normalize=true",
+    "Test_FromParam_DecodesOnce/UnescapePath_disabled",
+    "Test_isValidToken68",
+    "Test_isValidToken68/8-byte_token_accepted",
+    "Test_isValidToken68/NUL_rejected",
+    "Test_isValidToken68/all_allowed_chars_with_equals_at_end",
+    "Test_isValidToken68/all_allowed_symbols_except_=",
+    "Test_isValidToken68/base_char_inside_padding_run",
+    "Test_isValidToken68/empty_string",
+    "Test_isValidToken68/equals_at_end",
+    "Test_isValidToken68/equals_at_start",
+    "Test_isValidToken68/equals_followed_by_extra_chars",
+    "Test_isValidToken68/equals_in_middle",
+    "Test_isValidToken68/equals_not_at_end_with_other_chars",
+    "Test_isValidToken68/invalid_symbol",
+    "Test_isValidToken68/jwt-like_long_token",
+    "Test_isValidToken68/letters_and_digits",
+    "Test_isValidToken68/long_token_with_padding_run",
+    "Test_isValidToken68/multiple_equals",
+    "Test_isValidToken68/multiple_equals_at_end",
+    "Test_isValidToken68/non-ascii_rejected",
+    "Test_isValidToken68/single_digit",
+    "Test_isValidToken68/single_lowercase",
+    "Test_isValidToken68/single_uppercase",
+    "Test_isValidToken68/space_in_token",
+    "Test_isValidToken68/tab_character_in_token",
+    "Test_isValidToken68/trailing_comma_rejected",
+    "Test_isValidToken68/valid_token68",
+    "Test_isValidToken68/valid_token68_with_equals_at_end",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gofiber__fiber:bd83fb46e30e"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 20.702
+measured_overhead_seconds = 1.681
+measured_copy_seconds = 0.049
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 2
+p2p_count = 151
+source_files = 1
+loc_changed = 14
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:11.348726+00:00"
+inline_recipe_sha256 = "sha256:d576e47b7d97be4abff68b409ee1d2cdaa7004798a73857ad1584e5173629c8a"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = [
+    "Test_FromParam_DecodesOnce",
+]
+instruction_description_words = 309
+instruction_ok = false
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gofiber__fiber-4626-f2c49fbb3a61"

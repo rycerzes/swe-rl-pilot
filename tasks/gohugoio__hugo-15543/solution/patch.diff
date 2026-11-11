@@ -1,0 +1,91 @@
+diff --git a/common/paths/pathparser.go b/common/paths/pathparser.go
+index d2e1a24535c..ba77dbb91ad 100644
+--- a/common/paths/pathparser.go
++++ b/common/paths/pathparser.go
+@@ -333,7 +333,8 @@ func (pp *PathParser) parseIdentifier(component, s string, p *Path, i, lastDot,
+ 	mayHaveOutputFormat := component == files.ComponentFolderLayouts
+ 	mayHaveKind := p.posIdentifierKind == -1 && mayHaveOutputFormat
+ 	var mayHaveLayout bool
+-	if p.pathType == TypeShortcode {
++	if p.pathType == TypeShortcode || p.pathType == TypeMarkup {
++		// The first identifier is the shortcode or render hook name.
+ 		mayHaveLayout = !isLast && component == files.ComponentFolderLayouts
+ 	} else {
+ 		mayHaveLayout = component == files.ComponentFolderLayouts
+@@ -487,6 +488,8 @@ func (pp *PathParser) doParse(component, s string, p *Path) (*Path, error) {
+ 	numDots := strings.Count(s[lastSlashIdx+1:], ".") - len(skipDots)
+ 	if strings.Contains(s, "/_shortcodes/") {
+ 		p.pathType = TypeShortcode
++	} else if component == files.ComponentFolderLayouts && strings.Contains(s, "/_markup/") {
++		p.pathType = TypeMarkup
+ 	}
+ 
+ 	for i := len(s) - 1; i >= 0; i-- {
+diff --git a/tpl/tplimpl/templatedescriptor.go b/tpl/tplimpl/templatedescriptor.go
+index b0894f43a50..3c59e05dafa 100644
+--- a/tpl/tplimpl/templatedescriptor.go
++++ b/tpl/tplimpl/templatedescriptor.go
+@@ -87,13 +87,19 @@ func (s descriptorHandler) compareDescriptors(category Category, this, other Tem
+ 				return w
+ 			}
+ 
+-			w.w1 = 1
++			if this.isLayoutCompatible(other) {
++				w.w1 = 1
++			}
+ 		}
+ 
+ 		if category == CategoryShortcode {
+ 			plainTextOK := this.IsPlainText == other.IsPlainText || !other.IsPlainText || this.AlwaysAllowPlainText
+ 			if plainTextOK && this.isLayoutCompatible(other) {
+ 				w.w1 = 1
++				if other.OutputFormat == s.opts.DefaultOutputFormat {
++					// Prefer the default output format when falling back. See issue #15540.
++					w.wfallback = 1
++				}
+ 			}
+ 		}
+ 	}
+diff --git a/tpl/tplimpl/templatestore.go b/tpl/tplimpl/templatestore.go
+index d35aa460183..854ff9792fc 100644
+--- a/tpl/tplimpl/templatestore.go
++++ b/tpl/tplimpl/templatestore.go
+@@ -1925,7 +1925,7 @@ func (s *TemplateStore) toKeyCategoryAndDescriptor(p *paths.Path, fi hugofs.File
+ 	if category == CategoryMarkup {
+ 		// We store all template nodes for a given directory on the same level.
+ 		k1 = strings.TrimSuffix(k1, "/_markup")
+-		v, found := strings.CutPrefix(d.LayoutFromTemplate, "render-")
++		v, found := strings.CutPrefix(nameNoIdentifier, "render-")
+ 		if !found {
+ 			return "", "", 0, TemplateDescriptor{}, nil, fmt.Errorf("unrecognized render hook template")
+ 		}
+@@ -1936,8 +1936,6 @@ func (s *TemplateStore) toKeyCategoryAndDescriptor(p *paths.Path, fi hugofs.File
+ 			d.Variant1 = v[:hyphenIdx]
+ 			d.Variant2 = v[hyphenIdx+1:]
+ 		}
+-
+-		d.LayoutFromTemplate = "" // This allows using page layout as part of the key for lookups.
+ 	}
+ 
+ 	return k1, k2, category, d, vactorStore, nil
+@@ -2156,6 +2154,10 @@ func (best *bestMatch) isBetter(w weight, ti *TemplInfo) bool {
+ 			return true
+ 		}
+ 
++		if w.wfallback != best.w.wfallback {
++			return w.wfallback > best.w.wfallback
++		}
++
+ 		return ti.PathInfo.Path() < best.templ.PathInfo.Path()
+ 	}
+ 
+@@ -2203,6 +2205,9 @@ type weight struct {
+ 	w3       int
+ 	wsm      int
+ 	distance int
++
++	// Used as a tie-breaker for fallback matches, e.g. to prefer the default output format.
++	wfallback int
+ }
+ 
+ func isLayoutStandard(s string) bool {

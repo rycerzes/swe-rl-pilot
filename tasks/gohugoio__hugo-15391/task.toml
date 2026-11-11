@@ -1,0 +1,104 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15391"
+description = "tpl/tplimpl: Prefer user table render hook over embedded"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "fdbba5a6614d00eb631c1ad6b424b42f6f7195f8"
+reference = "https://github.com/gohugoio/hugo/pull/15391"
+source_access = "auto"
+built_at = "2026-11-10T23:38:50.080163+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:1e809a55c13d4cc25bcbcdf55de2a32435b561109ff3df8d62f3c8303cf7925f"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15391"
+pr_merged_at = "2026-09-27T08:44:50Z"
+base_commit = "fdbba5a6614d00eb631c1ad6b424b42f6f7195f8"
+fail_to_pass = [
+    "TestTableHookHTMLOnlyWithJSONOutput",
+]
+pass_to_pass = [
+    "TestTableDefault",
+    "TestTableDefaultRSSAndHTML",
+    "TestTableDefaultRSSOnly",
+    "TestTableHook",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:ec69d0e64931"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 54.593
+measured_overhead_seconds = 5.019
+measured_copy_seconds = 0.195
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 1
+p2p_count = 4
+source_files = 1
+loc_changed = 2
+difficulty = "trivial"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:10.164005+00:00"
+inline_recipe_sha256 = "sha256:02957beb7c8f8ed7e41df32c3981c77eac34b9df38c7df2a3f470e514887af2a"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = [
+    "TestTableHookHTMLOnlyWithJSONOutput",
+]
+instruction_description_words = 95
+instruction_ok = false
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15391-c53eabf36527"

@@ -1,0 +1,1280 @@
+diff --git a/docs/api/fiber.md b/docs/api/fiber.md
+index 49cb283880e..156f25b2f6c 100644
+--- a/docs/api/fiber.md
++++ b/docs/api/fiber.md
+@@ -46,7 +46,7 @@ app := fiber.New(fiber.Config{
+ |---------------------------------------------------------------------------------------|-----------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------|
+ | <Reference id="appname">AppName</Reference>                                           | `string`                                                        | Sets the application name used in logs and the Server header                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `""`                                                                   |
+ | <Reference id="bodylimit">BodyLimit</Reference>                                       | `int`                                                           | Sets the maximum allowed size for a request body. Zero or negative values fall back to the default limit. If the size exceeds the configured limit, it sends `413 - Request Entity Too Large` response. This limit also applies when running Fiber through the adaptor middleware from `net/http`, when decoding compressed request bodies via [`Ctx.Body()`](./ctx.md#body), and when parsing multipart form data via [`Ctx.MultipartForm()`](./ctx.md#multipartform).                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `4 * 1024 * 1024`                                                      |
+-| <Reference id="casesensitive">CaseSensitive</Reference>                               | `bool`                                                          | When enabled, `/Foo` and `/foo` are different routes. When disabled, `/Foo` and `/foo` are treated the same.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | `false`                                                                |
++| <Reference id="casesensitive">CaseSensitive</Reference>                               | `bool`                                                          | When enabled, `/Foo` and `/foo` are different routes. When disabled, `/Foo` and `/foo` are treated the same. A file server opens the name the router matched, so on a case-insensitive filesystem middleware mounted on `/private` does not cover `/PRIVATE` when this is enabled; see [Static](../middleware/static.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | `false`                                                                |
+ | <Reference id="cbordecoder">CBORDecoder</Reference>                                   | `utils.CBORUnmarshal`                                           | Allowing for flexibility in using another cbor library for decoding.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `binder.UnimplementedCborUnmarshal`                                   |
+ | <Reference id="cborencoder">CBOREncoder</Reference>                                   | `utils.CBORMarshal`                                             | Allowing for flexibility in using another cbor library for encoding.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `binder.UnimplementedCborMarshal`                                     |
+ | <Reference id="colorscheme">ColorScheme</Reference>                                   | [`Colors`](https://github.com/gofiber/fiber/blob/main/color.go) | You can define custom color scheme. They'll be used for startup message, route list and some middlewares.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | [`DefaultColors`](https://github.com/gofiber/fiber/blob/main/color.go) |
+diff --git a/docs/middleware/adaptor.md b/docs/middleware/adaptor.md
+index 3ef34ec619e..19e4f499bf4 100644
+--- a/docs/middleware/adaptor.md
++++ b/docs/middleware/adaptor.md
+@@ -347,9 +347,16 @@ func main() {
+ 
+ ## Notes and limitations
+ 
++- An adapted `net/http` handler, middleware or `ConvertRequest` request is built from the path the router matched, `c.Path()`, followed by the query as the client sent it, not from the request line as it arrived. The two differ for an escaped or non-canonical request, and `net/http` reads the raw line its own way: `/public/..%2Fadmin/x` decodes into a `URL.Path` that `http.FileServer` cleans to `/admin/x`, although no middleware mounted on `/admin` has run for it. Routed, `/a/../admin/x` reaches the handler as `/admin/x` (after the `/admin` middleware ran), `%41` as `A`, a stray `%` as `%25`, a byte a path may not carry raw, such as `|` or a byte of UTF-8, as its escape, and with `UnescapePath` the decoded path is escaped again segment by segment. The query keeps its bytes unless a Fiber handler changed the arguments through `QueryArgs()`.
++- The adapted request keeps the host Fiber saw. For a request in the absolute form, such as `GET http://public.example/x` with `Host: admin.internal`, that is the host the request line names ([RFC 9112 Section 3.2.2](https://www.rfc-editor.org/rfc/rfc9112#section-3.2.2)): `r.Host` is `public.example`, as are `c.Hostname()` and the host `app.Domain` matches.
++- `HTTPHandler`, `HTTPHandlerFunc` and `HTTPHandlerWithContext` answer `404 Not Found` for a routed path with an empty segment (`//admin/x`) or an escaped slash (`/public/..%2Fadmin/x`): `net/http` decodes `%2F` into a separator in `URL.Path` and its handlers clean `//` and `..` away, so the handler would serve a path the router never matched. They answer `404` as well for a backslash, raw or escaped as `%5C`, and for a `.` or `..` segment carrying parameters, such as `..;`, which a handler that passes the request on, such as `httputil.ReverseProxy`, would hand to an upstream that reads them as a separator (WHATWG URL parsers, IIS) or as a dot segment (Tomcat, Jetty). `HTTPMiddleware` and `ConvertRequest` hand all of these on, with an escaped slash kept in `URL.RawPath`; a Fiber route behind the middleware still receives its `%2F`. To serve names that hold one, such as a GitLab-style `group%2Fproject` id, wrap the handler with `HTTPMiddleware` as a middleware that does not call `next`, and read the name from `r.URL.EscapedPath()`.
++- `HTTPMiddleware` answers `400 Bad Request`, and `ConvertRequest` returns `fiber.ErrBadRequest`, for a routed path fasthttp would read as an authority rather than a path: one that begins with `//` and holds `://`, which `..` resolution builds out of `//u:pw@evil.example/a:/x/..//b`, or any path beginning with `//` on a request without a `Host` header. Set as the request line, it would become the host of both the `net/http` request and the Fiber request behind the middleware.
++- A routed path holding an escape of an unreserved character, such as `%2e` or `%41`, is answered with `404 Not Found` by `HTTPHandler`, `HTTPHandlerFunc` and `HTTPHandlerWithContext` and with `400 Bad Request` by `HTTPMiddleware` and `ConvertRequest`. The router decodes every such escape when it normalizes a path, so one still in `c.Path()` can only have been forged by a stray `%`, and `URL.Path` would read a forged `%2e%2e` as the `..` segment an `http.FileServer` cleans away.
++- `HTTPHandler`, `HTTPHandlerFunc` and `HTTPHandlerWithContext` put the original request line back once a buffered handler has returned, or panicked, so `c.OriginalURL()` in a middleware that runs afterwards is unchanged. A handler that flushed or hijacked is still running with a request whose URL aliases the request line, so the line is then left as the handler read it; `HTTPMiddleware` and `ConvertRequest` leave it as well.
+ - A request that `net/http` served over TLS is seen as TLS by Fiber: `c.Scheme()` is `https`, `c.Secure()` is true and `c.RequestCtx().TLSConnectionState()` carries the state from `r.TLS`.
+ - `c.StartTime()` (and so `c.Elapsed()`) is not set for requests that reach Fiber through `FiberHandler`, `FiberApp` or `HTTPMiddleware`: fasthttp only records the request time inside its own server loop.
+ - `HTTPMiddleware` routes the request the wrapped middleware hands to `next`, including a rewritten `r.URL` such as the one `http.StripPrefix` produces. The middleware must call `next` before it flushes or hijacks the response; after that the response has left Fiber's hands and the call is ignored.
++- `FiberHandler`, `FiberHandlerFunc` and `FiberApp` route `r.RequestURI`, the request line as `net/http` received it, so a raw `/über` or `/a|b` is routed and its params are read as a Fiber server would read them. When `r.URL` no longer says what that line says, or there is no such line, they route the request line `net/http` would write for `r.URL` instead: the path an `http.StripPrefix` in front of them rewrote, the URL of a request built in code, which has no `RequestURI` at all, and, for a `CONNECT` request in the authority form, the authority rather than the `/` that `r.URL.RequestURI()` reads for it: `r.URL.Opaque` when set, else `r.Host`, else `r.URL.Host`, the order in which `net/http` itself writes such a request.
+ 
+ ## Summary
+ 
+diff --git a/docs/middleware/proxy.md b/docs/middleware/proxy.md
+index 577a0cd1d63..550cbba7164 100644
+--- a/docs/middleware/proxy.md
++++ b/docs/middleware/proxy.md
+@@ -29,7 +29,7 @@ func BalancerForward(servers []string, clients ...*fasthttp.Client) fiber.Handle
+ 
+ ## Security
+ 
+-The proxy middleware applies several defenses by default. They can be relaxed via `Config.SecurityPolicy` (for `Balancer`) or `proxy.WithSecurityPolicy` (for the runtime helpers `Do`, `Forward`, `DoRedirects`, `DoTimeout`, `DoDeadline`).
++The proxy middleware applies several defenses by default. They can be relaxed via `Config.SecurityPolicy` (for `Balancer`) or `proxy.WithSecurityPolicy` (for the runtime helpers `Do`, `Forward`, `DoRedirects`, `DoTimeout`, `DoDeadline`, `DomainForward` and `BalancerForward`).
+ 
+ ### SSRF protection
+ 
+@@ -119,9 +119,32 @@ h.Add("X-Real-IP", ip)
+ 
+ :::
+ 
+-### Path concatenation safety
++### Request target
+ 
+-`DomainForward` and `BalancerForward` previously concatenated the configured upstream with `c.OriginalURL()`. Crafted request paths beginning with `//` could exploit URL parsing to redirect the proxy at a different host (network-path reference injection). The proxy now sanitizes the joined path so the upstream host pinned in configuration is preserved regardless of the inbound request.
++`Balancer`, `DomainForward` and `BalancerForward` forward the path the router matched, `c.Path()`, followed by the query. They do not forward the request line as it arrived. The two differ, and the difference is what an attacker uses: fasthttp's normalization of the raw request line decodes `%2F` into a separator and merges repeated slashes, so `/public/..%2Fadmin/secret` and `//admin/secret` used to reach the upstream as `/admin/secret`, a path no middleware mounted on `/admin` had seen. Routed, they stay `/public/..%2Fadmin/secret` and `//admin/secret`, and by default the proxy refuses to forward either, since an upstream that decodes `%2F` or merges `//` would read them as `/admin/secret` as well. Dot segments are resolved before matching, so `/public/../admin/secret` runs the `/admin` middleware and is forwarded as `/admin/secret`. An escape of an unreserved character is decoded (`%41` becomes `A`), every other escape is kept as sent and a stray `%` is forwarded as `%25`. A byte a path may not carry raw ([RFC 3986 Section 3.3](https://www.rfc-editor.org/rfc/rfc3986#section-3.3)), such as `|`, `{`, `"` or a byte of UTF-8, is forwarded as its escape, as fasthttp wrote it before, so `/über` reaches the upstream as `/%C3%BCber`; the sub-delims (`!$&'()*+,;=`), `:` and `@` stay raw. With `UnescapePath` enabled the decoded path is escaped again segment by segment, so a separator that came from `%2F` is forwarded as the separator the router matched it as.
++
++The query is forwarded byte for byte as the client sent it, so a signed URL keeps its signature. Only when a handler changed the arguments through `QueryArgs()` is it the changed arguments, as fasthttp serializes them; reading them, as `c.Query()` does, changes nothing. `Balancer` puts the original request line back once the upstream has answered, so `c.OriginalURL()` in a middleware that runs afterwards is unchanged.
++
++- `Balancer` dials the configured host and forwards the target as is, so every entry in `Servers` must be a scheme and host only. An entry with a path, userinfo, query or fragment panics at startup with `ErrUpstreamNotOrigin` instead of dropping that part silently, which would have left `http://backend/api` reaching all of the upstream. `DomainForward` and `BalancerForward` prepend the path of their upstream URL, and the joined path keeps the upstream host pinned in configuration whatever the request contains: `//attacker.example/path`, `@attacker` and `/foo://hijack.example` all stay paths.
++- `Balancer` answers a request whose `Host` header carries userinfo, such as `svc:pw@backend`, with `400 Bad Request`. fasthttp would read the userinfo as credentials and send them upstream as a `Basic` `Authorization` header, replacing one the application had set.
++- `Balancer` also answers `400 Bad Request` for a routed target fasthttp would read as an authority rather than a path: one that begins with `//` and holds `://`, or any target beginning with `//` on a request without a `Host` header. The router never saw such a target as an authority, and it need not have arrived as one: `..` resolution builds `//u:pw@evil.example/a://b` out of `//u:pw@evil.example/a:/x/..//b`, and under `UnescapePath` a decoded `%3A%2F%2F` spells the `://`. Set as the request line, it would hand the upstream a `Host`, and a `Basic` `Authorization` header, taken from the path rather than from the application.
++- `Balancer`, `DomainForward` and `BalancerForward` answer `400 Bad Request` for a routed path an upstream could read as another path, one under a prefix whose middleware never ran for it. That is a path holding:
++  - an escaped slash (`%2F`) or an empty segment (`//`). An upstream that decodes `%2F` into a separator or merges repeated slashes before it matches routes, as a `net/http` file server or a fasthttp server does, would map `/public/..%2Fadmin/secret`, `/admin%2Fsecret` and `//admin/secret` to `/admin/secret`. An upstream that keeps both as sent can be reached with `SecurityPolicy.AllowAmbiguousSlashes`, described below.
++  - a backslash, raw or escaped as `%5C`. WHATWG URL parsers, as in Node.js, Bun, Deno and Cloudflare Workers, and IIS read it as a separator, so `/admin\secret` and `/public/..%5Cadmin/secret` would reach `/admin`.
++  - a `.` or `..` segment carrying parameters, such as `..;` or `..;jsessionid=x`. Servlet containers such as Tomcat and Jetty strip the parameters before they resolve dot segments, so `/public/..;/admin/secret` would reach `/admin/secret`.
++  - an escape of an unreserved character, such as `%2e` or `%70`. The router decodes every such escape when it normalizes a path, so one still in `c.Path()` can only have been forged by a stray `%`, and an upstream decoding it again would serve a name no middleware matched.
++
++  To forward such a target regardless, build it from `c.Path()` and call `Do`.
++- `SecurityPolicy.AllowAmbiguousSlashes` lets `Balancer`, `DomainForward` and `BalancerForward` forward a path holding `%2F` or `//`, for an upstream that addresses names such as GitLab-style `group%2Fproject` ids or object keys with a doubled slash. Set it on `Config.SecurityPolicy` for `Balancer`, or install it with `proxy.WithSecurityPolicy` for `DomainForward` and `BalancerForward`. Enable it only when every upstream behind the handler keeps `%2F` and `//` as sent; a backslash, a dot segment with parameters and a forged escape are refused regardless.
++- A path override without a leading slash, as a rewrite of `/go/*` to `$1` produces for `/go/http://u:pw@evil.example/x`, is forwarded rooted, as the path `/http://u:pw@evil.example/x`, rather than as the absolute URL a request line would read it as.
++- With a custom `Client`, every `*fasthttp.HostClient` among its `Clients` gets `DisablePathNormalizing` set, since a client left normalizing would decode `%2F` into a separator and merge `//` on the way out. Any other `BalancingClient` cannot be told, so with one present `Balancer` answers `400 Bad Request` for a routed target that normalization would change: one holding an empty segment or an escape it would decode into a byte it then writes raw, such as `%3B` or `%40`. An escape of a byte it writes escaped again, such as `%20` or the `%C3%BC` of `/über`, is forwarded.
++- `Do`, `Forward`, `DomainForward`, `BalancerForward` and their variants switch path normalization off on the default client, on a client registered with `WithClient` and on every host client a per-call `*fasthttp.Client` creates once the proxy has it. fasthttp applies that setting only to the host client it creates for an upstream, so a per-call client that already reached that upstream before it was handed to the proxy keeps the host client it made then, and that one still normalizes: `/public/..%2Fadmin/secret` would leave it as `/admin/secret`. Register such a client with `WithClient` before it serves requests, hand the proxy a client used for nothing else, or create the client with `DisablePathNormalizing: true`.
++
++:::caution Upstream normalization
++The proxy cannot control what the upstream does with the target beyond what it refuses to forward. A target holding `%2F`, `//`, a backslash, a dot segment with parameters or a forged escape is not forwarded by default, so an upstream that decodes, merges or strips parameters cannot be handed a path the router did not match through them. An escape of another reserved character, such as `%3B`, `%3F` or `%23`, is forwarded as sent, and so are a segment's case and a trailing dot or space, any of which an upstream on Windows or a case-insensitive filesystem may treat as another name. Authorize on the upstream as well.
++:::
++
++When you build the target for `Do`, `Forward` or their variants yourself, derive it from `c.Path()` and `c.Request().URI().QueryString()` rather than from `c.OriginalURL()`, which is the request line as it arrived, before the router resolved dot segments.
+ 
+ ## Examples
+ 
+@@ -271,7 +294,7 @@ app.Use(proxy.Balancer(proxy.Config{
+ | Property        | Type                                           | Description                                                                                                                                                                                                                        | Default         |
+ |:----------------|:-----------------------------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:----------------|
+ | Next            | `func(fiber.Ctx) bool`                        | Next defines a function to skip this middleware when it returns true.                                                                                                                                                                | `nil`           |
+-| Servers         | `[]string`                                     | Servers defines a list of `<scheme>://<host>` HTTP servers, which are used in a round-robin manner. i.e.: "[https://foobar.com](https://foobar.com), [http://www.foobar.com](http://www.foobar.com)"                                                        | (Required)      |
++| Servers         | `[]string`                                     | Servers defines a list of `<scheme>://<host>` HTTP servers, which are used in a round-robin manner. Each entry is a scheme and host only; one with a path, userinfo, query or fragment panics at startup with `ErrUpstreamNotOrigin`. i.e.: "[https://foobar.com](https://foobar.com), [http://www.foobar.com](http://www.foobar.com)"                                                        | (Required)      |
+ | ModifyRequest   | `fiber.Handler`                                | ModifyRequest allows you to alter the request.                                                                                                                                                                                     | `nil`           |
+ | ModifyResponse  | `fiber.Handler`                                | ModifyResponse allows you to alter the response.                                                                                                                                                                                   | `nil`           |
+ | Timeout         | `time.Duration`                                | Timeout is the request timeout used when calling the proxy client.                                                                                                                                                                 | 1 second        |
+@@ -281,7 +304,7 @@ app.Use(proxy.Balancer(proxy.Config{
+ | KeepConnectionHeader | `bool` | Keeps the `Connection` header when set to `true`. By default the header is removed to comply with RFC 7230 §6.1 and avoid proxy loops. Other hop-by-hop headers are still stripped regardless of this setting. | `false` |
+ | TLSConfig       | `*tls.Config` | TLS config for the HTTP client. Cloned with `MinVersion: tls.VersionTLS12` when no minimum is set. | `nil`           |
+ | DialDualStack   | `bool`                                         | Client will attempt to connect to both IPv4 and IPv6 host addresses if set to true.                                                                                                                                                | `false`         |
+-| Client          | `*fasthttp.LBClient`                           | Client is a custom client when client config is complex.                                                                                                                                                                           | `nil`           |
++| Client          | `*fasthttp.LBClient`                           | Client is a custom client when client config is complex. Each `*fasthttp.HostClient` among its `Clients` gets `DisablePathNormalizing` set; see [Request target](#request-target).                                                                                                                                                                           | `nil`           |
+ | SecurityPolicy  | `*SecurityPolicy`                              | Overrides the default SSRF, redirect, and hop-by-hop header rules for this balancer. When `nil`, the package-level policy set via `WithSecurityPolicy` is used. See [Security](#security).                                          | `nil`           |
+ | MaxResponseBodySize | `int`                                       | Maximum upstream response body size in bytes. `0` keeps fasthttp's unlimited default.                                                                                                                                              | `0`             |
+ 
+@@ -306,10 +329,11 @@ When `Config.SecurityPolicy` is `nil` (and `proxy.WithSecurityPolicy` has not be
+ // DefaultSecurityPolicy returns the secure-by-default policy.
+ func DefaultSecurityPolicy() proxy.SecurityPolicy {
+     return proxy.SecurityPolicy{
+-        AllowedSchemes:      []string{"http", "https"},
+-        AllowPrivateIPs:     false,
+-        AllowHTTPSDowngrade: false,
+-        KeepHopByHopHeaders: false,
++        AllowedSchemes:        []string{"http", "https"},
++        AllowPrivateIPs:       false,
++        AllowHTTPSDowngrade:   false,
++        KeepHopByHopHeaders:   false,
++        AllowAmbiguousSlashes: false,
+     }
+ }
+ ```
+diff --git a/docs/middleware/rewrite.md b/docs/middleware/rewrite.md
+index cb45b3b2e22..e53c9b1439b 100644
+--- a/docs/middleware/rewrite.md
++++ b/docs/middleware/rewrite.md
+@@ -28,6 +28,13 @@ and not `/preis-1X000-euro`. There is no escape for a literal `*`.
+ 
+ Setting both `RuleList` and `Rules` panics.
+ 
++Rules match `c.Path()`, the path as the router normalized it, and the rewritten
++path goes through the same normalization. With `UnescapePath` that path is the
++decoded one, so a capture is escaped again before it is inserted: the `%2e%2e`
++that `/files/%252e%252e/secret` decoded to stays that name in `/public/$1`
++rather than being decoded a second time into `..` and resolving out of
++`/public/`.
++
+ ## Rule order
+ 
+ Rules are tried in the order you write them and the first one whose `From`
+diff --git a/docs/middleware/static.md b/docs/middleware/static.md
+index 99667f5a2a3..223aaed301e 100644
+--- a/docs/middleware/static.md
++++ b/docs/middleware/static.md
+@@ -146,7 +146,11 @@ To define static routes using `Get`, append the wildcard (`*`) operator at the e
+ :::info
+ The file server resolves the path the router matched. Fiber normalizes request paths before routing (see [Path normalization](../guide/routing.md#path-normalization)), so middleware mounted on `/static/private` also guards `/static/%70rivate/secret.txt` and `/static/x/../private/secret.txt`.
+ 
+-Escapes the router leaves encoded, such as `%20`, `%40` or `%25`, also remain encoded for file lookup. This keeps routing, including path-scoped authorization middleware, and static-file resolution on the same resource name. Consequently, `/static/hello%20world.txt` does not serve `hello world.txt`; enable [`UnescapePath`](../api/fiber.md#config) when encoded spellings should resolve to decoded file names. A path that cannot name a file inside the root is answered with `404 Not Found`: an escape that represents a slash, a backslash or a control character, a malformed escape such as `%zz`, and an empty, `.` or `..` segment. So `/static/private%2Fsecret.txt` never reaches `private/secret.txt` unless `UnescapePath` decodes it for the router as well, and `/static//private/secret.txt` is not found. With `UnescapePath` enabled the router has already decoded every escape, so a malformed escape is an ordinary part of the name: `/static/100%zz.txt` names `100%zz.txt`.
++Escapes the router leaves encoded, such as `%20`, `%40` or `%25`, also remain encoded for file lookup. This keeps routing, including path-scoped authorization middleware, and static-file resolution on the same resource name. Consequently, `/static/hello%20world.txt` does not serve `hello world.txt`; enable [`UnescapePath`](../api/fiber.md#config) when encoded spellings should resolve to decoded file names. A path that cannot name a file inside the root is answered with `404 Not Found`: an escape that represents a slash, a backslash or a control character, a malformed escape such as `%zz`, an escape of an unreserved character, and an empty, `.` or `..` segment. So `/static/private%2Fsecret.txt` never reaches `private/secret.txt` unless `UnescapePath` decodes it for the router as well, and `/static//private/secret.txt` is not found. A stray `%` cannot forge an escape the file server would then decode: the router decodes every escape of an unreserved character when it normalizes a path, so one still in the routed path can only have been forged, and it is rejected rather than decoded a second time. `/static/%%370rivate/secret.txt` therefore never opens `private/secret.txt`. With `UnescapePath` enabled the router has already decoded every escape, so a malformed escape is an ordinary part of the name: `/static/100%zz.txt` names `100%zz.txt`.
++:::
++
++:::caution
++The file server opens the name the router matched, so it is only as strict as the filesystem underneath. On Windows a path component loses its trailing dots and spaces when it is opened, so `/static/private./secret.txt` would reach `private/secret.txt` without passing middleware mounted on `/static/private`; the file server answers such a segment with `404 Not Found` on Windows, whatever the root: an `fs.FS` may be OS-backed (`os.DirFS`) and cannot be told apart from a virtual one such as `embed.FS`, so an embedded name ending in a dot or a space is not served on Windows either. Case is a different matter: on a case-insensitive filesystem (Windows, and macOS by default) `/static/PRIVATE/secret.txt` opens `private/secret.txt`, and with [`CaseSensitive`](../api/fiber.md#config) enabled the router keeps the two apart, so middleware mounted on `/static/private` does not run. Leave `CaseSensitive` off (the default) for a static root with guarded directories, or serve it from a case-sensitive filesystem.
+ :::
+ 
+ ## Config
+diff --git a/docs/whats_new.md b/docs/whats_new.md
+index 8d4199044f4..581b7b0b8fe 100644
+--- a/docs/whats_new.md
++++ b/docs/whats_new.md
+@@ -1458,6 +1458,8 @@ Incoming body sizes now respect the Fiber app's configured `BodyLimit` (falling
+ 
+ The adaptor also propagates the request's protocol version, normalized to Fiber's convention (`HTTP/2.0` → `HTTP/2`, `HTTP/3.0` → `HTTP/3`), so `c.Protocol()` reports the real version instead of always `HTTP/1.1`. Interim responses such as `SendEarlyHints`' `103` are silently skipped through the adaptor — there is no client connection to write them to — while the `Link` headers still reach the final response.
+ 
++An adapted `net/http` handler, middleware or `ConvertRequest` request is built from the path the router matched, `c.Path()`, followed by the query as the client sent it, rather than from the request line as it arrived, so a `net/http` guard on `r.URL.Path` sees the `/admin/x` that `/a/../admin/x` was routed as. A byte a path may not carry raw is written as its escape, and the request keeps the host Fiber saw, including the one an absolute-form request line names. `HTTPHandler`, `HTTPHandlerFunc` and `HTTPHandlerWithContext` answer `404 Not Found` for a routed path with an empty segment or an escaped slash, such as `//admin/x` or `/public/..%2Fadmin/x`, which `net/http` would otherwise decode and clean into a path no Fiber middleware ran for, and for one with a backslash or a dot segment carrying parameters (`..;`), which an upstream behind a handler such as `httputil.ReverseProxy` may resolve into another path; a handler that must serve such names can be wrapped with `HTTPMiddleware` instead. `HTTPMiddleware` answers `400 Bad Request`, and `ConvertRequest` returns `fiber.ErrBadRequest`, for a routed path fasthttp would read as an authority rather than a path: one that begins with `//` and holds `://`, or one beginning with `//` on a request without a `Host` header. A routed path holding an escape of an unreserved character, which only a stray `%` can forge, is `404 Not Found` from the handler adapters and `400 Bad Request` from `HTTPMiddleware` and `ConvertRequest`, since `URL.Path` would read a forged `%2e%2e` as `..`. `FiberHandler`, `FiberHandlerFunc` and `FiberApp` route `r.RequestURI` as received, so a raw `/über` is routed as a Fiber server routes it, and when `r.URL` no longer matches that line, the request line `net/http` would write for `r`: a rewritten `r.URL`, as `http.StripPrefix` produces, a request built in code without a `RequestURI`, and the authority of a `CONNECT` request in the authority form. See the adaptor's [notes and limitations](./middleware/adaptor.md#notes-and-limitations).
++
+ | Payload Size | Metric         | V2           | V3          | Percent Change |
+ | ------------ | -------------- | ------------ | ----------- | -------------- |
+ | 100KB        | Execution Time | 1056 ns/op   | 588.6 ns/op | -44.25%        |
+@@ -1819,6 +1821,8 @@ The new `KeepConnectionHeader` option (default `false`) drops the `Connection` h
+ 
+ `proxy.Balancer` now accepts an optional variadic configuration: call `proxy.Balancer()` to use defaults or continue passing a `proxy.Config` value as before.
+ 
++`Balancer`, `DomainForward` and `BalancerForward` forward the path the router matched, `c.Path()`, followed by the query as the client sent it, instead of the request line as it arrived. Spellings such as `/public/..%2Fadmin/secret` and `//admin/secret`, which fasthttp's normalization of the raw request line turned into `/admin/secret` on the way to the upstream, are answered with `400 Bad Request`, since an upstream that decodes `%2F` or merges `//` before it matches routes would still serve a path no middleware matched; the new `SecurityPolicy.AllowAmbiguousSlashes` forwards them exactly as the router matched them, for an upstream that keeps both. A path holding a backslash, a dot segment carrying parameters (`..;`), which servlet containers resolve, or an escape of an unreserved character, which only a stray `%` can forge, is answered with `400` regardless. A path with dot segments is forwarded resolved, and a byte a path may not carry raw is forwarded as its escape. Every entry in `Config.Servers` must be a scheme and host only; an entry with a path, userinfo, query or fragment panics at startup with `ErrUpstreamNotOrigin`. `Balancer` also answers `400 Bad Request` for a request whose `Host` header carries userinfo and for a routed target fasthttp would read as an authority rather than a path (one that begins with `//` and holds `://`, or one beginning with `//` on a request without a `Host` header). A path override without a leading slash is forwarded rooted. Every `*fasthttp.HostClient` in a custom `Client` gets `DisablePathNormalizing` set, and behind any other `BalancingClient` a target that normalization would change is answered with `400`. Path normalization is also disabled on the default client, on a client registered with `WithClient` and on every host client a per-call client creates once the proxy has it. See [Request target](./middleware/proxy.md#request-target).
++
+ ### Recover
+ 
+ The Recover middleware allows customizing the error it returns. Set a `PanicHandler` in its `Config` to change the default behavior.
+@@ -2000,6 +2004,8 @@ app.Get("*", static.New("./public/index.html"))
+ You have to put `*` to the end of the route if you don't define static route with `app.Use`.
+ :::
+ 
++The static middleware opens the name the router matched and does not percent-decode it a second time. Escapes the router keeps encoded, such as `%20`, stay encoded in the file name unless `UnescapePath` is enabled, and an escape of an unreserved character left in the routed path, which only a stray `%` can forge, is answered with `404` rather than decoded into a different file, so `/static/%%370rivate/secret.txt` never opens `private/secret.txt`. On Windows a path segment ending in a dot or a space is `404` as well, since the OS strips both when it opens a file. See [Static](./middleware/static.md).
++
+ #### Trusted Proxies
+ 
+ We've renamed `EnableTrustedProxyCheck` to `TrustProxy` and moved `TrustedProxies` to `TrustProxyConfig`.
+@@ -3351,6 +3357,7 @@ app.Get("/gif", proxy.Forward("https://i.imgur.com/IWaBepg.gif"))
+ 
+ #### Rewrite
+ 
++- **Captures decoded once**: with `UnescapePath` enabled a wildcard capture is escaped again before it is inserted into `To`, so the rewritten path is not decoded a second time. `/files/%252e%252e/secret` rewritten by `/files/*` to `/public/$1` now reaches the handler as `/public/%2e%2e/secret` instead of `/secret`.
+ - **Ordered rules**: `Rules map[string]string` is deprecated in favor of `RuleList []Rule`. A map has no order, so which rule answered a path two rules both matched was decided by map iteration, which Go randomizes per run: the same request could be rewritten differently from one call to the next. Rules in an `RuleList` list are tried in the order written and the first match wins, exactly as routes are matched.
+ 
+ ```go
+diff --git a/internal/wiretarget/wiretarget.go b/internal/wiretarget/wiretarget.go
+new file mode 100644
+index 00000000000..cca4a606ce7
+--- /dev/null
++++ b/internal/wiretarget/wiretarget.go
+@@ -0,0 +1,333 @@
++// Package wiretarget spells the path the router matched the way a request
++// line carries it, for middleware that hands the request on to something that
++// reads request lines: a proxy upstream, a net/http handler.
++package wiretarget
++
++import (
++	"bytes"
++	"strings"
++
++	"github.com/gofiber/fiber/v3"
++	"github.com/gofiber/fiber/v3/internal/appconfig"
++	"github.com/gofiber/utils/v2"
++	"github.com/valyala/fasthttp"
++)
++
++// Routed returns the request target to hand on for c: the path the router
++// matched, spelled as a request line has to carry it, then the query.
++//
++// Under the default configuration c.Path() is nearly that spelling already:
++// escapes of unreserved characters decoded, every other escape kept, dot
++// segments resolved and empty segments kept. What it may still hold raw is
++// written as an escape, the valid spelling of the same name: a stray "%" that
++// begins no escape as "%25", and every byte RFC 3986 does not allow raw in a
++// path, such as a space, "\", "|", "{", "}", '"', "^", "<", ">", a control
++// byte or a byte of UTF-8, as its escape, as fasthttp's normalizing writer did
++// before. Under UnescapePath c.Path() is fully decoded, so it is escaped again
++// segment by segment, and a "/" that came from "%2F" stays the separator the
++// router took it for.
++//
++// The raw request line is deliberately not the source. fasthttp's own
++// normalization of it decodes "%2F" into a separator, merges "//" and then
++// resolves "..", so "/public/..%2Fadmin" and "//admin" reached a proxy
++// upstream or a net/http handler as "/admin" although no middleware mounted
++// on "/admin" had run for them. The routed path keeps them the distinct names
++// the router matched.
++//
++// The query is the one the client sent, even after a handler read it through
++// c.Query(): fasthttp would serialize parsed arguments again, "%20" as "+" and
++// ";" as "%3B", and a signed URL would no longer verify. Only when a handler
++// changed the arguments through QueryArgs() are they forwarded as fasthttp
++// serializes them, since that is the change it made.
++//
++// The target may be the request line itself, a view of it rather than a
++// copy, when that already spells the routed path, so read it before the
++// request line is set to something else.
++//
++// The target always begins with a slash. A path override that dropped it, a
++// rewrite of "/go/*" to "$1" say, would otherwise hand on
++// "http://u:pw@evil.example/x", which a request line reads as an absolute URL
++// and so as a host and a credential; rooted, it is the path
++// "/http://u:pw@evil.example/x".
++func Routed(c fiber.Ctx) string {
++	path := c.Path()
++	if path == "" || path[0] != '/' {
++		path = "/" + path
++	}
++	query := queryOf(c)
++	if appconfig.Of(c.App()).UnescapePath {
++		target := make([]byte, 0, len(path)+len(query)+9)
++		target = utils.AppendPathSegmentsEscape(target, path)
++		return utils.UnsafeString(appendQuery(target, query))
++	}
++	if !needsEscape(path) {
++		if len(query) == 0 {
++			return path
++		}
++		// Most often the target is the request line as it arrived, which
++		// is then handed back rather than built again.
++		if line := c.OriginalURL(); len(line) == len(path)+1+len(query) && line[len(path)] == '?' &&
++			line[:len(path)] == path && line[len(path)+1:] == string(query) {
++			return line
++		}
++	}
++	target := make([]byte, 0, len(path)+len(query)+9)
++	target = appendPathEscaped(target, path)
++	return utils.UnsafeString(appendQuery(target, query))
++}
++
++// appendQuery appends query to dst behind a "?", or nothing for an empty one.
++func appendQuery(dst, query []byte) []byte {
++	if len(query) == 0 {
++		return dst
++	}
++	return append(append(dst, '?'), query...)
++}
++
++// SegmentsAsRouted reports whether a reader that decodes target's path and
++// cleans it still sees the segments the router matched. It is false when the
++// path holds an empty segment, an escaped slash or a forged escape (see
++// HasForgedEscape): net/http's URL.Path reads "%2F" as a separator and a
++// forged "%2e%2e" as "..", and its handlers clean "//" and ".." away, so
++// "/public/..%2Fadmin", "//admin" and "/public/%2e%2e/admin" would be served
++// as "/admin" by a handler no middleware mounted on "/admin" guarded. A
++// proxied upstream that decodes "%2F" or merges "//" before it matches routes
++// reads a target the same way, so the proxy handlers refuse one for which
++// this is false, as the net/http handler adapters do.
++//
++// It is false as well for a backslash, raw or escaped as "%5C", which WHATWG
++// URL parsers and IIS read as a separator, and for a "." or ".." segment that
++// carries path parameters, such as "..;x", which servlet containers such as
++// Tomcat and Jetty resolve as a dot segment once they strip the parameters:
++// "/public/..;/admin" is "/admin" there.
++func SegmentsAsRouted(target string) bool {
++	return segmentsAsRouted(target, false)
++}
++
++// SegmentsAsRoutedSlashesAside is SegmentsAsRouted without its objection to
++// an escaped slash and an empty segment, for a caller that was told the
++// reader keeps those as sent. A backslash, a forged escape and a dot segment
++// carrying parameters are still refused.
++func SegmentsAsRoutedSlashesAside(target string) bool {
++	return segmentsAsRouted(target, true)
++}
++
++// segmentsAsRouted scans target's path once for what SegmentsAsRouted
++// refuses, leaving out escaped slashes and empty segments when slashes is
++// set.
++func segmentsAsRouted(target string, slashes bool) bool { //nolint:revive // flag-parameter: the two exported wrappers name the cases
++	path := pathOf(target)
++	segment := 0
++	for i := 0; i < len(path); i++ {
++		switch path[i] {
++		case '/':
++			if !slashes && i+1 < len(path) && path[i+1] == '/' {
++				return false
++			}
++			segment = i + 1
++		case '\\':
++			return false
++		case ';':
++			if name := path[segment:i]; name == "." || name == ".." {
++				return false
++			}
++		case '%':
++			if i+2 < len(path) && isHexDigit(path[i+1]) && isHexDigit(path[i+2]) {
++				v := unhex(path[i+1])<<4 | unhex(path[i+2])
++				if (v == '/' && !slashes) || v == '\\' || isUnreserved(v) {
++					return false
++				}
++				i += 2
++			}
++		}
++	}
++	return true
++}
++
++// HasForgedEscape reports whether target's path holds an escape of an
++// unreserved character (RFC 3986 Section 2.3: a letter, a digit, "-", ".",
++// "_" or "~"). The router decodes every such escape when it normalizes a
++// path, so one still in c.Path() was forged by a stray "%" lining up with the
++// escape after it: "/%%32e" reaches the router as "/%2e". A reader that
++// decodes the path once more then sees a character the router never matched,
++// "%2e%2e" becoming a ".." segment or "%70rivate" becoming "private". Under
++// UnescapePath the routed path is escaped again segment by segment, which
++// never escapes an unreserved character, so nothing is reported there.
++func HasForgedEscape(target string) bool {
++	path := pathOf(target)
++	for {
++		i := strings.IndexByte(path, '%')
++		if i < 0 || i+2 >= len(path) {
++			return false
++		}
++		if isHexDigit(path[i+1]) && isHexDigit(path[i+2]) {
++			if isUnreserved(unhex(path[i+1])<<4 | unhex(path[i+2])) {
++				return true
++			}
++			path = path[i+3:]
++			continue
++		}
++		path = path[i+1:]
++	}
++}
++
++// SurvivesNormalization reports whether fasthttp's path normalization would
++// leave target's path naming what it names. Normalization merges every empty
++// segment, decodes every escape and writes the path again with only some bytes
++// escaped, so "//" and an escape that does not come back (see escapeSurvives)
++// leave a normalizing client as a path the router never matched:
++// "/public/..%2Fadmin" as "/admin" and "/..%3B/" as "/..;/". Any other escape,
++// such as the "%C3%A9" Routed writes for "é", comes out as it went in, up to
++// the case of its hex digits. The client also escapes a raw "!", "'", "(", ")"
++// or "*", which changes the spelling but cannot add a separator.
++func SurvivesNormalization(target string) bool {
++	path := pathOf(target)
++	if strings.Contains(path, "//") {
++		return false
++	}
++	for {
++		i := strings.IndexByte(path, '%')
++		if i < 0 {
++			return true
++		}
++		if i+2 >= len(path) || !isHexDigit(path[i+1]) || !isHexDigit(path[i+2]) ||
++			!escapeSurvives(unhex(path[i+1])<<4|unhex(path[i+2])) {
++			return false
++		}
++		path = path[i+3:]
++	}
++}
++
++// escapeSurvives reports whether an escape of b comes out of fasthttp's path
++// normalization as it went in. Normalization decodes it and then escapes only
++// the bytes net/url escapes in a path, so b must not be an unreserved
++// character or one of "$&+,/:;=@", which are written raw. Nor may it be a
++// backslash, which normalization on Windows reads as a separator when it
++// resolves dot segments.
++func escapeSurvives(b byte) bool {
++	return !isUnreserved(b) && strings.IndexByte("$&+,/:;=@\\", b) < 0
++}
++
++// ParsesAsPath reports whether fasthttp reads target as a path when it is set
++// as the request line of a request whose Host header is host. It is false for
++// a target without a leading slash, which a request line reads as an absolute
++// URL or an authority, for one that begins with "//" and holds "://", and for
++// one that begins with "//" on a request without a Host header: fasthttp then
++// reads the target as "[scheme:]//authority/path" and takes the request's
++// host, and a Basic credential, from the authority, over the ones the
++// application set. The router never sees such a target as an authority, and
++// it need not have arrived as one: ".." resolution builds
++// "//u:pw@evil.example/a://b" out of "//u:pw@evil.example/a:/x/..//b", and
++// under UnescapePath a decoded "%3A%2F%2F" spells the "://".
++func ParsesAsPath(target string, host []byte) bool {
++	if target == "" || target[0] != '/' {
++		return false
++	}
++	if !strings.HasPrefix(target, "//") {
++		return true
++	}
++	return len(host) != 0 && !strings.Contains(target, "://")
++}
++
++// pathOf returns target without its query.
++func pathOf(target string) string {
++	path, _, _ := strings.Cut(target, "?")
++	return path
++}
++
++// queryOf returns the query of c's request target without its "?": the one
++// the client sent, unless a handler changed the arguments through QueryArgs(),
++// in which case it is the changed arguments as fasthttp serializes them. A
++// handler that only read them left them parsed, and their serialization then
++// differs from what was sent in spelling alone, which parsing what was sent
++// and serializing that tells apart. Unlike Request.RequestURI, URI.RequestURI
++// leaves the request itself alone.
++func queryOf(c fiber.Ctx) []byte {
++	uri := c.Request().URI()
++	sent := uri.QueryString()
++	var current []byte
++	requestURI := uri.RequestURI()
++	if _, query, ok := bytes.Cut(requestURI, []byte{'?'}); ok {
++		current = query
++	}
++	if bytes.Equal(current, sent) {
++		return sent
++	}
++	args := fasthttp.AcquireArgs()
++	defer fasthttp.ReleaseArgs(args)
++	args.ParseBytes(sent)
++	if bytes.Equal(args.QueryString(), current) {
++		return sent
++	}
++	return current
++}
++
++// pathRaw marks the bytes a path may carry unescaped (RFC 3986 Section 3.3):
++// the unreserved characters, the sub-delims, ":", "@" and the "/" between
++// segments. A "%" is handled apart, since it is raw only where it begins an
++// escape.
++var pathRaw = func() [256]bool {
++	var t [256]bool
++	for c := range 256 {
++		t[c] = isUnreserved(byte(c)) || strings.IndexByte("!$&'()*+,;=:@/", byte(c)) >= 0
++	}
++	return t
++}()
++
++// needsEscape reports whether appendPathEscaped would change path.
++func needsEscape(path string) bool {
++	for i := 0; i < len(path); i++ {
++		if !pathRaw[path[i]] {
++			return true
++		}
++	}
++	return false
++}
++
++// appendPathEscaped appends path to dst with every escape kept as it is, every
++// "%" that begins no escape written as "%25" and every other byte a path may
++// not carry raw written as its escape, with uppercase hex digits.
++func appendPathEscaped(dst []byte, path string) []byte {
++	const upperhex = "0123456789ABCDEF"
++	for i := 0; i < len(path); {
++		j := i
++		for j < len(path) && pathRaw[path[j]] {
++			j++
++		}
++		dst = append(dst, path[i:j]...)
++		if j == len(path) {
++			break
++		}
++		if c := path[j]; c == '%' && j+2 < len(path) && isHexDigit(path[j+1]) && isHexDigit(path[j+2]) {
++			dst = append(dst, path[j:j+3]...)
++			i = j + 3
++			continue
++		}
++		dst = append(dst, '%', upperhex[path[j]>>4], upperhex[path[j]&0x0F])
++		i = j + 1
++	}
++	return dst
++}
++
++func isHexDigit(b byte) bool {
++	return (b >= '0' && b <= '9') || (b >= 'a' && b <= 'f') || (b >= 'A' && b <= 'F')
++}
++
++// unhex returns the value of the hex digit b.
++func unhex(b byte) byte {
++	switch {
++	case b >= 'a':
++		return b - 'a' + 10
++	case b >= 'A':
++		return b - 'A' + 10
++	default:
++		return b - '0'
++	}
++}
++
++// isUnreserved reports whether b is an unreserved character (RFC 3986
++// Section 2.3), one an escape never needs to spell.
++func isUnreserved(b byte) bool {
++	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') ||
++		b == '-' || b == '.' || b == '_' || b == '~'
++}
+diff --git a/middleware/adaptor/adaptor.go b/middleware/adaptor/adaptor.go
+index 30321e75822..93f3960d5a2 100644
+--- a/middleware/adaptor/adaptor.go
++++ b/middleware/adaptor/adaptor.go
+@@ -18,6 +18,7 @@ import (
+ 
+ 	"github.com/gofiber/fiber/v3"
+ 	"github.com/gofiber/fiber/v3/internal/headerlist"
++	"github.com/gofiber/fiber/v3/internal/wiretarget"
+ 	"github.com/gofiber/utils/v2"
+ 	"github.com/valyala/fasthttp"
+ 	"github.com/valyala/fasthttp/fasthttpadaptor"
+@@ -251,8 +252,7 @@ func HTTPHandlerFunc(h http.HandlerFunc) fiber.Handler {
+ func HTTPHandler(h http.Handler) fiber.Handler {
+ 	handler := fasthttpadaptor.NewFastHTTPHandler(h)
+ 	return func(c fiber.Ctx) error {
+-		handler(c.RequestCtx())
+-		return nil
++		return serveRouted(c, handler)
+ 	}
+ }
+ 
+@@ -264,9 +264,62 @@ func HTTPHandlerWithContext(h http.Handler) fiber.Handler {
+ 		// so adapted net/http handlers can retrieve it via adaptor.LocalContextFromHTTPRequest(r)
+ 		c.RequestCtx().SetUserValue(localContextKey, c.Context())
+ 
++		return serveRouted(c, handler)
++	}
++}
++
++// serveRouted runs handler, a net/http handler adapted by fasthttpadaptor, on
++// a request line that spells the path the router matched (wiretarget.Routed)
++// rather than the one that arrived, and puts the original back afterwards.
++// The two differ for an escaped or non-canonical request, and net/http reads
++// the raw one its own way: "/public/..%2Fadmin" decodes into a URL.Path that
++// http.FileServer cleans to "/admin", although no middleware mounted on
++// "/admin" has run. A routed path whose segments would not survive that
++// reading, one with an empty segment or an escaped slash, is not handed on.
++func serveRouted(c fiber.Ctx, handler fasthttp.RequestHandler) error {
++	target := wiretarget.Routed(c)
++	if !wiretarget.SegmentsAsRouted(target) {
++		return fiber.ErrNotFound
++	}
++	if target == c.OriginalURL() {
++		// the request line already spells the routed path
+ 		handler(c.RequestCtx())
+ 		return nil
+ 	}
++	req := c.Request()
++	original := utils.CopyString(c.OriginalURL())
++	setRoutedTarget(c, target)
++	// Buffered, the handler has returned, or panicked, in which case
++	// fasthttpadaptor re-panics here and the recover middleware or error
++	// handler that catches it still has to see the original line. Streaming
++	// or hijacked, the handler is still running with an http.Request whose
++	// URL aliases the request line's storage, so the line is left as the
++	// handler read it.
++	defer func() {
++		if !c.Response().IsBodyStream() && !c.RequestCtx().Hijacked() {
++			req.SetRequestURI(original)
++		}
++	}()
++	handler(c.RequestCtx())
++	return nil
++}
++
++// setRoutedTarget sets target, the routed request target, as c's request line.
++// A target that is the line as it arrived is left alone, which spares a second
++// parse of it. Otherwise the host fasthttp parsed is kept: a target that is a
++// path makes fasthttp take the host from the Host header again, while an
++// absolute-form request line names its own, which RFC 9112 Section 3.2.2 says
++// the server uses and which c.Hostname() reported. Kept, the adapted handler
++// sees in r.Host the host Fiber saw.
++func setRoutedTarget(c fiber.Ctx, target string) {
++	if target == c.OriginalURL() {
++		return
++	}
++	req := c.Request()
++	var buf [64]byte
++	host := append(buf[:0], req.URI().Host()...)
++	req.SetRequestURI(target)
++	req.URI().SetHostBytes(host)
+ }
+ 
+ // LocalContextFromHTTPRequest extracts the Fiber user context previously stored into r.Context() by the adaptor.
+@@ -281,7 +334,22 @@ func LocalContextFromHTTPRequest(r *http.Request) (context.Context, bool) {
+ 
+ // ConvertRequest converts a fiber.Ctx to a http.Request.
+ // forServer should be set to true when the http.Request is going to be passed to a http.Handler.
++//
++// The request is built from the path the router matched (see
++// wiretarget.Routed), which the request line is set to; the returned request's
++// URL and RequestURI alias that line's storage, as they do in fasthttpadaptor,
++// so it is left in place. A routed path fasthttp would read as an authority
++// rather than a path (see wiretarget.ParsesAsPath) is answered with
++// fiber.ErrBadRequest instead of being set, since the request's host would
++// then be read out of it; so is one holding a forged escape (see
++// wiretarget.HasForgedEscape), which URL.Path would decode into a segment the
++// router never matched.
+ func ConvertRequest(c fiber.Ctx, forServer bool) (*http.Request, error) {
++	target := wiretarget.Routed(c)
++	if !wiretarget.ParsesAsPath(target, c.Request().Header.Host()) || wiretarget.HasForgedEscape(target) {
++		return nil, fiber.ErrBadRequest
++	}
++	setRoutedTarget(c, target)
+ 	var req http.Request
+ 	if err := fasthttpadaptor.ConvertRequest(c.RequestCtx(), &req, forServer); err != nil {
+ 		return nil, err //nolint:wrapcheck // This must not be wrapped
+@@ -512,6 +580,12 @@ func HTTPMiddleware(mw func(http.Handler) http.Handler) fiber.Handler {
+ 			pairs := snapshotHeaders(r.Header)
+ 
+ 			fhdr.SetMethod(r.Method)
++			// r.Host is a view of the URI's host, which SetRequestURI makes
++			// fasthttp parse again, from the Host header for a target that is
++			// a path: copy it first, or the host written back below is the
++			// header's rather than the one r carried.
++			var hostBuf [64]byte
++			host := append(hostBuf[:0], r.Host...)
+ 			// A rewrite of r.URL (http.StripPrefix) leaves RequestURI untouched; route the URL.
+ 			requestURI := r.RequestURI
+ 			newPath := ""
+@@ -523,8 +597,8 @@ func HTTPMiddleware(mw func(http.Handler) http.Handler) fiber.Handler {
+ 				}
+ 			}
+ 			freq.SetRequestURI(requestURI)
+-			freq.SetHost(r.Host)
+-			fhdr.SetHost(r.Host)
++			freq.URI().SetHostBytes(host)
++			fhdr.SetHostBytes(host)
+ 			// Only a genuine rewrite re-routes. The decoded path differs from the raw
+ 			// one for every escaped or non-canonical request, and overriding it there
+ 			// re-buckets the tree, resuming the chain past middleware that already ran.
+@@ -566,6 +640,22 @@ func HTTPMiddleware(mw func(http.Handler) http.Handler) fiber.Handler {
+ 			CopyContextToFiberContext(r.Context(), c.RequestCtx())
+ 		})
+ 
++		// The middleware reads the path the router matched (see
++		// wiretarget.Routed), not the request line as it arrived: a guard on
++		// r.URL.Path has to see the "/admin/x" that "/a/../admin/x" was routed
++		// as. Escaped slashes are handed on, in r.URL.RawPath, so a Fiber
++		// route behind the middleware still receives its "%2F". A path
++		// fasthttp would read as an authority rather than a path (see
++		// wiretarget.ParsesAsPath) is refused: set as the request line, it
++		// would become the host of both the net/http request and the Fiber
++		// request behind the middleware. So is a path holding a forged
++		// escape (see wiretarget.HasForgedEscape), which URL.Path would
++		// decode into a segment the router never matched.
++		target := wiretarget.Routed(c)
++		if !wiretarget.ParsesAsPath(target, c.Request().Header.Host()) || wiretarget.HasForgedEscape(target) {
++			return fiber.ErrBadRequest
++		}
++		setRoutedTarget(c, target)
+ 		// Call the fasthttp adaptor directly: HTTPHandler would wrap it in a
+ 		// second closure that has to be built on every request, and its
+ 		// error result is always nil.
+@@ -683,6 +773,87 @@ func resolveRemoteAddr(remoteAddr string, localAddr any) (net.Addr, error) {
+ 	return nil, fmt.Errorf("failed to resolve TCP address: %w", err)
+ }
+ 
++// requestTarget is the request line net/http writes for r, as Request.write
++// spells it: URL.RequestURI(), except for a CONNECT request whose URL has no
++// path. net/http reads and writes such a request in the authority form,
++// keeping the target in URL.Host, and URL.RequestURI() reads "/" for it; the
++// line is then the authority, from URL.Opaque or the host, so a Fiber CONNECT
++// route sees the host the request names rather than "/".
++func requestTarget(r *http.Request) string {
++	if r.URL == nil {
++		return ""
++	}
++	if r.Method != http.MethodConnect || r.URL.Path != "" {
++		return r.URL.RequestURI()
++	}
++	if r.URL.Opaque != "" {
++		return r.URL.Opaque
++	}
++	if r.Host != "" {
++		return r.Host
++	}
++	return r.URL.Host
++}
++
++// routedRequestURI returns the request line Fiber routes for r. It is
++// r.RequestURI as net/http received it, so Fiber routes the bytes the client
++// sent, a raw "/über" or "/a|b" included, as it would served directly. Only
++// when r.URL no longer says what that line says, because a handler in front
++// rewrote it as http.StripPrefix does, or when there is no such line, as for a
++// request built in code, is it the line net/http would write for r.URL (see
++// requestTarget). The comparison decodes the received path, since r.URL holds
++// it decoded and re-escapes it its own way.
++func routedRequestURI(r *http.Request) string {
++	if r.URL == nil {
++		return r.RequestURI
++	}
++	if raw := r.RequestURI; raw != "" && raw[0] == '/' {
++		rawPath, rawQuery, _ := strings.Cut(raw, "?")
++		if r.URL.RawQuery == rawQuery && decodesTo(rawPath, r.URL.Path) {
++			return raw
++		}
++		return requestTarget(r)
++	}
++	if fromURL := requestTarget(r); fromURL != "" && fromURL != r.RequestURI {
++		return fromURL
++	}
++	return r.RequestURI
++}
++
++// decodesTo reports whether raw, a path whose escapes are well formed as
++// net/http requires of a request line, percent-decodes to decoded.
++func decodesTo(raw, decoded string) bool {
++	j := 0
++	for i := 0; i < len(raw); i++ {
++		c := raw[i]
++		if c == '%' && i+2 < len(raw) && isHex(raw[i+1]) && isHex(raw[i+2]) {
++			c = fromHex(raw[i+1])<<4 | fromHex(raw[i+2])
++			i += 2
++		}
++		if j >= len(decoded) || decoded[j] != c {
++			return false
++		}
++		j++
++	}
++	return j == len(decoded)
++}
++
++func isHex(c byte) bool {
++	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
++}
++
++// fromHex returns the value of the hex digit c.
++func fromHex(c byte) byte {
++	switch {
++	case c >= 'a':
++		return c - 'a' + 10
++	case c >= 'A':
++		return c - 'A' + 10
++	default:
++		return c - '0'
++	}
++}
++
+ func handlerFunc(app *fiber.App, h ...fiber.Handler) http.HandlerFunc {
+ 	// App.Config returns the config by value, so read the body limit once at
+ 	// construction instead of copying the whole 624-byte struct on every
+@@ -761,7 +932,7 @@ func handlerFunc(app *fiber.App, h ...fiber.Handler) http.HandlerFunc {
+ 			req.Header.SetContentLength(int(n))
+ 		}
+ 		req.Header.SetMethod(r.Method)
+-		req.SetRequestURI(r.RequestURI)
++		req.SetRequestURI(routedRequestURI(r))
+ 		req.SetHost(r.Host)
+ 		req.Header.SetHost(r.Host)
+ 		// Propagate the real protocol version so protocol-dependent behavior
+diff --git a/middleware/proxy/proxy.go b/middleware/proxy/proxy.go
+index 18fee812a6b..6c3e17c567e 100644
+--- a/middleware/proxy/proxy.go
++++ b/middleware/proxy/proxy.go
+@@ -1,6 +1,7 @@
+ package proxy
+ 
+ import (
++	"bytes"
+ 	"errors"
+ 	"net"
+ 	"net/url"
+@@ -18,6 +19,7 @@ import (
+ 	"github.com/gofiber/fiber/v3/internal/fieldname"
+ 	"github.com/gofiber/fiber/v3/internal/headerlookup"
+ 	"github.com/gofiber/fiber/v3/internal/idnafold"
++	"github.com/gofiber/fiber/v3/internal/wiretarget"
+ 	utilsstrings "github.com/gofiber/utils/v2/strings"
+ 	"github.com/valyala/fasthttp"
+ )
+@@ -74,6 +76,19 @@ func Balancer(config ...Config) fiber.Handler {
+ 		// Set custom client
+ 		lbc = cfg.Client
+ 	}
++	// A host client the caller built normalizes the request line on the way
++	// out unless told otherwise, which would decode "%2F" into a separator and
++	// merge "//" and so undo the routed target forwarded below. Any other
++	// BalancingClient cannot be told, so with one present a target its
++	// normalization could change is refused per request.
++	opaqueClient := false
++	for _, bc := range lbc.Clients {
++		if hc, ok := bc.(*fasthttp.HostClient); ok {
++			hc.DisablePathNormalizing = true
++			continue
++		}
++		opaqueClient = true
++	}
+ 
+ 	// Return new handler
+ 	return func(c fiber.Ctx) error {
+@@ -95,6 +110,34 @@ func Balancer(config ...Config) fiber.Handler {
+ 			}
+ 		}
+ 
++		// The Host field holds no userinfo (RFC 9112 Section 3.2). fasthttp
++		// reads "svc:pw@backend" as one when it parses the origin-form
++		// target below, and writes it upstream as a Basic Authorization
++		// header, over any the application had pinned.
++		if bytes.IndexByte(req.Header.Host(), '@') >= 0 {
++			return fiber.ErrBadRequest
++		}
++
++		// Forward the path the router matched (see wiretarget.Routed), and
++		// refuse one the upstream could read as another path. A target
++		// fasthttp would read as an authority (see wiretarget.ParsesAsPath),
++		// set as the request line, would hand the upstream a Host, and
++		// credentials, taken from the path. One holding an escaped slash, an
++		// empty segment or a forged escape (see wiretarget.SegmentsAsRouted)
++		// would be served by an upstream that decodes "%2F", merges "//" or
++		// decodes the forged escape as a path no middleware here matched.
++		// Behind a BalancingClient the proxy cannot configure, one that
++		// normalization would change (see wiretarget.SurvivesNormalization)
++		// is refused too.
++		target := wiretarget.Routed(c)
++		if !wiretarget.ParsesAsPath(target, req.Header.Host()) || !segmentsAsRouted(target, policy) ||
++			(opaqueClient && !wiretarget.SurvivesNormalization(target)) {
++			return fiber.ErrBadRequest
++		}
++		originalURL := utils.CopyString(c.OriginalURL())
++		defer req.SetRequestURI(originalURL)
++		req.SetRequestURI(target)
++
+ 		// Before ModifyRequest, so the application still has the last word.
+ 		setRealIP(c)
+ 
+@@ -105,12 +148,6 @@ func Balancer(config ...Config) fiber.Handler {
+ 			}
+ 		}
+ 
+-		if c.App().Config().Immutable {
+-			req.SetRequestURIBytes(req.RequestURI())
+-		} else {
+-			req.SetRequestURI(utils.UnsafeString(req.RequestURI()))
+-		}
+-
+ 		// The upstream connection speaks HTTP/1.1: reset a protocol token
+ 		// inherited from the inbound request (e.g. "HTTP/2" propagated by
+ 		// the net/http adaptor) so the serialized request line stays valid.
+@@ -154,6 +191,16 @@ var (
+ 	errNilGlobalProxyClient   = errors.New("proxy: global client is nil, set a non-nil client with proxy.WithClient")
+ )
+ 
++// segmentsAsRouted reports whether a forwarding handler may hand target on
++// under policy: wiretarget.SegmentsAsRouted, with escaped slashes and empty
++// segments let through when policy.AllowAmbiguousSlashes is set.
++func segmentsAsRouted(target string, policy SecurityPolicy) bool {
++	if policy.AllowAmbiguousSlashes {
++		return wiretarget.SegmentsAsRoutedSlashesAside(target)
++	}
++	return wiretarget.SegmentsAsRouted(target)
++}
++
+ // guardedConfigureClient composes a client's optional pre-existing
+ // ConfigureClient hook with the dial-time SSRF guard. It is installed on a
+ // *fasthttp.Client as the bound method value (&guardedConfigureClient{…}).run,
+@@ -182,6 +229,10 @@ func (g *guardedConfigureClient) run(hc *fasthttp.HostClient) error {
+ 		}
+ 	}
+ 	installHostClientGuard(hc)
++	// The target the proxy hands the client is the one it matched and
++	// validated; a client left normalizing would decode "%2F" into a
++	// separator and merge "//" on the way out, undoing that.
++	hc.DisablePathNormalizing = true
+ 	return nil
+ }
+ 
+@@ -623,7 +674,16 @@ func DomainForward(hostname, addr string, clients ...*fasthttp.Client) fiber.Han
+ 			return c.Next()
+ 		}
+ 		setRealIP(c)
+-		return doActionWithPolicy(c, joinUpstreamPath(base, c.OriginalURL()), currentSecurityPolicy(),
++		// A routed path an upstream could read as another path (see
++		// wiretarget.SegmentsAsRouted) is refused, unless the active policy
++		// lets escaped slashes and empty segments through
++		// (SecurityPolicy.AllowAmbiguousSlashes).
++		target := wiretarget.Routed(c)
++		active := currentSecurityPolicy()
++		if !segmentsAsRouted(target, active) {
++			return fiber.ErrBadRequest
++		}
++		return doActionWithPolicy(c, joinUpstreamPath(base, target), active,
+ 			func(cli *fasthttp.Client, req *fasthttp.Request, resp *fasthttp.Response, _ *url.URL) error {
+ 				return cli.Do(req, resp)
+ 			}, clients...)
+@@ -685,7 +745,16 @@ func BalancerForward(servers []string, clients ...*fasthttp.Client) fiber.Handle
+ 	return func(c fiber.Ctx) error {
+ 		base := r.get()
+ 		setRealIP(c)
+-		return doActionWithPolicy(c, joinUpstreamPath(base, c.OriginalURL()), currentSecurityPolicy(),
++		// A routed path an upstream could read as another path (see
++		// wiretarget.SegmentsAsRouted) is refused, unless the active policy
++		// lets escaped slashes and empty segments through
++		// (SecurityPolicy.AllowAmbiguousSlashes).
++		target := wiretarget.Routed(c)
++		active := currentSecurityPolicy()
++		if !segmentsAsRouted(target, active) {
++			return fiber.ErrBadRequest
++		}
++		return doActionWithPolicy(c, joinUpstreamPath(base, target), active,
+ 			func(cli *fasthttp.Client, req *fasthttp.Request, resp *fasthttp.Response, _ *url.URL) error {
+ 				return cli.Do(req, resp)
+ 			}, clients...)
+diff --git a/middleware/proxy/security.go b/middleware/proxy/security.go
+index 18e4b4a885a..a546cce09d4 100644
+--- a/middleware/proxy/security.go
++++ b/middleware/proxy/security.go
+@@ -61,6 +61,12 @@ var (
+ 	// is false.
+ 	ErrUpstreamHostBlocked = errors.New("proxy: upstream host resolves to a blocked address")
+ 
++	// ErrUpstreamNotOrigin is returned when a Balancer server carries more
++	// than a scheme and a host: a path, userinfo, query or fragment. The
++	// balancer dials the host only, so the rest would be dropped silently,
++	// and "http://backend/api" would reach all of the upstream, not "/api".
++	ErrUpstreamNotOrigin = errors.New("proxy: upstream must be a scheme and host only")
++
+ 	// ErrRedirectDowngrade is returned when DoRedirects encounters a
+ 	// redirect from an HTTPS upstream to a plaintext HTTP target and
+ 	// AllowHTTPSDowngrade is false.
+@@ -111,6 +117,20 @@ type SecurityPolicy struct {
+ 	// response. SECURITY: enabling this can enable request smuggling
+ 	// and proxy-auth credential forwarding. Default: false.
+ 	KeepHopByHopHeaders bool
++
++	// AllowAmbiguousSlashes lets Balancer, DomainForward and BalancerForward
++	// forward a routed path holding an escaped slash ("%2F") or an empty
++	// segment ("//"), which they otherwise answer with 400 Bad Request. An
++	// upstream that keeps both as sent needs it for names such as a
++	// GitLab-style "group%2Fproject" id or an object key with a doubled
++	// slash. SECURITY: an upstream that decodes "%2F" into a separator or
++	// merges "//" before it matches routes reads such a path as another
++	// one, under a prefix whose middleware the router never ran for it;
++	// enable this only when every upstream keeps them, through a client
++	// that does not normalize paths. A forged escape, a backslash and a
++	// dot segment carrying parameters are refused regardless.
++	// Default: false.
++	AllowAmbiguousSlashes bool
+ }
+ 
+ // DefaultSecurityPolicy returns the secure-by-default proxy security
+@@ -124,10 +144,11 @@ type SecurityPolicy struct {
+ // them.
+ func DefaultSecurityPolicy() SecurityPolicy {
+ 	return SecurityPolicy{
+-		AllowedSchemes:      append([]string(nil), defaultAllowedSchemes...),
+-		AllowPrivateIPs:     false,
+-		AllowHTTPSDowngrade: false,
+-		KeepHopByHopHeaders: false,
++		AllowedSchemes:        append([]string(nil), defaultAllowedSchemes...),
++		AllowPrivateIPs:       false,
++		AllowHTTPSDowngrade:   false,
++		KeepHopByHopHeaders:   false,
++		AllowAmbiguousSlashes: false,
+ 	}
+ }
+ 
+@@ -329,17 +350,22 @@ func parseUpstreamScheme(raw string, policy SecurityPolicy) (*url.URL, error) {
+ }
+ 
+ // validateUpstreamForBalancer validates a statically configured Balancer
+-// upstream. It enforces the scheme allowlist and rejects IP-literal hosts
+-// in blocked ranges, but defers hostname resolution to the SSRF-guarded
+-// dialer (see newSSRFDialer). Deferring DNS keeps a transient resolver
+-// failure at startup from panicking the application (e.g. crash loops in
+-// container orchestrators) and re-checks the resolved IP on every dial,
+-// which also defeats DNS-rebinding.
++// upstream. It enforces the scheme allowlist, requires the entry to be an
++// origin (the balancer dials the host and forwards the request target as
++// is, so a path, userinfo, query or fragment would be dropped silently) and
++// rejects IP-literal hosts in blocked ranges, but defers hostname resolution
++// to the SSRF-guarded dialer (see newSSRFDialer). Deferring DNS keeps a
++// transient resolver failure at startup from panicking the application
++// (e.g. crash loops in container orchestrators) and re-checks the resolved
++// IP on every dial, which also defeats DNS-rebinding.
+ func validateUpstreamForBalancer(raw string, policy SecurityPolicy) (*url.URL, error) {
+ 	u, err := parseUpstreamScheme(raw, policy)
+ 	if err != nil {
+ 		return nil, err
+ 	}
++	if u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.Opaque != "" {
++		return nil, fmt.Errorf("%w: %q", ErrUpstreamNotOrigin, raw)
++	}
+ 	if policy.AllowPrivateIPs {
+ 		return u, nil
+ 	}
+@@ -743,11 +769,19 @@ func secureTLSConfig(cfg *tls.Config) *tls.Config {
+ 	return cloned
+ }
+ 
++// placeholderOrigin is the authority joinUpstreamPath parses a request target
++// behind. Neither its scheme nor its host is what any request is sent to; it
++// only keeps the parser from reading the target's own leading "//" as an
++// authority.
++const placeholderOrigin = "https://h"
++
+ // joinUpstreamPath returns a URL string formed by combining an already
+-// validated upstream base with a request path supplied by the client.
+-// The request path's authority component (if any) is discarded so
+-// crafted inputs like "//attacker.example/foo" or "@attacker" cannot
+-// change the host the proxy connects to.
++// validated upstream base with the request target the proxy forwards (see
++// wiretarget.Routed). The target can only ever be a path, a query and a
++// fragment: crafted inputs like "//attacker.example/foo" or "@attacker"
++// cannot change the host the proxy connects to, and a leading "//" stays the
++// empty segment the router kept apart from "/foo" rather than being
++// collapsed into a path the router never matched.
+ func joinUpstreamPath(base *url.URL, requestPath string) string {
+ 	if base == nil {
+ 		return ""
+@@ -778,25 +812,28 @@ func joinUpstreamPath(base *url.URL, requestPath string) string {
+ 	if requestPath == "" {
+ 		return out.String()
+ 	}
+-	// A leading "//" makes Go's url.Parse treat the value as a
+-	// network-path reference and parse a new authority. Collapse it to
+-	// a single slash so the host stays pinned to the configured base.
+-	for strings.HasPrefix(requestPath, "//") {
+-		requestPath = "/" + utils.TrimLeft(requestPath, '/')
+-	}
+ 	if requestPath[0] != '/' && requestPath[0] != '?' && requestPath[0] != '#' {
+ 		requestPath = "/" + requestPath
+ 	}
+-	parsed, err := url.Parse(requestPath)
+-	if err != nil || parsed.Host != "" || parsed.Scheme != "" {
+-		// Either the path failed to parse cleanly or it introduced a
+-		// new authority. Treat the remainder as an opaque path, but
+-		// preserve any path prefix configured on the upstream base so
+-		// a malformed request can't silently bypass it (e.g.
+-		// "http://upstream/api" + "/%zz" must stay rooted at "/api").
+-		fallback := "/" + utils.TrimLeft(requestPath, '/')
++	// Parse behind a placeholder authority, so that the target can only be a
++	// path, a query and a fragment. Parsed on its own, a leading "//" would
++	// be a network-path reference that moves the proxy to another host, and
++	// collapsing it to one slash would forward a path the router never
++	// matched: "//admin" is not "/admin" to the router, which keeps empty
++	// segments, so no middleware mounted on "/admin" has run for it.
++	parsed, err := url.Parse(placeholderOrigin + requestPath)
++	if err != nil {
++		// The target does not parse cleanly (a malformed escape, say).
++		// Treat it as an opaque path, but preserve any path prefix
++		// configured on the upstream base so a malformed request can't
++		// silently bypass it (e.g. "http://upstream/api" + "/%zz" must stay
++		// rooted at "/api").
++		fallback := requestPath
++		if fallback[0] != '/' {
++			fallback = "/" + fallback
++		}
+ 		if base.Path != "" {
+-			fallback = strings.TrimSuffix(base.Path, "/") + "/" + strings.TrimPrefix(fallback, "/")
++			fallback = strings.TrimSuffix(base.Path, "/") + fallback
+ 		}
+ 		out.Path = fallback
+ 		out.RawPath = ""
+diff --git a/middleware/rewrite/rewrite.go b/middleware/rewrite/rewrite.go
+index 49521bca903..9efe3aaebb9 100644
+--- a/middleware/rewrite/rewrite.go
++++ b/middleware/rewrite/rewrite.go
+@@ -8,6 +8,8 @@ import (
+ 	"strings"
+ 
+ 	"github.com/gofiber/fiber/v3"
++	"github.com/gofiber/fiber/v3/internal/appconfig"
++	"github.com/gofiber/utils/v2"
+ )
+ 
+ type compiledRule struct {
+@@ -40,7 +42,7 @@ func New(config ...Config) fiber.Handler {
+ 		}
+ 		// Rewrite
+ 		for _, rule := range compiled {
+-			replacer := captureTokens(rule.pattern, c.Path())
++			replacer := captureTokens(rule.pattern, c.Path(), appconfig.Of(c.App()).UnescapePath)
+ 			if replacer != nil {
+ 				c.Path(replacer.Replace(rule.to))
+ 				break
+@@ -115,7 +117,12 @@ func pinnedLen(rule string) int {
+ }
+ 
+ // https://github.com/labstack/echo/blob/master/middleware/rewrite.go
+-func captureTokens(pattern *regexp.Regexp, input string) *strings.Replacer {
++//
++// With UnescapePath the path is matched decoded, and the rewritten path is
++// decoded again when it is set, so a capture goes back escaped: the "%2e%2e"
++// that "/files/%252e%252e/secret" decoded to would otherwise be decoded a
++// second time into "..", and "/public/$1" would resolve out of "/public/".
++func captureTokens(pattern *regexp.Regexp, input string, unescaped bool) *strings.Replacer { //nolint:revive // flag-parameter: unescaped is the app's UnescapePath setting
+ 	groups := pattern.FindStringSubmatch(input)
+ 	if groups == nil {
+ 		return nil
+@@ -125,6 +132,9 @@ func captureTokens(pattern *regexp.Regexp, input string) *strings.Replacer {
+ 	// Highest index first: a Replacer takes the earliest listed key that matches,
+ 	// so "$1" ahead of "$10" read the tenth capture as the first followed by "0".
+ 	for i, v := range slices.Backward(values) {
++		if unescaped {
++			v = string(utils.AppendPathSegmentsEscape(nil, v))
++		}
+ 		replace = append(replace, "$"+strconv.Itoa(i+1), v)
+ 	}
+ 	return strings.NewReplacer(replace...)
+diff --git a/middleware/static/static.go b/middleware/static/static.go
+index 7a04f5abea9..aa43b8684f9 100644
+--- a/middleware/static/static.go
++++ b/middleware/static/static.go
+@@ -7,6 +7,7 @@ import (
+ 	"io/fs"
+ 	"os"
+ 	"path/filepath"
++	"runtime"
+ 	"strconv"
+ 	"strings"
+ 	"sync"
+@@ -21,6 +22,10 @@ var ErrInvalidPath = errors.New("invalid path")
+ 
+ const invalidPathSentinel = "/__fiber_invalid__"
+ 
++// windowsOS is runtime.GOOS on Windows, where a path component loses its
++// trailing dots and spaces when a file is opened.
++const windowsOS = "windows"
++
+ // rewrite carries the path the file server opens for one request. The handler
+ // builds it before it calls fasthttp, so PathRewrite only has to read it.
+ type rewrite struct {
+@@ -93,10 +98,20 @@ func (s *fileServer) requestPath(dst []byte, p string) []byte {
+ 	return dst[:start+len(sanitized)]
+ }
+ 
+-// decodeFileName applies the router's unreserved-only decoding to p and leaves
+-// every other escape encoded, so routing and file lookup use the same resource
+-// name. It refuses a backslash, a control character, a malformed escape and an
+-// escape that represents one of them.
++// decodeFileName validates the escapes the router left in p and returns p
++// unchanged. The router already produced the canonical resource name (it decoded
++// every escape of an unreserved character and kept the rest encoded; see
++// unescapeSafePath), so file lookup opens exactly the bytes the route and any
++// path-scoped middleware matched. It refuses what cannot name such a file: a
++// backslash or control character, a malformed or truncated escape, an escape of
++// a separator or control character, and an escape of an unreserved character.
++// That last one cannot survive the router's own decoding, so its only source is
++// a stray '%' the router kept literally that lines up with the following bytes
++// into a fresh escape ("%%370rivate" and "%7%30rivate" both normalize to
++// "%70rivate"); decoding it a second time here would reach a name ("private")
++// the router never matched and the middleware never guarded, so it is rejected.
++// When decodeEscapes is off, UnescapePath already decoded everything and no
++// escape remains to validate.
+ func decodeFileName(p []byte, decodeEscapes bool) ([]byte, error) { //nolint:revive // the flag mirrors UnescapePath; see sanitizePath
+ 	if utils.IndexControl(p) >= 0 || bytes.IndexByte(p, '\\') >= 0 {
+ 		return nil, ErrInvalidPath
+@@ -105,35 +120,24 @@ func decodeFileName(p []byte, decodeEscapes bool) ([]byte, error) { //nolint:rev
+ 	if !decodeEscapes || i < 0 {
+ 		return p, nil
+ 	}
+-	dst := i
+-	for i < len(p) {
+-		if p[i] == '%' {
+-			if i+2 >= len(p) {
+-				return nil, ErrInvalidPath
+-			}
+-			hi, lo := unhex(p[i+1]), unhex(p[i+2])
+-			if hi < 0 || lo < 0 {
+-				return nil, ErrInvalidPath
+-			}
+-			c := byte(hi<<4 | lo) //nolint:gosec // G115: both nibbles are 0-15
+-			if c == '/' || c == '\\' || c < 0x20 || c == 0x7f {
+-				return nil, ErrInvalidPath
+-			}
+-			if isUnreserved(c) {
+-				p[dst] = c
+-				dst++
+-			} else {
+-				copy(p[dst:dst+3], p[i:i+3])
+-				dst += 3
+-			}
+-			i += 3
+-		} else {
+-			p[dst] = p[i]
+-			dst++
+-			i++
++	for ; i < len(p); i++ {
++		if p[i] != '%' {
++			continue
++		}
++		if i+2 >= len(p) {
++			return nil, ErrInvalidPath
++		}
++		hi, lo := unhex(p[i+1]), unhex(p[i+2])
++		if hi < 0 || lo < 0 {
++			return nil, ErrInvalidPath
+ 		}
++		c := byte(hi<<4 | lo) //nolint:gosec // G115: both nibbles are 0-15
++		if c == '/' || c == '\\' || c < 0x20 || c == 0x7f || isUnreserved(c) {
++			return nil, ErrInvalidPath
++		}
++		i += 2
+ 	}
+-	return p[:dst], nil
++	return p, nil
+ }
+ 
+ func isUnreserved(c byte) bool {
+@@ -187,20 +191,40 @@ func hasDriveLetter(name string) bool {
+ 	return (drive >= 'a' && drive <= 'z') || (drive >= 'A' && drive <= 'Z')
+ }
+ 
+-// sanitizePath validates in place the routed path p, with the route's prefix
+-// stripped, and returns the path the file server opens, a prefix of p. It
+-// fails with ErrInvalidPath when p cannot name a file inside the root: an
+-// escape that decodes to a slash ("private%2Fsecret.txt" never reaches the
+-// "private/secret.txt" the router did not match), a malformed escape, a
+-// backslash, a control character, a ".", ".." or empty segment, and a drive
+-// letter. Escapes the router kept remain encoded, keeping file lookup aligned
+-// with route and middleware matching.
++// hasTrailingDotOrSpaceSegment reports whether a segment of p ends in a dot or
++// a space. Windows drops both from a path component when it opens a file, so
++// "private./secret.txt" and "private /secret.txt" would open
++// "private/secret.txt": a path the router kept apart from "private", and one
++// that middleware guarding "private" never saw. Elsewhere such a name is an
++// ordinary file, so sanitizePath applies this only on Windows, and there to
++// every root: an fs.FS may be OS-backed (os.DirFS) and cannot be told apart
++// from a virtual one such as embed.FS, so a virtual name ending in a dot or a
++// space is refused on Windows rather than leave the alias open for the rest.
++func hasTrailingDotOrSpaceSegment(p []byte) bool {
++	for i, c := range p {
++		if (c == '.' || c == ' ') && (i+1 == len(p) || p[i+1] == '/') {
++			return true
++		}
++	}
++	return false
++}
++
++// sanitizePath validates the routed path p, with the route's prefix stripped,
++// and returns the path the file server opens, which is p unchanged. It fails
++// with ErrInvalidPath when p cannot name a file inside the root: an escape of a
++// slash ("private%2Fsecret.txt" never reaches the "private/secret.txt" the
++// router did not match), an escape of an unreserved character (a stray '%' the
++// router kept that would otherwise double-decode past the route and middleware),
++// a malformed escape, a backslash, a control character, a ".", ".." or empty
++// segment, a drive letter and, on Windows, a segment ending in a dot or a space
++// that the OS would strip. Escapes the router kept remain encoded, keeping file
++// lookup aligned with route and middleware matching.
+ func sanitizePath(p []byte, filesystem fs.FS, decodeEscapes bool) ([]byte, error) { //nolint:revive // the flag mirrors UnescapePath
+ 	p, err := decodeFileName(p, decodeEscapes)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	if hasUnsafeSegment(p) {
++	if hasUnsafeSegment(p) || (runtime.GOOS == windowsOS && hasTrailingDotOrSpaceSegment(p)) {
+ 		return nil, ErrInvalidPath
+ 	}
+ 

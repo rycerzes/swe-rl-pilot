@@ -1,0 +1,14 @@
+diff --git a/hugolib/site_render.go b/hugolib/site_render.go
+index b453c4193d9..03e8133ab7e 100644
+--- a/hugolib/site_render.go
++++ b/hugolib/site_render.go
+@@ -94,8 +94,7 @@ func (s *Site) renderPages(ctx *siteRenderContext) error {
+ 					select {
+ 					case <-s.h.Done():
+ 						return radix.WalkStop, nil
+-					default:
+-						pages <- p
++					case pages <- p:
+ 					}
+ 				}
+ 			}

@@ -1,0 +1,17 @@
+diff --git a/app.go b/app.go
+index cb325b77367..898ad0bcc6e 100644
+--- a/app.go
++++ b/app.go
+@@ -1663,6 +1663,12 @@ func (app *App) serverErrorHandler(fctx *fasthttp.RequestCtx, err error) {
+ 		err = NewError(StatusBadRequest, errMessage)
+ 	}
+ 
++	// Seed the mapped status so middleware observes it instead of the default 200.
++	// The ErrorHandler below still has the last word on what goes out.
++	if fiberErr, matched := asFiberError(err); matched && fiberErr != nil {
++		c.Status(fiberErr.Code)
++	}
++
+ 	if c.getMethodInt() != -1 {
+ 		c.setSkipNonUseRoutes(true)
+ 		defer c.setSkipNonUseRoutes(false)

@@ -1,0 +1,12 @@
+diff --git a/resources/image_cache.go b/resources/image_cache.go
+index 4a33a0f230d..de9f28f6a79 100644
+--- a/resources/image_cache.go
++++ b/resources/image_cache.go
+@@ -90,6 +90,7 @@ func (c *ImageCache) getOrCreate(
+ 			img.setOpenSource(func() (hugio.ReadSeekCloser, error) {
+ 				return c.fcache.Fs.Open(info.Name)
+ 			})
++			img.setSourceFilenameIsHash(true)
+ 			return img.EncodeTo(conf, conv, w)
+ 		}
+ 

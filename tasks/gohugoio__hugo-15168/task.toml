@@ -1,0 +1,123 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15168"
+description = "css: Add classDark and classLight options to css.ChromaStyles and gen chromastyles"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "64da6d7c62a27ab44c17633a14b1a1b5484470ba"
+reference = "https://github.com/gohugoio/hugo/pull/15168"
+source_access = "auto"
+built_at = "2026-11-10T23:46:27.177014+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:8c14c24bba622a80357d4aed41d28e1dc87c5dcca9a94da1e45cb60bba2e1b6a"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15168"
+pr_merged_at = "2026-08-05T14:04:48Z"
+base_commit = "64da6d7c62a27ab44c17633a14b1a1b5484470ba"
+fail_to_pass = [
+    "TestChromaStylesCustomModeClasses",
+]
+pass_to_pass = [
+    "TestCSSBuild",
+    "TestCSSBuildEdit",
+    "TestCSSBuildEditOptions",
+    "TestCSSBuildEditOptionsMultiple",
+    "TestCSSBuildFileLoaderURLRelativeToWebContextRoot",
+    "TestCSSBuildFileLoaderURLRelativeToWebContextRootMultihost",
+    "TestCSSBuildFileLoaderURLRelativeToWebContextRootMultihost/en_first",
+    "TestCSSBuildFileLoaderURLRelativeToWebContextRootMultihost/fr_first",
+    "TestCSSBuildImportContext",
+    "TestCSSBuildImportContextChromaStyles",
+    "TestCSSBuildImportContextEdit",
+    "TestCSSBuildImportContextHashes",
+    "TestCSSBuildLoadersDefault",
+    "TestCSSBuildLoadersPartial",
+    "TestCSSBuildMultihost",
+    "TestCSSBuildSourceMaps",
+    "TestCSSBuildVars",
+    "TestCSSBuildVarsEmpty",
+    "TestCSSBuildVarsFromParams",
+    "TestCSSBuildVarsNestedIssue14705",
+    "TestCSSBuildVarsNestedUpperCase",
+    "TestCSSBuildVarsQuoted",
+    "TestChromaStyles",
+    "TestChromaStylesErrors",
+    "TestChromaStylesKeepDefaultForegroundTokens",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:49dceb19f546"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 54.8
+measured_overhead_seconds = 5.628
+measured_copy_seconds = 0.188
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 1
+p2p_count = 25
+source_files = 2
+loc_changed = 25
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:09.652357+00:00"
+inline_recipe_sha256 = "sha256:b1a22fa783519f3522c1c203180647a50c0f250016c6c233fedf397924da4960"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 94
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15168-83937df2ca3b"

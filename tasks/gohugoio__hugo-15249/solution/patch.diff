@@ -1,0 +1,202 @@
+diff --git a/config/security/securityConfig.go b/config/security/securityConfig.go
+index daf642129f5..5b4097abbe2 100644
+--- a/config/security/securityConfig.go
++++ b/config/security/securityConfig.go
+@@ -18,6 +18,7 @@ import (
+ 	"encoding/json"
+ 	"errors"
+ 	"fmt"
++	"net"
+ 	"net/netip"
+ 	"net/url"
+ 	"reflect"
+@@ -212,6 +213,47 @@ func (c Config) CheckAllowedHTTPURL(u string) error {
+ 	return nil
+ }
+ 
++// CheckAllowedHTTPAddress reports whether a dial-time destination address may
++// be connected to. address is the resolved "host:port" passed to a net.Dialer
++// control hook, i.e. the actual address the HTTP client is about to connect to.
++//
++// The security.http.urls allowlist only inspects the URL text and never sees
++// the resolved address, so a hostname that resolves to a loopback, private or
++// link-local (including the cloud metadata endpoint) address would otherwise
++// satisfy the policy and let resources.GetRemote reach an internal endpoint.
++// We deny any non–global-unicast or private address here to close that gap.
++func (c Config) CheckAllowedHTTPAddress(network, address string) error {
++	// Only enforced under the default hardened allowlist. If the user has
++	// customized security.http.urls they have opted into whatever hosts they
++	// listed, including internal ones (e.g. a local dev server), so we do not
++	// second-guess the resolved address.
++	if !slices.Equal(c.HTTP.URLs.patternsStrings, DefaultConfig.HTTP.URLs.patternsStrings) {
++		return nil
++	}
++	deny := func(name string) error {
++		return &AccessDeniedError{
++			name:     name,
++			path:     "security.http.urls",
++			policies: c.ToTOML(),
++		}
++	}
++	host, _, err := net.SplitHostPort(address)
++	if err != nil {
++		host = address
++	}
++	ip, err := netip.ParseAddr(host)
++	if err != nil {
++		// The dial hook always hands us a resolved IP literal; anything else
++		// is unexpected, so fail closed.
++		return deny(address)
++	}
++	ip = ip.Unmap()
++	if !ip.IsGlobalUnicast() || ip.IsPrivate() {
++		return deny(host)
++	}
++	return nil
++}
++
+ // canonicalIPv4URL rewrites an integer/hex/octal IPv4 host in rawURL to its
+ // canonical dotted-decimal form (inet_aton semantics), returning ok=false when
+ // the host is a normal name or already dotted-decimal.
+diff --git a/markup/highlight/highlight.go b/markup/highlight/highlight.go
+index 44489809ada..467a4a2a5f0 100644
+--- a/markup/highlight/highlight.go
++++ b/markup/highlight/highlight.go
+@@ -316,7 +316,7 @@ func writeDivStart(w hugio.FlexiWriter, attrs []attributes.Attribute, wrapperCla
+ 	if attrs != nil {
+ 		for _, attr := range attrs {
+ 			if attr.Name == "class" {
+-				w.WriteString(" " + attr.ValueString())
++				w.WriteString(" " + gohtml.EscapeString(attr.ValueString()))
+ 				break
+ 			}
+ 		}
+diff --git a/markup/internal/attributes/attributes.go b/markup/internal/attributes/attributes.go
+index b2d4a5ed6e3..e9a6a708328 100644
+--- a/markup/internal/attributes/attributes.go
++++ b/markup/internal/attributes/attributes.go
+@@ -187,12 +187,7 @@ func RenderASTAttributes(w hugio.FlexiWriter, attributes ...ast.Attribute) {
+ 		_, _ = w.Write(attr.Name)
+ 		_, _ = w.WriteString(`="`)
+ 
+-		switch v := attr.Value.(type) {
+-		case []byte:
+-			_, _ = w.Write(util.EscapeHTML(v))
+-		default:
+-			w.WriteString(cast.ToString(v))
+-		}
++		writeAttributeValue(w, attr.Value)
+ 
+ 		_ = w.WriteByte('"')
+ 	}
+@@ -211,13 +206,22 @@ func RenderAttributes(w hugio.FlexiWriter, skipClass bool, attributes ...Attribu
+ 		_, _ = w.WriteString(attr.Name)
+ 		_, _ = w.WriteString(`="`)
+ 
+-		switch v := attr.Value.(type) {
+-		case []byte:
+-			_, _ = w.Write(util.EscapeHTML(v))
+-		default:
+-			w.WriteString(cast.ToString(v))
+-		}
++		writeAttributeValue(w, attr.Value)
+ 
+ 		_ = w.WriteByte('"')
+ 	}
+ }
++
++// writeAttributeValue writes v HTML-escaped as a double-quoted HTML attribute
++// value. Note that New converts string values from a []byte to a string, so
++// the string case is the common one and must be escaped too.
++func writeAttributeValue(w hugio.FlexiWriter, v any) {
++	switch vv := v.(type) {
++	case []byte:
++		_, _ = w.Write(util.EscapeHTML(vv))
++	case string:
++		_, _ = w.Write(util.EscapeHTML([]byte(vv)))
++	default:
++		_, _ = w.Write(util.EscapeHTML([]byte(cast.ToString(vv))))
++	}
++}
+diff --git a/resources/resource_factories/create/create.go b/resources/resource_factories/create/create.go
+index abea8c9828e..a34f9fc7bf4 100644
+--- a/resources/resource_factories/create/create.go
++++ b/resources/resource_factories/create/create.go
+@@ -17,11 +17,13 @@ package create
+ 
+ import (
+ 	"errors"
++	"net"
+ 	"net/http"
+ 	"os"
+ 	"path"
+ 	"path/filepath"
+ 	"strings"
++	"syscall"
+ 	"time"
+ 
+ 	"github.com/bep/helpers/contexthelpers"
+@@ -40,6 +42,7 @@ import (
+ 
+ 	"github.com/gohugoio/hugo/common/hugio"
+ 	"github.com/gohugoio/hugo/common/tasks"
++	"github.com/gohugoio/hugo/config/security"
+ 	"github.com/gohugoio/hugo/resources"
+ 	"github.com/gohugoio/hugo/resources/resource"
+ )
+@@ -139,6 +142,7 @@ func New(rs *resources.Spec) *Client {
+ 				Transport: &transport{
+ 					Cfg:    rs.Cfg,
+ 					Logger: rs.Logger,
++					base:   newSecureBaseTransport(rs.ExecHelper.Sec()),
+ 				},
+ 			},
+ 		},
+@@ -146,6 +150,23 @@ func New(rs *resources.Spec) *Client {
+ 	}
+ }
+ 
++// newSecureBaseTransport clones the default transport and installs a dial-time
++// hook that validates the resolved destination address against the security
++// policy, so a hostname resolving to an internal address cannot be used to
++// reach internal endpoints. See CheckAllowedHTTPAddress.
++func newSecureBaseTransport(sec security.Config) http.RoundTripper {
++	base := http.DefaultTransport.(*http.Transport).Clone()
++	d := &net.Dialer{
++		Timeout:   30 * time.Second,
++		KeepAlive: 30 * time.Second,
++		Control: func(network, address string, _ syscall.RawConn) error {
++			return sec.CheckAllowedHTTPAddress(network, address)
++		},
++	}
++	base.DialContext = d.DialContext
++	return base
++}
++
+ // Copy copies r to the new targetPath.
+ func (c *Client) Copy(r resource.Resource, targetPath string) (resource.Resource, error) {
+ 	key := dynacache.CleanKey(targetPath) + "__copy"
+diff --git a/resources/resource_factories/create/remote.go b/resources/resource_factories/create/remote.go
+index 8d43ef31c75..a05a4bfd449 100644
+--- a/resources/resource_factories/create/remote.go
++++ b/resources/resource_factories/create/remote.go
+@@ -464,6 +464,10 @@ var _ http.RoundTripper = (*transport)(nil)
+ type transport struct {
+ 	Cfg    config.AllProvider
+ 	Logger loggers.Logger
++
++	// base does the actual round trip. It carries a dial-time hook that
++	// validates the resolved destination address (see New).
++	base http.RoundTripper
+ }
+ 
+ func (t *transport) RoundTrip(req *http.Request) (resp *http.Response, err error) {
+@@ -482,7 +486,7 @@ func (t *transport) RoundTrip(req *http.Request) (resp *http.Response, err error
+ 
+ 	for {
+ 		resp, retry, err = func() (*http.Response, bool, error) {
+-			resp2, err := http.DefaultTransport.RoundTrip(req)
++			resp2, err := t.base.RoundTrip(req)
+ 			if err != nil {
+ 				return resp2, false, err
+ 			}

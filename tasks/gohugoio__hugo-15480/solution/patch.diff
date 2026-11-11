@@ -1,0 +1,14 @@
+diff --git a/markup/goldmark/internal/render/context.go b/markup/goldmark/internal/render/context.go
+index 7daf1c07161..ae9d84866f5 100644
+--- a/markup/goldmark/internal/render/context.go
++++ b/markup/goldmark/internal/render/context.go
+@@ -259,6 +259,8 @@ func textPlainTo(c ast.Node, source []byte, buf *bytes.Buffer) {
+ 	case *east.Emoji:
+ 		buf.WriteString(string(c.ShortName))
+ 	default:
+-		textPlainTo(c.FirstChild(), source, buf)
++		for cc := c.FirstChild(); cc != nil; cc = cc.NextSibling() {
++			textPlainTo(cc, source, buf)
++		}
+ 	}
+ }

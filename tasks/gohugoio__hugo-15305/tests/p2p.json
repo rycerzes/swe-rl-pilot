@@ -1,0 +1,16 @@
+[
+  "TestDecodeRemoteOptions",
+  "TestDecodeRemoteOptions/Body",
+  "TestDecodeRemoteOptions/Body,_string",
+  "TestDecodeRemoteOptions/POST",
+  "TestGetRemoteHead",
+  "TestGetRemotePerRequestTimeoutBodyRead",
+  "TestGetRemoteRedirectSecurityCheckIssue14871",
+  "TestGetRemoteResponseHeaders",
+  "TestGetRemoteRetryAfterIssue14828",
+  "TestGetRemoteRetryAfterIssue14828/Honored",
+  "TestGetRemoteRetryAfterIssue14828/TimeoutMessage",
+  "TestOptionsNewRequest",
+  "TestRemoteResourceKeys",
+  "TestSecureBaseTransportBlocksInternalAddress"
+]

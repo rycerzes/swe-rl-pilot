@@ -1,0 +1,117 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15399"
+description = "Misc fixes"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "c7f9999309a2e7a12d24c03fe639008ddc4565f8"
+reference = "https://github.com/gohugoio/hugo/pull/15399"
+source_access = "auto"
+built_at = "2026-11-10T23:31:12.729151+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:87e872167ea21c0ad02ff6d62bf79e8ac92b2931fc7e58f8046ae888a7b0aa7e"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15399"
+pr_merged_at = "2026-09-28T14:13:47Z"
+base_commit = "c7f9999309a2e7a12d24c03fe639008ddc4565f8"
+fail_to_pass = [
+    "TestBuildImportOutsideProject",
+    "TestBuildImportOutsideProject/Relative_import",
+    "TestBuildImportOutsideProject/Symlink_in_theme",
+]
+pass_to_pass = [
+    "TestBuildDataArtifacts",
+    "TestBuildError",
+    "TestBuildError/Import_from_import_not_found",
+    "TestBuildError/Import_from_main_not_found",
+    "TestBuildErrorStack",
+    "TestBuildImportOutsideProject/Relative_import,_target_in_allowRead",
+    "TestBuildVariants",
+    "TestBuildVariants/Basic",
+    "TestBuildVariants/Edit_Import",
+    "TestBuildVariants/Edit_Import_Nested",
+    "TestExternalsInAssets",
+    "TestImportHugoVsESBuild",
+    "TestImportHugoVsESBuild/assets",
+    "TestImportHugoVsESBuild/node_modules",
+    "TestPreserveLegalComments",
+    "TestReplaceRegularCSSImports",
+    "TestTypeScriptExperimentalDecorators",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:ec69d0e64931"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 76.597
+measured_overhead_seconds = 5.239
+measured_copy_seconds = 0.189
+run_timeout_sec = 180
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 3
+p2p_count = 17
+source_files = 7
+loc_changed = 214
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:10.165822+00:00"
+inline_recipe_sha256 = "sha256:02957beb7c8f8ed7e41df32c3981c77eac34b9df38c7df2a3f470e514887af2a"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 21
+instruction_ok = false
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15399-4740abe03c1b"

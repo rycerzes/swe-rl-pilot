@@ -1,0 +1,156 @@
+diff --git a/docs/api/ctx.md b/docs/api/ctx.md
+index f3ab555c43e..3a64da8f84c 100644
+--- a/docs/api/ctx.md
++++ b/docs/api/ctx.md
+@@ -1730,7 +1730,7 @@ app.Get("/", func(c fiber.Ctx) error {
+ 
+ ### Host
+ 
+-Returns the host derived from the [Host](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Host) HTTP header. When the request comes from a trusted proxy (see [`TrustProxy`](fiber.md#trustproxy)), the first value of the `X-Forwarded-Host` header is used instead.
++Returns the host derived from the [Host](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Host) HTTP header. When the request comes from a trusted proxy (see [`TrustProxy`](fiber.md#trustproxy)), the first non-empty value of the `X-Forwarded-Host` header is used instead, reading repeated lines in the order received; when it has none, the `Host` header is used.
+ 
+ In a network context, [`Host`](#host) refers to the combination of a hostname and potentially a port number used for connecting, while [`Hostname`](#hostname) refers specifically to the name assigned to a device on a network, excluding any port information.
+ 
+@@ -2723,8 +2723,8 @@ part of a URL. The headers are ranked in the order listed rather than read in
+ the order they arrive: `X-Forwarded-Proto`, the one a reverse proxy sets, wins
+ over the other three, which a proxy usually passes through from the client. When
+ one header is sent on several lines, the last line received wins. The first
+-value of a comma-separated `X-Forwarded-Proto` or `X-Forwarded-Protocol` list is
+-the one used. A proxy that terminates a different protocol should send the
++non-empty value of a comma-separated `X-Forwarded-Proto` or `X-Forwarded-Protocol`
++list is the one used. A proxy that terminates a different protocol should send the
+ scheme the client used to reach it.
+ 
+ :::
+diff --git a/docs/guide/reverse-proxy.md b/docs/guide/reverse-proxy.md
+index c86cbddb2c6..7f8f5fec8a4 100644
+--- a/docs/guide/reverse-proxy.md
++++ b/docs/guide/reverse-proxy.md
+@@ -187,7 +187,7 @@ func main() {
+ The same trust check guards the other values a proxy forwards. When the connecting peer is trusted:
+ 
+ - `c.Scheme()` follows `X-Forwarded-Proto`, `X-Forwarded-Protocol`, `X-Forwarded-Ssl: on` or `X-Url-Scheme`, in that order of precedence whatever order they arrive in, and accepts only `http` or `https`. A proxy that sets `X-Forwarded-Proto` therefore decides the scheme even when it passes the other three through from the client. Have the proxy set `X-Forwarded-Proto` and drop the other three; a proxy that sets one of the others instead must drop every header ranked above it.
+-- `c.Host()` and `c.Hostname()` use the first value of `X-Forwarded-Host`, and the `Host` header when it is absent.
++- `c.Host()` and `c.Hostname()` use the first non-empty value of `X-Forwarded-Host`, and the `Host` header when it has none.
+ - `c.BaseURL()` is built from those two.
+ 
+ For an untrusted peer Fiber ignores these headers and uses the connection itself, and a TLS connection always reports `https`. `c.Protocol()` never comes from a header: it reports the HTTP version spoken between the proxy and Fiber, usually `HTTP/1.1`, not the one the client used.
+diff --git a/docs/middleware/hostauthorization.md b/docs/middleware/hostauthorization.md
+index 0d6396a580b..db405572098 100644
+--- a/docs/middleware/hostauthorization.md
++++ b/docs/middleware/hostauthorization.md
+@@ -208,7 +208,7 @@ This middleware filters by the `Host` *header*, not by the client's source IP. [
+ 
+ ## Proxy Support
+ 
+-The middleware reads the host with `c.Host()`, which uses the first value of `X-Forwarded-Host` when [`TrustProxy`](https://docs.gofiber.io/api/fiber#trustproxy) is enabled and the request comes from a proxy listed in `TrustProxyConfig`. When `TrustProxy` is disabled (the default), `X-Forwarded-Host` is ignored and the raw `Host` header is used. Either value goes through the same validation, so a malformed `X-Forwarded-Host` is rejected too.
++The middleware reads the host with `c.Host()`, which uses the first non-empty value of `X-Forwarded-Host` when [`TrustProxy`](https://docs.gofiber.io/api/fiber#trustproxy) is enabled and the request comes from a proxy listed in `TrustProxyConfig`. When `TrustProxy` is disabled (the default), `X-Forwarded-Host` is ignored and the raw `Host` header is used. Either value goes through the same validation, so a malformed `X-Forwarded-Host` is rejected too.
+ 
+ fasthttp itself is HTTP/1.x only. HTTP/2 support requires an external library (e.g. `fasthttp2`) plugged in via `Server.NextProto`. Those libraries are responsible for mapping the HTTP/2 `:authority` pseudo-header to a Host value before the request reaches Fiber handlers, so the middleware should work transparently once H2 is wired up — but this is the H2 library's responsibility, not fasthttp's or this middleware's.
+ 
+diff --git a/docs/middleware/limiter.md b/docs/middleware/limiter.md
+index 17ea3409514..e7771c90904 100644
+--- a/docs/middleware/limiter.md
++++ b/docs/middleware/limiter.md
+@@ -76,7 +76,7 @@ app.Use(limiter.New(limiter.Config{
+ :::caution
+ The default `KeyGenerator` keys requests by `c.IP()`. Behind a reverse proxy, `c.IP()` only identifies a client if you configure `TrustProxy`, `TrustProxyConfig` and `ProxyHeader`, plus `EnableIPValidation` when the header is a chain your proxy appends to, such as `X-Forwarded-For`. Without them it is either the proxy's address, so every client shares one bucket, or the raw forwarded header, which a client can vary on every request to get a fresh bucket unless your proxy overwrites it with a single address. See the [reverse proxy guide](../guide/reverse-proxy.md#getting-the-real-client-ip-address).
+ 
+-Limiter bounds both default and custom client-derived keys to 192 bytes before using them in memory or adding the `limiter:` prefix for external storage. Keys longer than 192 bytes, or starting with the reserved `sha256:` prefix, are replaced with a SHA-256 digest under that prefix. The complete external storage key includes the `limiter:` prefix and can therefore be up to 200 bytes. When building storage keys from client-controlled values elsewhere, bound their length too. A length bound limits the size of each key; it does not limit how many distinct keys a client can generate or make an untrusted forwarded header a reliable client identity.
++Limiter bounds its keys itself (see `KeyGenerator` below). For keys you build from client values for another store, see [Storage keys derived from client values](../guide/reverse-proxy.md#storage-keys-derived-from-client-values).
+ :::
+ 
+ ## Sliding window
+@@ -170,7 +170,7 @@ A request the [timeout middleware](./timeout.md) gave up on is answered with the
+ | SkipSuccessfulRequests | `bool`                    | When set to `true`, requests with status code < 400 aren't counted. A handler that returns an error other than a `*fiber.Error` counts as a 500 unless it already set an error status. | false                                    |
+ | DisableHeaders         | `bool`                    | When set to `true`, the middleware omits rate limit headers (`X-RateLimit-*` and `Retry-After`). Otherwise a request that passes carries `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset` (seconds until the window ends), and a rejected one carries `Retry-After` (seconds). | false                                    |
+ | DisableValueRedaction  | `bool`                    | Disables redaction of limiter keys in error messages and logs. A key longer than 192 bytes is shown as its SHA-256 digest. | false                                    |
+-| Storage                | `fiber.Storage`           | Persists middleware state. An entry is stored under `limiter:<key>`, so the storage can be shared with other middleware. Counters stored by an earlier version are not read after the upgrade, so every window starts over once, and the old entries expire on their own. | An in-memory store for this process only |
++| Storage                | `fiber.Storage`           | Persists middleware state. A custom storage keeps an entry under `limiter:<key>`, at most 200 bytes, so it can be shared with other middleware; the in-memory default keeps the bounded key alone, at most 192 bytes. Counters stored by an earlier version are not read after the upgrade, so every window starts over once, and the old entries expire on their own. | An in-memory store for this process only |
+ | LimiterMiddleware      | `limiter.Handler`         | Selects the algorithm implementation. Implementations now receive a pointer to the active config when their `New` method is invoked. `FixedWindow` and `SlidingWindow` give a field that config leaves unset its default, so calling their `New` directly with a partial config works. `New` works on a copy, which leaves the config you pass as it is. | A new Fixed Window Rate Limiter          |
+ 
+ :::note
+diff --git a/docs/whats_new.md b/docs/whats_new.md
+index 7f6c1b44ea0..f90a8aea9df 100644
+--- a/docs/whats_new.md
++++ b/docs/whats_new.md
+@@ -918,10 +918,11 @@ resolve to the **request**; use `c.Res().Get()`, `c.Res().GetHeaders()`, `c.Res(
+   key in the passed map still wins. Without a `Views` engine, `Render` now parses a copy of the template file, so
+   the output no longer depends on `Config.Immutable`.
+ - **Context()**: Renamed to `RequestCtx()` to access the underlying `fasthttp.RequestCtx`.
++- **Host()**: Behind a trusted proxy, empty `X-Forwarded-Host` elements are skipped and repeated field lines are read in the order they were received, so `,example.com` answers `example.com`, and a value with no host left falls back to the `Host` header instead of an empty string. See [`Ctx.Host`](./api/ctx.md#host).
+ - **IP()**: When `EnableIPValidation` is `true` and `TrustProxyConfig` is set, `c.IP()` now walks the `X-Forwarded-For` chain from right to left and returns the first non-trusted IP, instead of the leftmost syntactically valid IP. This closes an IP-spoofing vector where an attacker could prepend a fake address and have it returned by `c.IP()`. An entry that is not an IP address, such as `203.0.113.50:51234` or `unknown`, ends the walk, and `c.IP()` returns the last trusted proxy passed or the TCP remote address instead of an entry further left; a proxy that appends `IP:port` entries has to send the bare address. Repeated field lines of the proxy header are joined in the order they were received. Apps with `EnableIPValidation = false` (the default) are unaffected. See [`Ctx.IP`](./api/ctx.md#ip) and the [reverse proxy guide](./guide/reverse-proxy.md#getting-the-real-client-ip-address) for details.
+ - **IPs()**: Empty `X-Forwarded-For` elements are now ignored after trimming spaces and tabs, even when `EnableIPValidation` is disabled. Repeated commas and whitespace-only elements no longer produce empty strings in the returned slice. See [`Ctx.IPs`](./api/ctx.md#ips).
+ - **Links()**: Adds to a `Link` header that is already set, as `res.links` does in Express, instead of replacing it. A second call, or one after `SendEarlyHints`, keeps the earlier links; call `c.Del(fiber.HeaderLink)` first to replace them. See [`Ctx.Links`](./api/ctx.md#links).
+-- **Scheme()**: Behind a trusted proxy, the scheme headers are ranked instead of read in the order they arrive: `X-Forwarded-Proto` wins over `X-Forwarded-Protocol`, then `X-Forwarded-Ssl: on`, then `X-Url-Scheme`, so a client can no longer override the proxy's `X-Forwarded-Proto` with one of the others. A proxy that sets only a lower-ranked header must drop the ones above it. See the [reverse proxy guide](./guide/reverse-proxy.md#scheme-and-host-behind-a-proxy).
++- **Scheme()**: Behind a trusted proxy, the scheme headers are ranked instead of read in the order they arrive: `X-Forwarded-Proto` wins over `X-Forwarded-Protocol`, then `X-Forwarded-Ssl: on`, then `X-Url-Scheme`, so a client can no longer override the proxy's `X-Forwarded-Proto` with one of the others. A proxy that sets only a lower-ranked header must drop the ones above it. Empty elements of an `X-Forwarded-Proto` or `X-Forwarded-Protocol` list are skipped, so `,https` announces `https`. See the [reverse proxy guide](./guide/reverse-proxy.md#scheme-and-host-behind-a-proxy).
+ 
+ ### SendEarlyHints
+ 
+diff --git a/internal/headerlist/headerlist.go b/internal/headerlist/headerlist.go
+index e87a4a9f7b5..c39168f161e 100644
+--- a/internal/headerlist/headerlist.go
++++ b/internal/headerlist/headerlist.go
+@@ -20,7 +20,7 @@
+ //     takes CR, LF, VT and FF. [TrimOWS] takes only SP and HTAB, the OWS of
+ //     RFC 9110 Section 5.6.3, for a caller that validates what is left.
+ //
+-// The iterators skip empty elements: "a,,b" yields "a" and "b". A list is
++// The iterators and [First] skip empty elements: "a,,b" yields "a" and "b". A list is
+ // permitted to carry them (RFC 9110 Section 5.6.1 allows the empty element for
+ // legacy reasons). [Next] and [Prev] expose raw elements, including empty ones,
+ // for callers with their own whitespace, validation and traversal policies.
+@@ -40,8 +40,25 @@ import (
+ // exceeds len(list) after the final element, allowing callers to stop early
+ // without allocating a slice of all elements.
+ func Next(list string, start int) (element string, next int) { //nolint:nonamedreturns // names distinguish the element from the next position
+-	element, _, _ = utils.CutByte(list[start:], ',')
+-	return element, start + len(element) + 1
++	// A loop, not utils.CutByte: its generic body does not inline, and a call per element made comma-padded lists 4x slower.
++	end := start
++	for end < len(list) && list[end] != ',' {
++		end++
++	}
++	return list[start:end], end + 1
++}
++
++// First returns the first non-empty element of list, trimmed as [All] trims it,
++// or "" when list has none.
++func First(list string) string {
++	for start := 0; start <= len(list); {
++		var element string
++		element, start = Next(list, start)
++		if element = utils.TrimSpace(element); element != "" {
++			return element
++		}
++	}
++	return ""
+ }
+ 
+ // Prev is the reverse of Next. It returns the raw element ending just before
+diff --git a/req.go b/req.go
+index d4844d8d1b4..1a0b9bf8732 100644
+--- a/req.go
++++ b/req.go
+@@ -794,9 +794,9 @@ func (r *DefaultReq) GetHeaders() map[string][]string {
+ // Please use Config.TrustProxy to prevent header spoofing if your app is behind a proxy.
+ func (r *DefaultReq) Host() string {
+ 	if r.IsProxyTrusted() {
+-		if host := r.Get(HeaderXForwardedHost); host != "" {
+-			host, _ = headerlist.Next(host, 0)
+-			return utils.TrimSpace(host)
++		// Received order, as for X-Forwarded-For: fasthttp reorders repeated lines when it deletes a header.
++		if host := headerlist.First(proxyHeaderValue(r, HeaderXForwardedHost)); host != "" {
++			return host
+ 		}
+ 	}
+ 	return r.c.app.toString(r.c.fasthttp.Request.URI().Host())
+@@ -1478,7 +1478,7 @@ func announcedScheme(rank int, val []byte) (string, bool) {
+ 	case schemeRankXForwardedSsl:
+ 		return schemeHTTPS, utils.EqualFold(v, "on")
+ 	case schemeRankXForwardedProto, schemeRankXForwardedProtocol:
+-		v, _ = headerlist.Next(v, 0)
++		v = headerlist.First(v)
+ 	}
+ 	return forwardedScheme(v)
+ }

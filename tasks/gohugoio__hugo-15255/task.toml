@@ -1,0 +1,231 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15255"
+description = "resources/page: Don't let a title's \"/\" split an auto-derived slug"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "49835f8fe9496159e84a3f742fd9d6c5c9cd3ae5"
+reference = "https://github.com/gohugoio/hugo/pull/15255"
+source_access = "auto"
+built_at = "2026-11-10T23:35:22.971453+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:7bad908fbf4a367ee3bf8f5e9468e7bd5278848d568252e5ce20fa6208a89cbe"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15255"
+pr_merged_at = "2026-08-31T09:06:31Z"
+base_commit = "49835f8fe9496159e84a3f742fd9d6c5c9cd3ae5"
+fail_to_pass = [
+    "TestPermalinkExpansionTitleSlash",
+]
+pass_to_pass = [
+    "TestDecodeCascadeConfig",
+    "TestDecodeCascadeConfigWithSitesMatrix",
+    "TestDefaultSort",
+    "TestExpandDivider",
+    "TestExtractSummaryFromHTML",
+    "TestExtractSummaryFromHTMLLotsOfHTMLInSummary",
+    "TestExtractSummaryFromHTMLWithDivider",
+    "TestGroupByCalledWithEmptyPages",
+    "TestGroupByDate",
+    "TestGroupByDateInReverseOrder",
+    "TestGroupByExpiryDate",
+    "TestGroupByInReverseOrder",
+    "TestGroupByLastmod",
+    "TestGroupByLastmodInReverseOrder",
+    "TestGroupByLocalizedDate",
+    "TestGroupByParam",
+    "TestGroupByParamCalledWithCapitalLetterString",
+    "TestGroupByParamCalledWithEmptyPages",
+    "TestGroupByParamCalledWithSomeUnavailableParams",
+    "TestGroupByParamCalledWithUnavailableParam",
+    "TestGroupByParamDate",
+    "TestGroupByParamDateInReverseOrder",
+    "TestGroupByParamDateNested",
+    "TestGroupByParamDateNestedWithStringParams",
+    "TestGroupByParamDateWithEmptyPages",
+    "TestGroupByParamDateWithStringParams",
+    "TestGroupByParamInReverseOrder",
+    "TestGroupByParamNested",
+    "TestGroupByPublishDate",
+    "TestGroupByPublishDateInReverseOrder",
+    "TestGroupByPublishDateWithEmptyPages",
+    "TestGroupByWithFieldNameArg",
+    "TestGroupByWithMethodNameArg",
+    "TestGroupByWithSectionArg",
+    "TestHashSignInPermalink",
+    "TestIndexOf",
+    "TestIsGlobWithExtension",
+    "TestIsPagesProbablySorted",
+    "TestIsProbablyHTMLToken",
+    "TestIssue13755",
+    "TestIssue13967",
+    "TestIssue13968",
+    "TestLimit",
+    "TestMiscPathIssues",
+    "TestNewHugoInfo",
+    "TestNext",
+    "TestNextPrevConfig",
+    "TestPageCache",
+    "TestPageContentWithoutSummary",
+    "TestPageData",
+    "TestPageMarkupMethods",
+    "TestPageMarkupScope",
+    "TestPageMatcher",
+    "TestPageMatcher/Decode",
+    "TestPageMatcher/Matches",
+    "TestPageMatcher/mapToPageMatcherParamsConfig",
+    "TestPagePathsBuilder",
+    "TestPageSiteSitesDefault",
+    "TestPageSortByParam",
+    "TestPageSortByParamNumeric",
+    "TestPageSortReverse",
+    "TestPager",
+    "TestPagerNoPages",
+    "TestPagesSortCollation",
+    "TestPaginationPage",
+    "TestPermalinkExpansion",
+    "TestPermalinkExpansion/[0]__title",
+    "TestPermalinkExpansion/[10]___sections_",
+    "TestPermalinkExpansion/[11]___sections_last__",
+    "TestPermalinkExpansion/[12]___sections_0___sections_last__",
+    "TestPermalinkExpansion/[13]__\\_filename",
+    "TestPermalinkExpansion/[14]__special\\__slug_",
+    "TestPermalinkExpansion/[15]___contentbasename_",
+    "TestPermalinkExpansion/[16]___slugorcontentbasename_",
+    "TestPermalinkExpansion/[17]___slugorcontentbasename_",
+    "TestPermalinkExpansion/[18]___slugorcontentbasename_",
+    "TestPermalinkExpansion/[19]___sectionslug_",
+    "TestPermalinkExpansion/[1]___year-_month-_title",
+    "TestPermalinkExpansion/[20]___sectionslugs_",
+    "TestPermalinkExpansion/[21]___sectionslugs_0___sectionslugs_last__",
+    "TestPermalinkExpansion/[22]___sectionslugs_last__",
+    "TestPermalinkExpansion/[2]___year__yearday__month__monthname__day__weekday__weekdayname_",
+    "TestPermalinkExpansion/[3]___section_",
+    "TestPermalinkExpansion/[4]___title_",
+    "TestPermalinkExpansion/[5]___slug_",
+    "TestPermalinkExpansion/[6]___slugorfilename_",
+    "TestPermalinkExpansion/[7]___filename_",
+    "TestPermalinkExpansion/[8]___06-_1-_2-_Monday",
+    "TestPermalinkExpansion/[9]___2006_01_02_15_04_05.000",
+    "TestPermalinkExpansionConcurrent",
+    "TestPermalinkExpansionMultiSection",
+    "TestPermalinkExpansionSectionsRepeated",
+    "TestPermalinkExpansionSliceSyntax",
+    "TestPermalinkExpansionSliceSyntax/Basic",
+    "TestPermalinkExpansionSliceSyntax/Out_of_bounds",
+    "TestPermalinks",
+    "TestPermalinksContentbasenameContentAdapter",
+    "TestPermalinksContentbasenameWithAndWithoutFile",
+    "TestPermalinksHomeKind",
+    "TestPermalinksHomeKindLegacyMap",
+    "TestPermalinksNestedSections",
+    "TestPermalinksNestedSectionsWithSlugs",
+    "TestPermalinksNewSliceFormat",
+    "TestPermalinksNewSliceFormatAsteriskKind",
+    "TestPermalinksNewSliceFormatEnvironment",
+    "TestPermalinksNewSliceFormatRootSection",
+    "TestPermalinksNewSliceFormatSitesMatrix",
+    "TestPermalinksOldSetup",
+    "TestPermalinksTaxonomyAndPageConsistencyIssue14325",
+    "TestPermalinksTaxonomyAndPageConsistencyIssue14325/explicitTermContent=false/kindSpecificConfig=false",
+    "TestPermalinksTaxonomyAndPageConsistencyIssue14325/explicitTermContent=false/kindSpecificConfig=true",
+    "TestPermalinksTaxonomyAndPageConsistencyIssue14325/explicitTermContent=true/kindSpecificConfig=false",
+    "TestPermalinksTaxonomyAndPageConsistencyIssue14325/explicitTermContent=true/kindSpecificConfig=true",
+    "TestPermalinksUrlCascade",
+    "TestPermalinksWithEscapedColons",
+    "TestPrev",
+    "TestProbablyEq",
+    "TestProbablyEq/PageGroup",
+    "TestProbablyEq/Pages",
+    "TestProbablyEq/PagesGroup",
+    "TestProbablyEqualPageLists",
+    "TestRelated",
+    "TestReverse",
+    "TestSearchPage",
+    "TestSortByLinkTitle",
+    "TestSortByN",
+    "TestSplitPageGroups",
+    "TestSplitPages",
+    "TestTaxonomiesGetAndCount",
+    "TestTaxonomiesPage",
+    "TestToPages",
+    "TestWeightedPagesNext",
+    "TestWeightedPagesPrev",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:850f11c060b4"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 63.83
+measured_overhead_seconds = 5.29
+measured_copy_seconds = 0.196
+run_timeout_sec = 150
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 1
+p2p_count = 133
+source_files = 1
+loc_changed = 18
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:09.820714+00:00"
+inline_recipe_sha256 = "sha256:c6484c799ea1216557646f51d98b3f691946f59828ef958abebdd612fc41dea5"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 85
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15255-dce41da3fb6b"

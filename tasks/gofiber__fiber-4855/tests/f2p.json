@@ -1,0 +1,16 @@
+[
+  "Test_Cache_EntryStoredUnderTheEarlierVaryRuleIsNotRead",
+  "Test_Cache_KeyFormatIsStable",
+  "Test_Cache_KeyFormatIsStable/anonymous",
+  "Test_Cache_KeyFormatIsStable/authenticated",
+  "Test_Cache_KeyFormatIsStable/vary_disabled",
+  "Test_Cache_VaryOnCookieEncryptcookieDecrypts",
+  "Test_Cache_VaryOnCookieEncryptcookieDecrypts/cache_outside",
+  "Test_Cache_VaryOnHeaderChangedBehindTheCache",
+  "Test_Cache_VaryOnHeaderChangedBehindTheCache/cookie_removed",
+  "Test_Cache_VaryOnHeaderChangedBehindTheCache/cookie_rewritten_in_place",
+  "Test_Cache_VaryOnHeaderChangedBehindTheCache/overwritten",
+  "Test_Cache_VaryOnHeaderChangedBehindTheCache/overwritten,_varying_on_its_input_too",
+  "Test_Cache_VaryOnHeaderChangedBehindTheCache/removed",
+  "Test_Cache_VaryOnHeaderChangedBehindTheCache/rewritten_in_place"
+]

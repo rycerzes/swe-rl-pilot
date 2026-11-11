@@ -1,0 +1,19 @@
+[
+  "TestBuildDataArtifacts",
+  "TestBuildError",
+  "TestBuildError/Import_from_import_not_found",
+  "TestBuildError/Import_from_main_not_found",
+  "TestBuildErrorStack",
+  "TestBuildImportOutsideProject/Relative_import,_target_in_allowRead",
+  "TestBuildVariants",
+  "TestBuildVariants/Basic",
+  "TestBuildVariants/Edit_Import",
+  "TestBuildVariants/Edit_Import_Nested",
+  "TestExternalsInAssets",
+  "TestImportHugoVsESBuild",
+  "TestImportHugoVsESBuild/assets",
+  "TestImportHugoVsESBuild/node_modules",
+  "TestPreserveLegalComments",
+  "TestReplaceRegularCSSImports",
+  "TestTypeScriptExperimentalDecorators"
+]

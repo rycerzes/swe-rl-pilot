@@ -1,0 +1,40 @@
+diff --git a/hugolib/site.go b/hugolib/site.go
+index 42562cf3ee1..6cf66da91b8 100644
+--- a/hugolib/site.go
++++ b/hugolib/site.go
+@@ -186,6 +186,10 @@ func (s siteLanguageVersionRole) Version() versions.Version {
+ 	return s.version
+ }
+ 
++func (s siteLanguageVersionRole) SiteVector() sitesmatrix.Vector {
++	return s.siteVector
++}
++
+ func (s siteLanguageVersionRole) isDefault() bool {
+ 	return s.isDefaultLanguage && s.roleInternal.Default && s.versionInternal.Default
+ }
+diff --git a/resources/page/site.go b/resources/page/site.go
+index ba4db50f298..6f4a46251bb 100644
+--- a/resources/page/site.go
++++ b/resources/page/site.go
+@@ -15,6 +15,7 @@ package page
+ 
+ import (
+ 	"slices"
++	"strconv"
+ 	"time"
+ 
+ 	"github.com/gohugoio/hugo/common/hmaps"
+@@ -169,8 +170,11 @@ func WrapSite(s Site) Site {
+ 	return &siteWrapper{s: s}
+ }
+ 
++// Key is used for hashing, e.g. a Site passed as a partialCached variant,
++// and must be unique per site (language, version and role).
+ func (s *siteWrapper) Key() string {
+-	return s.s.Language().Lang
++	v := s.s.(SiteVectorProvider).SiteVector()
++	return "site/" + strconv.Itoa(v[0]) + "/" + strconv.Itoa(v[1]) + "/" + strconv.Itoa(v[2])
+ }
+ 
+ func (s *siteWrapper) GetPage(ref ...string) (Page, error) {

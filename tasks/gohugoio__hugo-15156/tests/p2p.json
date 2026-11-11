@@ -1,0 +1,22 @@
+[
+  "TestCSSBuild",
+  "TestCSSBuildEdit",
+  "TestCSSBuildEditOptions",
+  "TestCSSBuildEditOptionsMultiple",
+  "TestCSSBuildFileLoaderURLRelativeToWebContextRoot",
+  "TestCSSBuildFileLoaderURLRelativeToWebContextRootMultihost",
+  "TestCSSBuildFileLoaderURLRelativeToWebContextRootMultihost/en_first",
+  "TestCSSBuildFileLoaderURLRelativeToWebContextRootMultihost/fr_first",
+  "TestCSSBuildLoadersDefault",
+  "TestCSSBuildLoadersPartial",
+  "TestCSSBuildMultihost",
+  "TestCSSBuildSourceMaps",
+  "TestCSSBuildVars",
+  "TestCSSBuildVarsEmpty",
+  "TestCSSBuildVarsFromParams",
+  "TestCSSBuildVarsNestedIssue14705",
+  "TestCSSBuildVarsNestedUpperCase",
+  "TestCSSBuildVarsQuoted",
+  "TestChromaStyles",
+  "TestChromaStylesErrors"
+]

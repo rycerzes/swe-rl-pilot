@@ -1,0 +1,8 @@
+[
+  "TestEscapeText",
+  "TestIssue81821",
+  "TestIssue81823",
+  "TestIssue81823/property_in",
+  "TestIssue81823/yield",
+  "TestNextJsCtx"
+]

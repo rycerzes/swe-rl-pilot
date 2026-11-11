@@ -1,0 +1,15 @@
+[
+  "TestInclude",
+  "TestIncludeCacheHints",
+  "TestIncludeCached",
+  "TestIncludeCachedDifferentKey",
+  "TestIncludeCachedRecursion",
+  "TestIncludeCachedRecursionShortcode",
+  "TestIncludeCachedTimeout",
+  "TestPartialReturnBareStopsEarly",
+  "TestPartialReturnConditional",
+  "TestPartialReturnFromRange",
+  "TestPartialReturnNil",
+  "TestPartialReturnValueFromTemplateInclude",
+  "TestReturnExecuteFromTemplateInPartial"
+]

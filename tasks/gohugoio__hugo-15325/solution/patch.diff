@@ -1,0 +1,455 @@
+diff --git a/common/hreflect/compare.go b/common/hreflect/compare.go
+new file mode 100644
+index 00000000000..3cdfcf6d416
+--- /dev/null
++++ b/common/hreflect/compare.go
+@@ -0,0 +1,99 @@
++// Copyright 2026 The Hugo Authors. All rights reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++// http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package hreflect
++
++import (
++	"cmp"
++	"math"
++	"reflect"
++)
++
++// CompareNumbers compares a and b exactly, without first converting integers to float64.
++// It returns -1, 0 or 1. ok is false if a or b is not a number or is NaN.
++func CompareNumbers(a, b reflect.Value) (c int, ok bool) {
++	ak, bk := a.Kind(), b.Kind()
++	switch {
++	case IsInt(ak):
++		switch {
++		case IsInt(bk):
++			return cmp.Compare(a.Int(), b.Int()), true
++		case IsUint(bk):
++			return compareIntUint(a.Int(), b.Uint()), true
++		case IsFloat(bk):
++			return compareIntFloat(a.Int(), b.Float())
++		}
++	case IsUint(ak):
++		switch {
++		case IsInt(bk):
++			return -compareIntUint(b.Int(), a.Uint()), true
++		case IsUint(bk):
++			return cmp.Compare(a.Uint(), b.Uint()), true
++		case IsFloat(bk):
++			return compareUintFloat(a.Uint(), b.Float())
++		}
++	case IsFloat(ak):
++		switch {
++		case IsInt(bk):
++			c, ok := compareIntFloat(b.Int(), a.Float())
++			return -c, ok
++		case IsUint(bk):
++			c, ok := compareUintFloat(b.Uint(), a.Float())
++			return -c, ok
++		case IsFloat(bk):
++			af, bf := a.Float(), b.Float()
++			if math.IsNaN(af) || math.IsNaN(bf) {
++				return 0, false
++			}
++			return cmp.Compare(af, bf), true
++		}
++	}
++	return 0, false
++}
++
++func compareIntUint(i int64, u uint64) int {
++	if i < 0 {
++		return -1
++	}
++	return cmp.Compare(uint64(i), u)
++}
++
++func compareIntFloat(i int64, f float64) (int, bool) {
++	switch {
++	case math.IsNaN(f):
++		return 0, false
++	case f >= 1<<63:
++		return -1, true
++	case f < -(1 << 63):
++		return 1, true
++	}
++	if c := cmp.Compare(i, int64(f)); c != 0 {
++		return c, true
++	}
++	return cmp.Compare(0, f-math.Trunc(f)), true
++}
++
++func compareUintFloat(u uint64, f float64) (int, bool) {
++	switch {
++	case math.IsNaN(f):
++		return 0, false
++	case f >= 1<<64:
++		return -1, true
++	case f < 0:
++		return 1, true
++	}
++	if c := cmp.Compare(u, uint64(f)); c != 0 {
++		return c, true
++	}
++	return cmp.Compare(0, f-math.Trunc(f)), true
++}
+diff --git a/common/hreflect/convert.go b/common/hreflect/convert.go
+index 73c3941491e..452d61d2098 100644
+--- a/common/hreflect/convert.go
++++ b/common/hreflect/convert.go
+@@ -89,16 +89,13 @@ func errConvert(v reflect.Value, s string) error {
+ }
+ 
+ // ConvertIfPossible tries to convert val to typ if possible.
+-// This is currently only implemented for int kinds,
+-// added to handle the move to a new YAML library which produces uint64 for unsigned integers.
+-// We can expand on this later if needed.
+-// This conversion is lossless.
++// This is implemented for numeric and string kinds. The conversion is lossless;
++// if the value cannot be represented exactly in typ, it returns false.
++// It was added to handle the move to a new YAML library which produces uint64 for unsigned integers.
+ // See Issue 14079.
+ func ConvertIfPossible(val reflect.Value, typ reflect.Type) (reflect.Value, bool) {
+-	switch val.Kind() {
+-	case reflect.Pointer, reflect.Interface:
++	if val.Kind() == reflect.Interface {
+ 		if val.IsNil() {
+-			// Return typ's zero value.
+ 			return reflect.Zero(typ), true
+ 		}
+ 		val = val.Elem()
+@@ -163,22 +160,37 @@ func convertToUintIfPossible(val reflect.Value, typ reflect.Type) (reflect.Value
+ func convertToFloatIfPossible(val reflect.Value, typ reflect.Type) (reflect.Value, bool) {
+ 	if IsInt(val.Kind()) {
+ 		i := val.Int()
++		if typ.Kind() == reflect.Float32 {
++			f := float32(i)
++			if float64(f) >= 1<<63 || int64(f) != i {
++				return reflect.Value{}, false
++			}
++			return reflect.ValueOf(f).Convert(typ), true
++		}
+ 		f := float64(i)
+-		if typ.OverflowFloat(f) {
++		if f >= 1<<63 || int64(f) != i {
+ 			return reflect.Value{}, false
+ 		}
+ 		return reflect.ValueOf(f).Convert(typ), true
+ 	}
+ 	if IsUint(val.Kind()) {
+ 		u := val.Uint()
++		if typ.Kind() == reflect.Float32 {
++			f := float32(u)
++			if float64(f) >= 1<<64 || uint64(f) != u {
++				return reflect.Value{}, false
++			}
++			return reflect.ValueOf(f).Convert(typ), true
++		}
+ 		f := float64(u)
+-		if typ.OverflowFloat(f) {
++		if f >= 1<<64 || uint64(f) != u {
+ 			return reflect.Value{}, false
+ 		}
+ 		return reflect.ValueOf(f).Convert(typ), true
+ 	}
+ 	if IsFloat(val.Kind()) {
+-		if typ.OverflowFloat(val.Float()) {
++		f := val.Float()
++		if typ.Kind() == reflect.Float32 && float64(float32(f)) != f {
+ 			return reflect.Value{}, false
+ 		}
+ 		return val.Convert(typ), true
+diff --git a/tpl/collections/reflect_helpers.go b/tpl/collections/reflect_helpers.go
+index 56634fd4281..ec77d805280 100644
+--- a/tpl/collections/reflect_helpers.go
++++ b/tpl/collections/reflect_helpers.go
+@@ -94,8 +94,15 @@ func convertValue(v reflect.Value, to reflect.Type) (reflect.Value, error) {
+ }
+ 
+ func convertNumber(v reflect.Value, typ reflect.Type) (reflect.Value, error) {
+-	if v, ok := hreflect.ConvertIfPossible(v, typ); ok {
+-		return v, nil
++	if cv, ok := hreflect.ConvertIfPossible(v, typ); ok {
++		return cv, nil
++	}
++	if v.Kind() == reflect.Interface {
++		v = v.Elem()
++	}
++	if hreflect.IsFloat(v.Kind()) && hreflect.IsFloat(typ.Kind()) {
++		// Narrowing float64 to float32 loses precision, but that is expected.
++		return v.Convert(typ), nil
+ 	}
+ 	return reflect.Value{}, fmt.Errorf("unable to convert value of type %q to %q", v.Type().String(), typ.String())
+ }
+diff --git a/tpl/collections/where.go b/tpl/collections/where.go
+index 7a813fd7cfd..a3a742138f0 100644
+--- a/tpl/collections/where.go
++++ b/tpl/collections/where.go
+@@ -104,28 +104,17 @@ func (ns *Namespace) checkCondition(v, mv reflect.Value, op string) (bool, error
+ 	var fma []float64
+ 	var sma []string
+ 
+-	if mv.Kind() == v.Kind() {
++	if c, ok := hreflect.CompareNumbers(v, mv); ok {
++		// Feed the result through the int64 comparisons below.
++		iv, imv := int64(c), int64(0)
++		ivp, imvp = &iv, &imv
++	} else if mv.Kind() == v.Kind() {
+ 		switch v.Kind() {
+-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+-			iv := v.Int()
+-			ivp = &iv
+-			imv := mv.Int()
+-			imvp = &imv
+-		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+-			iv := int64(v.Uint())
+-			ivp = &iv
+-			imv := int64(mv.Uint())
+-			imvp = &imv
+ 		case reflect.String:
+ 			sv := v.String()
+ 			svp = &sv
+ 			smv := mv.String()
+ 			smvp = &smv
+-		case reflect.Float64:
+-			fv := v.Float()
+-			fvp = &fv
+-			fmv := mv.Float()
+-			fmvp = &fmv
+ 		case reflect.Struct:
+ 			if hreflect.IsTime(v.Type()) {
+ 				iv := ns.toTimeUnix(v)
+@@ -137,17 +126,6 @@ func (ns *Namespace) checkCondition(v, mv reflect.Value, op string) (bool, error
+ 			slv = v.Interface()
+ 			slmv = mv.Interface()
+ 		}
+-	} else if hreflect.IsNumber(v.Kind()) && hreflect.IsNumber(mv.Kind()) {
+-		fv, err := hreflect.ToFloat64E(v)
+-		if err != nil {
+-			return false, err
+-		}
+-		fvp = &fv
+-		fmv, err := hreflect.ToFloat64E(mv)
+-		if err != nil {
+-			return false, err
+-		}
+-		fmvp = &fmv
+ 	} else {
+ 		if mv.Kind() != reflect.Array && mv.Kind() != reflect.Slice {
+ 			return false, nil
+diff --git a/tpl/compare/compare.go b/tpl/compare/compare.go
+index efac289313b..2a4c0af6e4f 100644
+--- a/tpl/compare/compare.go
++++ b/tpl/compare/compare.go
+@@ -19,6 +19,7 @@ import (
+ 	"math"
+ 	"reflect"
+ 	"strconv"
++	"strings"
+ 	"time"
+ 
+ 	"github.com/gohugoio/hugo/compare"
+@@ -96,6 +97,7 @@ func (*Namespace) Default(defaultv any, givenv ...any) (any, error) {
+ }
+ 
+ // Eq returns the boolean truth of arg1 == arg2 || arg1 == arg3 || arg1 == arg4.
++// Numbers are compared by value regardless of type, so e.g. 1 and 1.0 are considered equal.
+ func (n *Namespace) Eq(first any, others ...any) bool {
+ 	if n.caseInsensitive {
+ 		panic("caseInsensitive not implemented for Eq")
+@@ -105,32 +107,14 @@ func (n *Namespace) Eq(first any, others ...any) bool {
+ 		if types.IsNil(v) {
+ 			return nil
+ 		}
+-
+ 		if at, ok := v.(htime.AsTimeProvider); ok {
+ 			return at.AsTime(n.loc)
+ 		}
+-
+-		vv := reflect.ValueOf(v)
+-		switch vv.Kind() {
+-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+-			return vv.Int()
+-		case reflect.Float32, reflect.Float64:
+-			return vv.Float()
+-		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+-			i := vv.Uint()
+-			// If it can fit in an int, convert it.
+-			if i <= math.MaxInt64 {
+-				return int64(i)
+-			}
+-			return i
+-		case reflect.String:
+-			return vv.String()
+-		default:
+-			return v
+-		}
++		return v
+ 	}
+ 
+ 	normFirst := normalize(first)
++	fv := reflect.ValueOf(normFirst)
+ 	for _, other := range others {
+ 		if e, ok := first.(compare.Eqer); ok {
+ 			if e.Eq(other) {
+@@ -147,6 +131,29 @@ func (n *Namespace) Eq(first any, others ...any) bool {
+ 		}
+ 
+ 		other = normalize(other)
++		if normFirst == nil || other == nil {
++			if normFirst == other {
++				return true
++			}
++			continue
++		}
++
++		ov := reflect.ValueOf(other)
++
++		if fv.Kind() == reflect.String && ov.Kind() == reflect.String {
++			if fv.String() == ov.String() {
++				return true
++			}
++			continue
++		}
++
++		if c, ok := hreflect.CompareNumbers(fv, ov); ok {
++			if c == 0 {
++				return true
++			}
++			continue
++		}
++
+ 		if reflect.DeepEqual(normFirst, other) {
+ 			return true
+ 		}
+@@ -242,37 +249,25 @@ func (ns *Namespace) compareGet(a any, b any) (float64, float64) {
+ 	return ns.compareGetWithCollator(nil, a, b)
+ }
+ 
+-func (ns *Namespace) compareTwoUints(a uint64, b uint64) (float64, float64) {
+-	if a < b {
++// toLeftRight maps a three-way comparison result to the (left, right)
++// pair convention used by compareGet.
++func toLeftRight(c int) (float64, float64) {
++	switch {
++	case c < 0:
+ 		return 0, 1
+-	} else if a == b {
+-		return 0, 0
+-	} else {
++	case c > 0:
+ 		return 1, 0
+ 	}
++	return 0, 0
+ }
+ 
+ func (ns *Namespace) compareGetWithCollator(collator *langs.Collator, a any, b any) (float64, float64) {
+ 	if ac, ok := a.(compare.Comparer); ok {
+-		c := ac.Compare(b)
+-		if c < 0 {
+-			return 1, 0
+-		} else if c == 0 {
+-			return 0, 0
+-		} else {
+-			return 0, 1
+-		}
++		return toLeftRight(-ac.Compare(b))
+ 	}
+ 
+ 	if bc, ok := b.(compare.Comparer); ok {
+-		c := bc.Compare(a)
+-		if c < 0 {
+-			return 0, 1
+-		} else if c == 0 {
+-			return 0, 0
+-		} else {
+-			return 1, 0
+-		}
++		return toLeftRight(bc.Compare(a))
+ 	}
+ 
+ 	// Fast path: both values are plain strings.
+@@ -282,25 +277,23 @@ func (ns *Namespace) compareGetWithCollator(collator *langs.Collator, a any, b a
+ 		}
+ 	}
+ 
+-	var left, right float64
+-	var leftStr, rightStr *string
+ 	av := reflect.ValueOf(a)
+ 	bv := reflect.ValueOf(b)
+ 
++	if c, ok := hreflect.CompareNumbers(av, bv); ok {
++		return toLeftRight(c)
++	}
++
++	var left, right float64
++	var leftStr, rightStr *string
++
+ 	switch av.Kind() {
+ 	case reflect.Array, reflect.Chan, reflect.Map, reflect.Slice:
+ 		left = float64(av.Len())
+ 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+-		if hreflect.IsUint(bv.Kind()) {
+-			return ns.compareTwoUints(uint64(av.Int()), bv.Uint())
+-		}
+ 		left = float64(av.Int())
+-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32:
++	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+ 		left = float64(av.Uint())
+-	case reflect.Uint64:
+-		if hreflect.IsUint(bv.Kind()) {
+-			return ns.compareTwoUints(av.Uint(), bv.Uint())
+-		}
+ 	case reflect.Float32, reflect.Float64:
+ 		left = av.Float()
+ 	case reflect.String:
+@@ -326,16 +319,9 @@ func (ns *Namespace) compareGetWithCollator(collator *langs.Collator, a any, b a
+ 	case reflect.Array, reflect.Chan, reflect.Map, reflect.Slice:
+ 		right = float64(bv.Len())
+ 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+-		if hreflect.IsUint(av.Kind()) {
+-			return ns.compareTwoUints(av.Uint(), uint64(bv.Int()))
+-		}
+ 		right = float64(bv.Int())
+-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32:
++	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+ 		right = float64(bv.Uint())
+-	case reflect.Uint64:
+-		if hreflect.IsUint(av.Kind()) {
+-			return ns.compareTwoUints(av.Uint(), bv.Uint())
+-		}
+ 	case reflect.Float32, reflect.Float64:
+ 		right = bv.Float()
+ 	case reflect.String:
+@@ -372,19 +358,9 @@ func (ns *Namespace) compareTwoStrings(collator *langs.Collator, a, b string) (f
+ 		} else {
+ 			c = compare.Strings(a, b)
+ 		}
+-		if c < 0 {
+-			return 0, 1
+-		} else if c > 0 {
+-			return 1, 0
+-		}
+-		return 0, 0
++		return toLeftRight(c)
+ 	}
+-	if a < b {
+-		return 0, 1
+-	} else if a > b {
+-		return 1, 0
+-	}
+-	return 0, 0
++	return toLeftRight(strings.Compare(a, b))
+ }
+ 
+ func (ns *Namespace) toTimeUnix(v reflect.Value) int64 {

@@ -1,0 +1,5 @@
+[
+  "TestBuildImportOutsideProject",
+  "TestBuildImportOutsideProject/Relative_import",
+  "TestBuildImportOutsideProject/Symlink_in_theme"
+]

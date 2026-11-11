@@ -1,0 +1,230 @@
+diff --git a/hugofs/nosymlinks_fs.go b/hugofs/nosymlinks_fs.go
+index b395e71a852..ff0c8393b85 100644
+--- a/hugofs/nosymlinks_fs.go
++++ b/hugofs/nosymlinks_fs.go
+@@ -18,30 +18,48 @@ import (
+ 	"path/filepath"
+ 
+ 	"github.com/gohugoio/hugo/common/herrors"
++	"github.com/gohugoio/hugo/common/hmaps"
+ 	"github.com/spf13/afero"
+ )
+ 
+-// hasSymlinkParent reports whether any directory between name and base is a symlink.
+-// Lstat only refrains from following the last element of a path, so callers checking
+-// name itself need this to keep a symlinked parent from escaping base.
+-// base itself is not checked; an empty base walks to the root of fs.
+-func hasSymlinkParent(fs afero.Fs, base, name string) (bool, error) {
+-	for name != base {
+-		parent := filepath.Dir(name)
+-		if parent == name || parent == base || parent == "." {
+-			return false, nil
+-		}
+-		fi, err := LstatIfPossible(fs, parent)
++// symlinkChecker caches Lstat results for directories.
++// We assume that symlinks are not created or removed while Hugo is running.
++type symlinkChecker struct {
++	fs    afero.Fs
++	cache *hmaps.Cache[string, bool]
++}
++
++func newSymlinkChecker(fs afero.Fs) *symlinkChecker {
++	return &symlinkChecker{fs: fs, cache: hmaps.NewCacheWithOptions[string, bool](hmaps.CacheOptions{Size: 10000})}
++}
++
++// isSymlink reports whether name is a symlink. A missing name is not a symlink.
++func (c *symlinkChecker) isSymlink(name string) (bool, error) {
++	return c.cache.GetOrCreate(name, func() (bool, error) {
++		fi, err := LstatIfPossible(c.fs, name)
+ 		if err != nil {
+ 			if herrors.IsNotExist(err) {
+ 				return false, nil
+ 			}
+ 			return false, err
+ 		}
+-		if fi.Mode()&os.ModeSymlink != 0 {
+-			return true, nil
++		return fi.Mode()&os.ModeSymlink != 0, nil
++	})
++}
++
++// hasSymlinkParent reports whether dir or any of its parents below base is a symlink.
++// base itself is not checked; an empty base walks to the root of fs.
++func (c *symlinkChecker) hasSymlinkParent(base, dir string) (bool, error) {
++	for dir != base && dir != "." {
++		parent := filepath.Dir(dir)
++		if parent == dir {
++			return false, nil
+ 		}
+-		name = parent
++		symlink, err := c.isSymlink(dir)
++		if err != nil || symlink {
++			return symlink, err
++		}
++		dir = parent
+ 	}
+ 	return false, nil
+ }
+@@ -49,31 +67,26 @@ func hasSymlinkParent(fs afero.Fs, base, name string) (bool, error) {
+ // isSymlinkOrHasSymlinkParent reports whether name is a symlink or has a symlinked parent below base.
+ // Parents are only checked when base is set; absolute mount sources may legitimately
+ // live below symlinked directories (e.g. /tmp on macOS).
+-func isSymlinkOrHasSymlinkParent(fs afero.Fs, base, name string) (bool, error) {
+-	fi, err := LstatIfPossible(fs, name)
+-	if err != nil {
+-		if herrors.IsNotExist(err) {
+-			return false, nil
+-		}
+-		return false, err
+-	}
+-	if fi.Mode()&os.ModeSymlink != 0 {
+-		return true, nil
++func (c *symlinkChecker) isSymlinkOrHasSymlinkParent(base, name string) (bool, error) {
++	symlink, err := c.isSymlink(name)
++	if err != nil || symlink {
++		return symlink, err
+ 	}
+ 	if base == "" {
+ 		return false, nil
+ 	}
+-	return hasSymlinkParent(fs, filepath.Clean(base), name)
++	return c.hasSymlinkParent(filepath.Clean(base), filepath.Dir(name))
+ }
+ 
+ // NewDropSymlinksFs returns an afero.Fs wrapper that treats symlinks as non-existing files.
+ func NewDropSymlinksFs(base afero.Fs) *DropSymlinksFs {
+-	return &DropSymlinksFs{base}
++	return &DropSymlinksFs{Fs: base, symlinks: newSymlinkChecker(base)}
+ }
+ 
+ // DropSymlinksFs is an afero.Fs wrapper that treats symlinks as non-existing files.
+ type DropSymlinksFs struct {
+ 	afero.Fs
++	symlinks *symlinkChecker
+ }
+ 
+ func (fs *DropSymlinksFs) Open(name string) (afero.File, error) {
+@@ -95,7 +108,7 @@ func (fs *DropSymlinksFs) Stat(name string) (os.FileInfo, error) {
+ 	if fi.Mode()&os.ModeSymlink != 0 {
+ 		return nil, os.ErrNotExist
+ 	}
+-	symlinkParent, err := hasSymlinkParent(fs.Fs, "", name)
++	symlinkParent, err := fs.symlinks.hasSymlinkParent("", filepath.Dir(name))
+ 	if err != nil {
+ 		return nil, err
+ 	}
+diff --git a/hugofs/rootmapping_fs.go b/hugofs/rootmapping_fs.go
+index e8c8e280489..f44f62d497b 100644
+--- a/hugofs/rootmapping_fs.go
++++ b/hugofs/rootmapping_fs.go
+@@ -45,6 +45,7 @@ func NewRootMappingFs(fs afero.Fs, rms ...*RootMapping) (*RootMappingFs, error)
+ 	rootMapToReal := radix.New[[]*RootMapping]()
+ 	realMapToRoot := radix.New[[]*RootMapping]()
+ 	id := fmt.Sprintf("rfs-%d", rootMappingFsCounter.Add(1))
++	symlinks := newSymlinkChecker(fs)
+ 
+ 	addMapping := func(key string, rm *RootMapping, to *radix.Tree[[]*RootMapping]) {
+ 		mappings, _ := to.Get(key)
+@@ -65,7 +66,7 @@ func NewRootMappingFs(fs afero.Fs, rms ...*RootMapping) (*RootMappingFs, error)
+ 		// the module root) to escape the module. The main project is exempt;
+ 		// its mount sources may be absolute, so a symlink gains nothing.
+ 		if !rm.IsProject {
+-			symlink, err := isSymlinkOrHasSymlinkParent(fs, rm.ToBase, rm.To)
++			symlink, err := symlinks.isSymlinkOrHasSymlinkParent(rm.ToBase, rm.To)
+ 			if err != nil {
+ 				return nil, err
+ 			}
+@@ -170,6 +171,7 @@ func NewRootMappingFs(fs afero.Fs, rms ...*RootMapping) (*RootMappingFs, error)
+ 		Fs:            fs,
+ 		rootMapToReal: rootMapToReal,
+ 		realMapToRoot: realMapToRoot,
++		symlinks:      symlinks,
+ 	}
+ 
+ 	return rfs, nil
+@@ -242,6 +244,7 @@ type RootMappingFs struct {
+ 	afero.Fs
+ 	rootMapToReal *radix.Tree[[]*RootMapping]
+ 	realMapToRoot *radix.Tree[[]*RootMapping]
++	symlinks      *symlinkChecker
+ }
+ 
+ var rootMappingFsCounter atomic.Int32
+@@ -645,6 +648,14 @@ func (rfs *RootMappingFs) collectDirEntries(prefix string) ([]iofs.DirEntry, err
+ 			if rm.fi.IsDir() {
+ 				fi, err := rm.fi.Meta().JoinStat(subdir)
+ 				if err == nil {
++					// Apply the same symlink rules as statRoot.
++					symlink, err := rfs.symlinks.isSymlinkOrHasSymlinkParent(rm.To, fi.Meta().Filename)
++					if err != nil {
++						return nil, err
++					}
++					if symlink {
++						continue
++					}
+ 					if err := collectDir(rm, fi); err != nil {
+ 						return nil, err
+ 					}
+@@ -747,7 +758,7 @@ func (fs *RootMappingFs) statRoot(root *RootMapping, filename string) (FileMetaI
+ 	if fi.Mode()&os.ModeSymlink != 0 {
+ 		return nil, os.ErrNotExist
+ 	}
+-	symlinkParent, err := hasSymlinkParent(fs.Fs, root.To, filename)
++	symlinkParent, err := fs.symlinks.hasSymlinkParent(root.To, filepath.Dir(filename))
+ 	if err != nil {
+ 		return nil, err
+ 	}
+diff --git a/markup/tableofcontents/tableofcontents.go b/markup/tableofcontents/tableofcontents.go
+index 6c40c9a598d..567fbb24fcf 100644
+--- a/markup/tableofcontents/tableofcontents.go
++++ b/markup/tableofcontents/tableofcontents.go
+@@ -243,7 +243,7 @@ func (b *tocBuilder) writeHeading(level, indent int, h *Heading) {
+ 	b.indent(indent)
+ 	b.s.WriteString("<li>")
+ 	if !h.IsZero() {
+-		b.s.WriteString("<a href=\"#" + h.ID + "\">" + h.Title + "</a>")
++		b.s.WriteString("<a href=\"#" + template.HTMLEscapeString(h.ID) + "\">" + h.Title + "</a>")
+ 	}
+ 	b.writeHeadings(level, indent, h.Headings)
+ 	b.s.WriteString("</li>\n")
+diff --git a/testscripts/commands/no_symlinks.txt b/testscripts/commands/no_symlinks.txt
+index cf8904d3e7b..ca2f977abaa 100644
+--- a/testscripts/commands/no_symlinks.txt
++++ b/testscripts/commands/no_symlinks.txt
+@@ -8,6 +8,7 @@ ln ./rootdir ./projectmountroot
+ ln ./rootdir ./projectmountparent
+ ln ./rootdir ./themes/mytheme/thememountroot
+ ln ./rootdir ./themes/mytheme/thememountparent
++ln ./rootdir ./themes/mytheme/assets/vendor
+ 
+ hugo
+ 
+@@ -52,6 +53,9 @@ target = 'assets/thememountroot'
+ [[module.mounts]]
+ source = 'thememountparent/subdir'
+ target = 'assets/thememountparent'
++[[module.mounts]]
++source = 'nestedsource'
++target = 'assets/vendor/x'
+ -- README.md --
+ Read me.
+ -- layouts/all.html --
+@@ -66,6 +70,9 @@ Read me.
+ {{ with resources.Get "thememountroot/rootdirfile1.txt"}}FAIL {{ .Publish }}{{ else }}OK{{ end }}
+ {{ with resources.Get "thememountparent/rootdirfile3.txt"}}FAIL {{ .Publish }}{{ else }}OK{{ end }}
+ {{ with resources.GetMatch "thememount*/**"}}FAIL {{ .Publish }}{{ else }}OK{{ end }}
++{{ with resources.Get "vendor/x/nested.txt"}}OK {{ .Publish }}{{ else }}FAIL{{ end }}
++{{ with resources.Get "vendor/rootdirfile1.txt"}}FAIL {{ .Publish }}{{ else }}OK{{ end }}
++{{ $vendor := resources.Match "vendor/**" }}{{ if eq (len $vendor) 1 }}OK{{ else }}FAIL {{ range $vendor }}{{ .Name }} {{ end }}{{ end }}
+ Page: {{ .RelPermalink }}|{{ .Content }}|
+ 
+ {{/* os template package. */}}
+@@ -89,6 +96,8 @@ Page: {{ .RelPermalink }}|{{ .Content }}|
+ Content.
+ -- themes/mytheme/static/modstatictok.txt --
+ Content.
++-- themes/mytheme/nestedsource/nested.txt --
++Nested content.
+ -- rootfile.txt --
+ Root Content.
+ -- assets/myassets/myfile.txt --

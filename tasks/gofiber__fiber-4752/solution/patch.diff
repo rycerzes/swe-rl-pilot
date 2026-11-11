@@ -1,0 +1,1647 @@
+diff --git a/addon/retry/exponential_backoff.go b/addon/retry/exponential_backoff.go
+index cef12c92dea..440ce436c98 100644
+--- a/addon/retry/exponential_backoff.go
++++ b/addon/retry/exponential_backoff.go
+@@ -37,25 +37,51 @@ func NewExponentialBackoff(config ...Config) *ExponentialBackoff {
+ 	}
+ }
+ 
++// withDefaults returns a copy of e in which every field left unset takes the value
++// NewExponentialBackoff gives it, so that a zero ExponentialBackoff, or a struct
++// literal that names only some of the fields, retries like the default instead
++// of never calling f. A zero or negative number counts as unset. e itself is not
++// changed, since one ExponentialBackoff can be shared.
++func (e *ExponentialBackoff) withDefaults() ExponentialBackoff {
++	eff := *e
++	if eff.InitialInterval <= 0 {
++		eff.InitialInterval = eff.currentInterval
++	}
++	if eff.InitialInterval <= 0 {
++		eff.InitialInterval = DefaultConfig.InitialInterval
++	}
++	if eff.MaxBackoffTime <= 0 {
++		eff.MaxBackoffTime = DefaultConfig.MaxBackoffTime
++	}
++	if eff.Multiplier <= 0 {
++		eff.Multiplier = DefaultConfig.Multiplier
++	}
++	if eff.MaxRetryCount <= 0 {
++		eff.MaxRetryCount = DefaultConfig.MaxRetryCount
++	}
++	return eff
++}
++
+ // Retry is the core logic of the retry mechanism. If the calling function returns
+ // nil as an error, then the Retry method is terminated with returning nil. Otherwise,
+ // if all function calls are returned error, then the method returns this error.
+ //
++// f is called at least once: a field left at its zero value takes its default, so
++// even a zero ExponentialBackoff makes up to DefaultConfig.MaxRetryCount attempts.
++//
+ // Each call starts from InitialInterval with its own state, so one ExponentialBackoff can be shared.
+ func (e *ExponentialBackoff) Retry(f func() error) error {
+-	interval := e.InitialInterval
+-	if interval <= 0 {
+-		interval = e.currentInterval
+-	}
++	eff := e.withDefaults()
++	interval := eff.InitialInterval
+ 	var err error
+-	for i := 0; i < e.MaxRetryCount; i++ {
++	for i := 0; i < eff.MaxRetryCount; i++ {
+ 		err = f()
+ 		if err == nil {
+ 			return nil
+ 		}
+-		if i < e.MaxRetryCount-1 {
++		if i < eff.MaxRetryCount-1 {
+ 			var sleep time.Duration
+-			sleep, interval = e.next(interval)
++			sleep, interval = eff.next(interval)
+ 			time.Sleep(sleep)
+ 		}
+ 	}
+diff --git a/bind.go b/bind.go
+index 981a206205f..2ce5c4140c7 100644
+--- a/bind.go
++++ b/bind.go
+@@ -144,7 +144,9 @@ func (b *Bind) WithAutoHandling() *Bind {
+ 	return b
+ }
+ 
+-// SkipValidation enables or disables struct validation for the current bind chain.
++// SkipValidation enables or disables struct validation. The setting stays on the
++// Bind that c.Bind() returns, so it applies to every later bind of the request
++// until SkipValidation is called again, and ends with the request.
+ func (b *Bind) SkipValidation(skip bool) *Bind {
+ 	b.shouldSkipValidation = skip
+ 
+diff --git a/binder/README.md b/binder/README.md
+index aded1efaa86..2854d5665a7 100644
+--- a/binder/README.md
++++ b/binder/README.md
+@@ -23,12 +23,13 @@ Fiber provides several default binders out of the box:
+ - [JSON](json.go)
+ - [XML](xml.go)
+ - [CBOR](cbor.go)
++- [MsgPack](msgpack.go)
+ 
+ ## Guides
+ 
+ ### Binding into a Struct
+ 
+-Fiber supports binding request data directly into a struct using [gofiber/schema](https://github.com/gofiber/schema). Here's an example:
++Fiber supports binding request data directly into a struct using [gofiber/schema](https://github.com/gofiber/schema). `Body` picks the decoder from the request's `Content-Type` header and returns `fiber.ErrUnprocessableEntity` (422) when none matches. Here's an example:
+ 
+ ```go
+ // Field names must start with an uppercase letter
+@@ -63,11 +64,10 @@ curl -X POST -H "Content-Type: application/x-www-form-urlencoded" --data "name=j
+ 
+ // Multipart Form
+ curl -X POST -F name=john -F pass=doe http://localhost:3000
+-
+-// Query Parameters
+-curl -X POST "http://localhost:3000/?name=john&pass=doe"
+ ```
+ 
++`Body` does not read the query string. Bind query parameters with `c.Bind().Query(p)` and tags such as `query:"name"` instead.
++
+ ### Binding into a Map
+ 
+ Fiber allows binding request data into a `map[string]string` or `map[string][]string`. Here's an example:
+@@ -95,23 +95,25 @@ curl "http://localhost:3000/?name=john&pass=doe&products=shoe&products=hat"
+ 
+ ### Automatic Error Handling with `WithAutoHandling`
+ 
+-By default, Fiber returns binder errors directly. To handle errors automatically and return a `400 Bad Request` status, use the `WithAutoHandling()` method.
++By default, Fiber returns binder errors directly. To have a binding failure set a `400 Bad Request` status and come back as a `*fiber.Error` with the message `Bad request: ...`, use the `WithAutoHandling()` method. You must still return the error.
++
++The `required` option belongs to the tags of the form, query, header, cookie, response header and URI binders. The JSON, XML, CBOR and MsgPack decoders do not check it.
+ 
+ **Example:**
+ 
+ ```go
+ // Field names must start with an uppercase letter
+ type Person struct {
+-    Name string `json:"name,required"`
+-    Pass string `json:"pass"`
++    Name string `query:"name,required"`
++    Pass string `query:"pass"`
+ }
+ 
+ app.Get("/", func(c fiber.Ctx) error {
+     p := new(Person)
+ 
+-    if err := c.Bind().WithAutoHandling().JSON(p); err != nil {
++    if err := c.Bind().WithAutoHandling().Query(p); err != nil {
+         return err 
+-        // Automatically returns status code 400
++        // Automatically sets status code 400
+         // Response: Bad request: name is empty
+     }
+ 
+@@ -121,9 +123,11 @@ app.Get("/", func(c fiber.Ctx) error {
+ 
+ // Run tests with the following curl command:
+ 
+-curl -X GET -H "Content-Type: application/json" --data "{\"pass\":\"doe\"}" localhost:3000
++curl "http://localhost:3000/?pass=doe"
+ ```
+ 
++`c.Bind()` returns the same `Bind` for the whole request, so `WithAutoHandling()` stays in effect for every later bind of that request until you call `WithoutAutoHandling()`.
++
+ ### Defining a Custom Binder
+ 
+ Fiber maintains a minimal codebase by not including every possible binder. If you need to use a custom binder, you can easily register and utilize it. Here's an example of creating a `toml` binder.
+@@ -177,7 +181,7 @@ pass = 'test'" localhost:3000
+ 
+ ### Defining a Custom Validator
+ 
+-All Fiber binders support struct validation if a validator is defined in the configuration. You can create your own validator or use existing ones like [go-playground/validator](https://github.com/go-playground/validator) or [go-ozzo/ozzo-validation](https://github.com/go-ozzo/ozzo-validation). Here's an example of a simple custom validator:
++All Fiber binders support struct validation if a validator is defined in the configuration. The validator implements `fiber.StructValidator`, a single method: `Validate(out any) error`. It runs after a bind succeeds, for destinations that are structs (or pointers to structs). You can create your own validator or use existing ones like [go-playground/validator](https://github.com/go-playground/validator) or [go-ozzo/ozzo-validation](https://github.com/go-ozzo/ozzo-validation). Here's an example of a simple custom validator:
+ 
+ ```go
+ type Query struct {
+@@ -186,13 +190,11 @@ type Query struct {
+ 
+ type structValidator struct{}
+ 
+-func (v *structValidator) Engine() any {
+-    return nil // Implement if using an external validation engine
+-}
+-
+-func (v *structValidator) ValidateStruct(out any) error {
+-    data := reflect.ValueOf(out).Elem().Interface()
+-    query := data.(Query)
++func (v *structValidator) Validate(out any) error {
++    query, ok := out.(*Query)
++    if !ok {
++        return nil
++    }
+ 
+     if query.Name != "john" {
+         return errors.New("you should have entered the correct name!")
+@@ -221,3 +223,5 @@ func main() {
+ 
+ curl "http://localhost:3000/?name=efe"
+ ```
++
++The validator's error is returned as is, so the default error handler answers it with `500 Internal Server Error`. Return a `*fiber.Error` such as `fiber.NewError(fiber.StatusBadRequest, "...")` from `Validate` when the request is at fault. `SkipValidation(true)` bypasses the validator for the rest of the request.
+diff --git a/client/README.md b/client/README.md
+index a992fcc6fb7..462da585d50 100644
+--- a/client/README.md
++++ b/client/README.md
+@@ -1,27 +1,22 @@
+ <h1 align="center">Fiber Client</h1>
+ <p align="center">Easy-to-use HTTP client based on fasthttp (inspired by <a href="https://github.com/go-resty/resty">resty</a> and <a href="https://github.com/axios/axios">axios</a>)</p>
+-<p align="center"><a href="#features">Features</a> section describes in detail about Resty capabilities</p>
++<p align="center"><a href="#features">Features</a> section describes Fiber Client capabilities in detail</p>
+ 
+ ## Features
+ 
+-> The characteristics have not yet been written.
+-
+-- GET, POST, PUT, DELETE, HEAD, PATCH, OPTIONS, etc.
++- GET, POST, PUT, DELETE, HEAD, PATCH, OPTIONS, QUERY, and custom methods
+ - Simple and chainable methods for settings and request
+-- Request Body can be `string`, `[]byte`, `map`, `slice`
+-  - Auto detects `Content-Type`
+-  - Buffer processing for `files`
+-  - Native `*fasthttp.Request` instance can be accessed during middleware and request execution via `Request.RawRequest`
+-  - Request Body can be read multiple time via `Request.RawRequest.GetBody()`
++- The request body is set with the method that matches its format, and the `Content-Type` follows from it
++  - `SetJSON`, `SetXML` and `SetCBOR` marshal a value, `SetFormData` sends URL-encoded form fields
++  - `AddFile`, `AddFileWithReader` and `AddFiles` send a multipart body
++  - `SetRawBody` sends bytes as given and sets no `Content-Type` of its own
++  - Native `*fasthttp.Request` instance can be accessed in request hooks via `Request.RawRequest`
+ - Response object gives you more possibility
+   - Access as `[]byte` by `response.Body()` or access as `string` by `response.String()`
+-- Automatic marshal and unmarshal for JSON and XML content type
+-  - Default is JSON, if you supply struct/map without header Content-Type
+-  - For auto-unmarshal, refer to -
+-    - Success scenario Request.SetResult() and Response.Result().
+-    - Error scenario Request.SetError() and Response.Error().
+-    - Supports RFC7807 - application/problem+json & application/problem+xml
+-  - Provide an option to override JSON Marshal/Unmarshal and XML Marshal/Unmarshal
++  - Unmarshal the body with `response.JSON(&v)`, `response.XML(&v)` or `response.CBOR(&v)`
++  - Write the body to a file or an `io.Writer` with `response.Save()`
++- Provide an option to override the JSON, XML and CBOR marshal and unmarshal functions with `SetJSONMarshal`, `SetJSONUnmarshal`, `SetXMLMarshal`, `SetXMLUnmarshal`, `SetCBORMarshal` and `SetCBORUnmarshal`
++- Request and response hooks, a cookie jar, retries and timeouts
+ 
+ ## Usage
+ 
+@@ -29,7 +24,23 @@ The following samples will assist you to become as comfortable as possible with
+ 
+ ```go
+ // Import Fiber Client into your code and refer it as `client`.
+-import "github.com/gofiber/fiber/client"
++import "github.com/gofiber/fiber/v3/client"
+ ```
+ 
+ ### Simple GET
++
++```go
++cc := client.New()
++cc.SetTimeout(10 * time.Second)
++
++resp, err := cc.Get("https://httpbin.org/get")
++if err != nil {
++    panic(err)
++}
++defer resp.Close()
++
++fmt.Printf("Status: %d\n", resp.StatusCode())
++fmt.Printf("Body: %s\n", resp.String())
++```
++
++See the [client documentation](../docs/client/rest.md) for the full API.
+diff --git a/client/client.go b/client/client.go
+index f3696fcbe02..5d9ebb5e194 100644
+--- a/client/client.go
++++ b/client/client.go
+@@ -14,6 +14,7 @@ import (
+ 	"errors"
+ 	"fmt"
+ 	"io"
++	stdlog "log" //nolint:depguard // log.DefaultLogger is keyed by the standard library logger type the default logger exposes.
+ 	"os"
+ 	"path/filepath"
+ 	"slices"
+@@ -335,22 +336,34 @@ func (c *Client) SetCertificates(certs ...tls.Certificate) *Client {
+ 	return c
+ }
+ 
++// panicf logs the message through the client's logger and panics with it. It
++// panics without a log line when the logger was set to nil, and also when the
++// logger's Panicf returns, so a setting that could not be applied is never
++// reported as applied.
++func (c *Client) panicf(format string, args ...any) {
++	if logger := c.Logger(); logger != nil {
++		logger.Panicf(format, args...)
++	}
++	panic(fmt.Sprintf(format, args...))
++}
++
+ // SetRootCertificate adds one or more root certificates to the client's TLS configuration.
++// It panics when the file cannot be read or holds no valid PEM certificate.
+ func (c *Client) SetRootCertificate(path string) *Client {
+ 	cleanPath := filepath.Clean(path)
+ 	file, err := os.Open(cleanPath)
+ 	if err != nil {
+-		c.logger.Panicf("client: %v", err)
++		c.panicf("client: %v", err)
+ 	}
+ 	defer func() {
+ 		if closeErr := file.Close(); closeErr != nil {
+-			c.logger.Panicf("client: failed to close file: %v", closeErr)
++			c.panicf("client: failed to close file: %v", closeErr)
+ 		}
+ 	}()
+ 
+ 	pem, err := io.ReadAll(file)
+ 	if err != nil {
+-		c.logger.Panicf("client: %v", err)
++		c.panicf("client: %v", err)
+ 	}
+ 
+ 	config := c.TLSConfig()
+@@ -359,13 +372,14 @@ func (c *Client) SetRootCertificate(path string) *Client {
+ 	}
+ 
+ 	if !config.RootCAs.AppendCertsFromPEM(pem) {
+-		c.logger.Panicf("client: %v", ErrFailedToAppendCert)
++		c.panicf("client: %v", ErrFailedToAppendCert)
+ 	}
+ 
+ 	return c
+ }
+ 
+ // SetRootCertificateFromString adds one or more root certificates from a string to the client's TLS configuration.
++// It panics when the string holds no valid PEM certificate.
+ func (c *Client) SetRootCertificateFromString(pem string) *Client {
+ 	config := c.TLSConfig()
+ 
+@@ -374,7 +388,7 @@ func (c *Client) SetRootCertificateFromString(pem string) *Client {
+ 	}
+ 
+ 	if !config.RootCAs.AppendCertsFromPEM([]byte(pem)) {
+-		c.logger.Panicf("client: %v", ErrFailedToAppendCert)
++		c.panicf("client: %v", ErrFailedToAppendCert)
+ 	}
+ 
+ 	return c
+@@ -581,14 +595,38 @@ func (c *Client) DisablePathNormalizing() bool {
+ }
+ 
+ // SetDisablePathNormalizing configures the client to disable or enable path normalizing.
++//
++// fasthttp normalizes the path of a request when it writes it, according to the
++// client that sends it, so the setting is applied to the wrapped fasthttp client
++// (every host client behind a load balancer): a client created with
++// NewWithClient, NewWithHostClient or NewWithLBClient changes the one it wraps,
++// for everyone who shares it. Call it before the first request, because a
++// fasthttp.Client copies the setting into the host clients it has already
++// created only when it creates them.
++//
++// The check that keeps a path parameter value inside its segment is lifted only
++// when the wrapped client is known to send the path as built: a client from New,
++// a fasthttp.Client handed to NewWithClient with the setting already on, or a
++// host client or balancer whose host clients all have it on. Once a request has
++// gone out through a fasthttp.Client that normalized, it stays on.
+ func (c *Client) SetDisablePathNormalizing(disable bool) *Client {
+ 	c.mu.Lock()
+ 	defer c.mu.Unlock()
+ 
+ 	c.isPathNormalizingDisabled = disable
++	if t, ok := c.transport.(pathNormalizingTransport); ok {
++		t.SetDisablePathNormalizing(disable)
++	}
+ 	return c
+ }
+ 
++// writesPathAsBuilt reports whether the wrapped fasthttp client sends the request
++// path exactly as built, so nothing normalizes it after Fiber has put it together.
++func (c *Client) writesPathAsBuilt() bool {
++	t, ok := c.transport.(pathNormalizingTransport)
++	return ok && t.DisablePathNormalizing()
++}
++
+ // PathParam returns the value of the specified path parameter. Returns an empty string if it does not exist.
+ func (c *Client) PathParam(key string) string {
+ 	c.mu.RLock()
+@@ -692,7 +730,8 @@ func (c *Client) SetTimeout(t time.Duration) *Client {
+ 	return c
+ }
+ 
+-// Debug enables debug-level logging output.
++// Debug enables debug-level logging output: after each response, the raw request and
++// response, headers and bodies included, are logged through the client's logger.
+ func (c *Client) Debug() *Client {
+ 	c.mu.Lock()
+ 	defer c.mu.Unlock()
+@@ -829,7 +868,7 @@ func (c *Client) Reset() {
+ 	c.mu.Lock()
+ 	defer c.mu.Unlock()
+ 
+-	c.transport = newStandardClientTransport(&fasthttp.Client{})
++	c.transport = newOwnedStandardClientTransport()
+ 	c.baseURL = ""
+ 	c.timeout = 0
+ 	c.userAgent = ""
+@@ -953,10 +992,17 @@ func New() *Client {
+ 	// Follow-up performance optimizations:
+ 	// Try to use a pool to reduce the memory allocation cost for the Fiber client and the fasthttp client.
+ 	// If possible, also consider pooling other structs (e.g., request headers, cookies, query parameters, path parameters).
+-	return NewWithClient(&fasthttp.Client{})
++	return newClient(newOwnedStandardClientTransport())
+ }
+ 
+ // NewWithClient creates and returns a new Client object from an existing fasthttp.Client.
++//
++// Fiber cannot tell whether that client has served a host already, and a
++// fasthttp.Client gives each host the path normalizing setting it had when it
++// first served that host. So unless the client was created with
++// DisablePathNormalizing set, SetDisablePathNormalizing changes what is sent to
++// hosts not yet served, but the check that keeps a path parameter value inside
++// its segment stays on.
+ func NewWithClient(c *fasthttp.Client) *Client {
+ 	if c == nil {
+ 		panic("fasthttp.Client must not be nil")
+@@ -1003,7 +1049,7 @@ func newClient(transport httpClientTransport) *Client {
+ 		cborMarshal:          cbor.Marshal,
+ 		cborUnmarshal:        cbor.Unmarshal,
+ 		xmlUnmarshal:         xml.Unmarshal,
+-		logger:               log.DefaultLogger[*log.Logger](),
++		logger:               log.DefaultLogger[*stdlog.Logger](),
+ 	}
+ }
+ 
+diff --git a/client/cookiejar.go b/client/cookiejar.go
+index 10673b5f167..9fe4defcfe7 100644
+--- a/client/cookiejar.go
++++ b/client/cookiejar.go
+@@ -534,7 +534,14 @@ func (cj *CookieJar) parseCookiesFromResp(host, path []byte, resp *fasthttp.Resp
+ 	defaultPath := defaultCookiePathFor(path)
+ 	for _, value := range resp.Header.Cookies() {
+ 		tmp := fasthttp.AcquireCookie()
+-		_ = tmp.ParseBytes(value) //nolint:errcheck // ignore error
++		// An attribute fasthttp cannot parse is ignored (RFC 6265 Section 5.2),
++		// and so is nothing else: a plain ParseBytes stops at it and loses every
++		// attribute after it, Secure and Path included. A name and value that
++		// will not parse leave nothing worth storing.
++		if err := parseSetCookie(tmp, value); err != nil {
++			fasthttp.ReleaseCookie(tmp)
++			continue
++		}
+ 		applyMaxAge(tmp, now, value)
+ 
+ 		// A Set-Cookie whose Path attribute is missing — or does not begin
+diff --git a/client/hooks.go b/client/hooks.go
+index e981273b677..17aef54f71f 100644
+--- a/client/hooks.go
++++ b/client/hooks.go
+@@ -87,7 +87,15 @@ func parserRequestURL(c *Client, req *Request) error {
+ 	// looked up first, so they keep overriding the client's for the same name.
+ 	disablePathNormalizing := c.isPathNormalizingDisabled || req.DisablePathNormalizing()
+ 
+-	uri, err := substitutePathParams(uri, disablePathNormalizing, req.path, *c.path)
++	// The Fiber setting only says how this URL is built. Whether the path is
++	// normalized when it is written is up to the wrapped fasthttp client, which
++	// stamps its own setting on the request just before that, so the check that
++	// keeps a value inside its segment may be lifted only for a client that
++	// really leaves the path alone. Anything else would let "x/../../admin"
++	// change the path that is sent.
++	pathSentAsBuilt := disablePathNormalizing && c.writesPathAsBuilt()
++
++	uri, err := substitutePathParams(uri, pathSentAsBuilt, req.path, *c.path)
+ 	if err != nil {
+ 		return err
+ 	}
+@@ -138,9 +146,12 @@ var pathParamEndChars = func() [256]bool {
+ //
+ // With path normalizing left on, escaping alone cannot hold a value inside its
+ // segment — normalizing decodes the path before it collapses "." and ".." — so
+-// a value that would break out is rejected with ErrPathParamInPath. A
+-// placeholder in the authority is filled verbatim and checked against
+-// isHostSafe, returning ErrPathParamInHost.
++// a value that would break out is rejected with ErrPathParamInPath.
++// disablePathNormalizing must therefore be true only when nothing normalizes the
++// path after this point; parserRequestURL passes it that way. An empty value, "."
++// and ".." are rejected either way, see cannotFillSegment. A placeholder in the
++// authority is filled verbatim and checked against isHostSafe, returning
++// ErrPathParamInHost.
+ //
+ //nolint:revive // flag-parameter: disablePathNormalizing is the request setting, as in composeRedirectURL
+ func substitutePathParams(uri string, disablePathNormalizing bool, sources ...PathParam) (string, error) {
+@@ -184,7 +195,7 @@ func substitutePathParams(uri string, disablePathNormalizing bool, sources ...Pa
+ 			}
+ 			buf = append(buf, ph.value...)
+ 		} else {
+-			if !disablePathNormalizing && !isSingleSegment(ph.value) {
++			if cannotFillSegment(ph.value) || (!disablePathNormalizing && hasSeparator(ph.value)) {
+ 				return "", fmt.Errorf("%w: %q", ErrPathParamInPath, ph.name)
+ 			}
+ 			buf = utils.AppendPathEscape(buf, ph.value)
+@@ -200,15 +211,23 @@ func substitutePathParams(uri string, disablePathNormalizing bool, sources ...Pa
+ 	return string(append(buf, uri[last:]...)), nil
+ }
+ 
+-// isSingleSegment reports whether val still occupies exactly one path segment
+-// after fasthttp has normalized the path. Normalizing percent-decodes the path
+-// before it collapses "//", "/./" and "/x/../", so an escaped "/" turns back
+-// into a real separator and a value of "../../admin" walks out of the path the
+-// template set, while an empty value leaves a "//" that collapses and drops
+-// the segment entirely. Only the raw bytes matter: a "%2F" typed by the caller
+-// is written as "%252F" and decodes to a literal "%2F", not to a separator.
+-func isSingleSegment(val string) bool {
+-	return val != "" && val != "." && val != ".." && utils.IndexAny2(val, '/', '\\') == -1
++// cannotFillSegment reports whether val cannot stand for a path segment however
++// the path is sent. An empty value leaves a "//" that normalizing collapses and
++// that a server merging slashes drops even from a path sent as written, so the
++// segment is gone. "." and ".." are dot segments: whoever receives one removes
++// it or resolves it against the segment before, and no escape hides it.
++func cannotFillSegment(val string) bool {
++	return val == "" || val == "." || val == ".."
++}
++
++// hasSeparator reports whether val holds a byte that ends its segment once
++// fasthttp has normalized the path. Normalizing percent-decodes the path before
++// it collapses "//", "/./" and "/x/../", so an escaped "/" turns back into a
++// real separator and a value of "../../admin" walks out of the path the template
++// set. Only the raw bytes matter: a "%2F" typed by the caller is written as
++// "%252F" and decodes to a literal "%2F", not to a separator.
++func hasSeparator(val string) bool {
++	return utils.IndexAny2(val, '/', '\\') != -1
+ }
+ 
+ // isHostSafe reports whether val may be substituted into a URI authority
+@@ -396,10 +415,17 @@ func parserRequestHeader(c *Client, req *Request) error {
+ 		req.RawRequest.Header.SetUserAgent(req.userAgent)
+ 	}
+ 
+-	// Set Referer header.
+-	req.RawRequest.Header.SetReferer(c.referer)
++	// Set Referer header. It comes from SetReferer alone, the request's value
++	// first, and without one the header is removed: it used to be set to an
++	// empty value, which put a "Referer:" line on every request.
++	referer := c.referer
+ 	if req.referer != "" {
+-		req.RawRequest.Header.SetReferer(req.referer)
++		referer = req.referer
++	}
++	if referer != "" {
++		req.RawRequest.Header.SetReferer(referer)
++	} else {
++		req.RawRequest.Header.Del(fasthttp.HeaderReferer)
+ 	}
+ 
+ 	// Set cookies from the cookie jar if available.
+@@ -557,11 +583,9 @@ func addFormFile(mw *multipart.Writer, f *File, fileBuf *[]byte) error {
+ func parserResponseCookie(c *Client, resp *Response, req *Request) error {
+ 	for key, value := range resp.RawResponse.Header.Cookies() {
+ 		cookie := fasthttp.AcquireCookie()
+-		if err := cookie.ParseBytes(value); err != nil {
+-			if err := parseCookieIgnoringBadAttrs(cookie, value); err != nil {
+-				fasthttp.ReleaseCookie(cookie)
+-				continue
+-			}
++		if err := parseSetCookie(cookie, value); err != nil {
++			fasthttp.ReleaseCookie(cookie)
++			continue
+ 		}
+ 		cookie.SetKeyBytes(key)
+ 		resp.cookie = append(resp.cookie, cookie)
+@@ -578,6 +602,18 @@ func parserResponseCookie(c *Client, resp *Response, req *Request) error {
+ 	return nil
+ }
+ 
++// parseSetCookie parses a Set-Cookie value into cookie. A value fasthttp parses
++// cleanly costs one pass; otherwise parseCookieIgnoringBadAttrs drops just the
++// attributes fasthttp rejects instead of everything from the first one on. An
++// error means the name/value pair itself is unusable and the cookie has to be
++// discarded.
++func parseSetCookie(cookie *fasthttp.Cookie, value []byte) error {
++	if err := cookie.ParseBytes(value); err == nil {
++		return nil
++	}
++	return parseCookieIgnoringBadAttrs(cookie, value)
++}
++
+ // parseCookieIgnoringBadAttrs parses a Set-Cookie value, dropping only the
+ // attributes fasthttp cannot parse. RFC 6265 §5.2 has an unparsable attribute
+ // ignored, while fasthttp abandons the cookie at the first one — losing the
+diff --git a/client/transport.go b/client/transport.go
+index 7db86036cc5..991b3429525 100644
+--- a/client/transport.go
++++ b/client/transport.go
+@@ -7,6 +7,7 @@ import (
+ 	"crypto/tls"
+ 	"fmt"
+ 	"strings"
++	"sync/atomic"
+ 	"time"
+ 
+ 	"github.com/gofiber/fiber/v3/internal/crosshost"
+@@ -40,25 +41,84 @@ type httpClientTransport interface {
+ 	SetStreamResponseBody(enable bool)
+ }
+ 
++// pathNormalizingTransport is implemented by the transports whose wrapped client
++// has a path normalizing setting that can be read and written. It is kept apart
++// from httpClientTransport so that a transport without one still satisfies that
++// interface; such a transport counts as one that normalizes.
++//
++// The setting that reaches the wire is the wrapped client's own field, which
++// fasthttp stamps on every request just before it writes it, whatever the URI
++// of the request said.
++type pathNormalizingTransport interface {
++	// DisablePathNormalizing reports whether the wrapped client writes the
++	// request path as built. A balancer that holds a client this cannot inspect,
++	// or none at all, reports false, and so does a fasthttp.Client handed over
++	// normalizing, which may have served hosts already.
++	DisablePathNormalizing() bool
++	// SetDisablePathNormalizing sets that field on the wrapped client, and on
++	// every host client behind a balancer.
++	SetDisablePathNormalizing(disable bool)
++}
++
++var (
++	_ pathNormalizingTransport = (*standardClientTransport)(nil)
++	_ pathNormalizingTransport = (*hostClientTransport)(nil)
++	_ pathNormalizingTransport = (*lbClientTransport)(nil)
++)
++
+ // standardClientTransport adapts fasthttp.Client to the httpClientTransport
+ // interface used by Fiber's client helpers.
+ type standardClientTransport struct {
+ 	client *fasthttp.Client
++	// sentNormalized is set once a request has gone out while the client
++	// normalized paths. A fasthttp.Client gives each host the setting it has when
++	// that host's client is first created and never updates it, so after that
++	// turning normalizing off no longer reaches the hosts already served: the
++	// path would still be normalized for them.
++	sentNormalized atomic.Bool
++	// settingKnown is set when the transport can account for every host client
++	// the wrapped client has made: it is a client the Fiber client created
++	// itself, so no host client exists before this transport's first request, or
++	// it was handed over with the setting already on, so each host client took
++	// that value. A client handed over normalizing may have served hosts through
++	// someone else, and their host clients keep normalizing whatever its field
++	// says later; nothing public tells a fresh client from such a one.
++	settingKnown bool
++}
++
++// newStandardClientTransport wraps a fasthttp.Client the caller supplied. Its
++// path normalizing field counts only when the caller created it with the
++// setting on.
++func newStandardClientTransport(client *fasthttp.Client) *standardClientTransport {
++	return &standardClientTransport{client: client, settingKnown: client.DisablePathNormalizing}
+ }
+ 
+-func newStandardClientTransport(client *fasthttp.Client) *standardClientTransport {
+-	return &standardClientTransport{client: client}
++// newOwnedStandardClientTransport wraps a new fasthttp.Client that nothing else
++// holds yet.
++func newOwnedStandardClientTransport() *standardClientTransport {
++	return &standardClientTransport{client: &fasthttp.Client{}, settingKnown: true}
++}
++
++// noteSend records a request about to be sent through a client that normalizes.
++// It stores once, so the common case of a client left as it is costs one load.
++func (s *standardClientTransport) noteSend() {
++	if !s.client.DisablePathNormalizing && !s.sentNormalized.Load() {
++		s.sentNormalized.Store(true)
++	}
+ }
+ 
+ func (s *standardClientTransport) Do(req *fasthttp.Request, resp *fasthttp.Response) error {
++	s.noteSend()
+ 	return s.client.Do(req, resp)
+ }
+ 
+ func (s *standardClientTransport) DoTimeout(req *fasthttp.Request, resp *fasthttp.Response, timeout time.Duration) error {
++	s.noteSend()
+ 	return s.client.DoTimeout(req, resp, timeout)
+ }
+ 
+ func (s *standardClientTransport) DoDeadline(req *fasthttp.Request, resp *fasthttp.Response, deadline time.Time) error {
++	s.noteSend()
+ 	return s.client.DoDeadline(req, resp, deadline)
+ }
+ 
+@@ -66,6 +126,7 @@ func (s *standardClientTransport) DoDeadline(req *fasthttp.Request, resp *fastht
+ // fasthttp's own loop, so every transport applies the same target validation.
+ // fasthttp's loop takes an HTTPS-to-HTTP hop; this one refuses it.
+ func (s *standardClientTransport) DoRedirects(req *fasthttp.Request, resp *fasthttp.Response, maxRedirects int) error {
++	s.noteSend()
+ 	// Before the loop serializes the URI, as fasthttp's own DoRedirects does:
+ 	// the setting has to reach req.URI() first or "/a//b" is normalized away on
+ 	// the very request the transport was configured to leave alone.
+@@ -103,6 +164,19 @@ func (s *standardClientTransport) SetStreamResponseBody(enable bool) {
+ 	s.client.StreamResponseBody = enable
+ }
+ 
++// DisablePathNormalizing is false once a request has gone out while the client
++// normalized, because the host clients fasthttp created for it then keep doing
++// so whatever the field says now, and it is false for a client the transport
++// cannot vouch for, see settingKnown. Reporting true would let a path parameter
++// change the path for those hosts.
++func (s *standardClientTransport) DisablePathNormalizing() bool {
++	return s.settingKnown && s.client.DisablePathNormalizing && !s.sentNormalized.Load()
++}
++
++func (s *standardClientTransport) SetDisablePathNormalizing(disable bool) {
++	s.client.DisablePathNormalizing = disable
++}
++
+ // hostClientTransport adapts fasthttp.HostClient to the httpClientTransport
+ // interface used by Fiber's client helpers.
+ type hostClientTransport struct {
+@@ -163,6 +237,14 @@ func (h *hostClientTransport) SetStreamResponseBody(enable bool) {
+ 	h.client.StreamResponseBody = enable
+ }
+ 
++func (h *hostClientTransport) DisablePathNormalizing() bool {
++	return h.client.DisablePathNormalizing
++}
++
++func (h *hostClientTransport) SetDisablePathNormalizing(disable bool) {
++	h.client.DisablePathNormalizing = disable
++}
++
+ // lbClientTransport adapts fasthttp.LBClient to the httpClientTransport
+ // interface used by Fiber's client helpers.
+ type lbClientTransport struct {
+@@ -244,6 +326,47 @@ func (l *lbClientTransport) SetStreamResponseBody(enable bool) {
+ 	})
+ }
+ 
++func (l *lbClientTransport) DisablePathNormalizing() bool {
++	return balancerLeavesPathAlone(l.client.Clients)
++}
++
++func (l *lbClientTransport) SetDisablePathNormalizing(disable bool) {
++	forEachHostClient(l.client, func(hc *fasthttp.HostClient) {
++		hc.DisablePathNormalizing = disable
++	})
++}
++
++// balancerLeavesPathAlone reports whether every client in clients is a host
++// client that writes the path as built, looking through nested balancers. One
++// that normalizes decides for the whole balancer, since any request may be
++// routed to it, and so does a client of a kind that cannot be inspected.
++func balancerLeavesPathAlone(clients []fasthttp.BalancingClient) bool {
++	if len(clients) == 0 {
++		return false
++	}
++	for _, c := range clients {
++		if !balancingClientLeavesPathAlone(c) {
++			return false
++		}
++	}
++	return true
++}
++
++// balancingClientLeavesPathAlone is balancerLeavesPathAlone for one client: a
++// host client, or a wrapper that exposes a nested balancer through LBClient,
++// the two kinds walkBalancingClientWithBreak looks through as well.
++func balancingClientLeavesPathAlone(client fasthttp.BalancingClient) bool {
++	switch c := client.(type) {
++	case *fasthttp.HostClient:
++		return c.DisablePathNormalizing
++	case interface{ LBClient() *fasthttp.LBClient }:
++		nested := c.LBClient()
++		return nested != nil && balancerLeavesPathAlone(nested.Clients)
++	default:
++		return false
++	}
++}
++
+ // forEachHostClient applies fn to every host client reachable from the provided
+ // load balancer by recursively following nested balancers and wrapper types.
+ func forEachHostClient(lb *fasthttp.LBClient, fn func(*fasthttp.HostClient)) {
+diff --git a/ctx.go b/ctx.go
+index 2e3df4fd745..7b1ee425b18 100644
+--- a/ctx.go
++++ b/ctx.go
+@@ -198,7 +198,7 @@ func (c *DefaultCtx) App() *App {
+ 	return c.app
+ }
+ 
+-// BaseURL returns (protocol + host + base path).
++// BaseURL returns (protocol + host), such as "https://example.com". It carries no path.
+ func (c *DefaultCtx) BaseURL() string {
+ 	// TODO: Could be improved: 53.8 ns/op  32 B/op  1 allocs/op
+ 	// Should work like https://codeigniter.com/user_guide/helpers/url_helper.html
+diff --git a/ctx_interface_gen.go b/ctx_interface_gen.go
+index b9f45c4ea75..8aea0d60b45 100644
+--- a/ctx_interface_gen.go
++++ b/ctx_interface_gen.go
+@@ -19,7 +19,7 @@ import (
+ type Ctx interface {
+ 	// App returns the *App reference to the instance of the Fiber application
+ 	App() *App
+-	// BaseURL returns (protocol + host + base path).
++	// BaseURL returns (protocol + host), such as "https://example.com". It carries no path.
+ 	BaseURL() string
+ 	// RequestCtx returns *fasthttp.RequestCtx that carries a deadline
+ 	// a cancellation signal, and other values across API boundaries.
+@@ -604,8 +604,10 @@ type Ctx interface {
+ 	Append(field string, values ...string)
+ 	// Add appends the value as a new field line, where Append folds values into one
+ 	// comma-separated line. The headers fasthttp keeps in a slot of their own are
+-	// the exception: Content-Type, Server and the rest are replaced and Date and TE
+-	// ignored, though Set-Cookie is slotted and does append. Use Cookie for that.
++	// the exception: Content-Type, Content-Encoding, Content-Length, Connection and
++	// Server are replaced, and Transfer-Encoding and Date are ignored because fasthttp
++	// writes them itself. Set-Cookie is slotted too but does append, though Cookie
++	// builds that field value for you. Trailer accumulates, extending the announced set.
+ 	Add(key, val string)
+ 	// Attachment sets the HTTP response Content-Disposition header field to attachment.
+ 	Attachment(filename ...string)
+diff --git a/docs/addon/retry.md b/docs/addon/retry.md
+index 3ae02686fcb..f630c193687 100644
+--- a/docs/addon/retry.md
++++ b/docs/addon/retry.md
+@@ -27,6 +27,8 @@ func (e *retry.ExponentialBackoff) Retry(f func() error) error
+ 
+ `Retry` calls `f` up to `MaxRetryCount` times in total and returns `nil` as soon as `f` returns `nil`. If every attempt fails, it returns the error of the last attempt. Each call to `Retry` starts from `InitialInterval` with its own state, so one `ExponentialBackoff` can be shared.
+ 
++A field left at zero or below takes its default from the [Default Config](#default-config-example), also on a `retry.ExponentialBackoff` you build as a struct literal instead of with `NewExponentialBackoff`. Even `retry.ExponentialBackoff{}` therefore calls `f` at least once, and up to 10 times when it keeps failing, waiting between the attempts as the default does: about 160 seconds in all. A literal that sets only some fields waits as well, so `retry.ExponentialBackoff{MaxRetryCount: 2}` no longer retries at once. To retry without waiting, set `MaxBackoffTime` to a short duration such as `time.Nanosecond`.
++
+ ## Examples
+ 
+ ```go
+diff --git a/docs/api/ctx.md b/docs/api/ctx.md
+index 10d378a27c2..34c7f3ef1bc 100644
+--- a/docs/api/ctx.md
++++ b/docs/api/ctx.md
+@@ -2945,6 +2945,8 @@ app.Get("/", func(c fiber.Ctx) error {
+ })
+ ```
+ 
++With a filename, the `Content-Type` is set from its extension the way [`Type`](#type) does it, charset included.
++
+ The `filename` parameter is emitted as an RFC 9110 quoted-string: spaces and
+ punctuation stay literal, and quotes/backslashes are escaped with a backslash
+ (no URL encoding). Non-ASCII filenames additionally carry the `filename*`
+@@ -4250,6 +4252,8 @@ Sets the [Content-Type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Header
+ 
+ A text type gets `; charset=utf-8` unless you pass another `charset`: every `text/*` type, `application/json`, `application/javascript`, `application/xml` and any `+json` or `+xml` type. Other types, such as `image/png`, get none.
+ 
++An extension missing from that list is looked up in the standard library's MIME tables, and the parameters of its answer are dropped: `csv` gives `text/csv`, which takes `charset=utf-8` by the rule above. The header never holds two charsets. Pass `charset` to send another one.
++
+ :::info
+ This method is **chainable**.
+ :::
+diff --git a/docs/client/hooks.md b/docs/client/hooks.md
+index 8d056cdd4a9..97215387b0e 100644
+--- a/docs/client/hooks.md
++++ b/docs/client/hooks.md
+@@ -97,7 +97,7 @@ Full Name: gofiber/fiber
+ Fiber includes built-in request hooks:
+ 
+ - **parserRequestURL**: Normalizes and customizes the URL based on path and query parameters. Required for `PathParam` and `QueryParam` methods.
+-- **parserRequestHeader**: Sets request headers, cookies, content type, referer, and user agent based on client and request properties. Client headers are applied first and request headers with the same key replace them. The user agent defaults to `fiber`, and the user agent and referer come from `SetUserAgent` and `SetReferer`, so a `User-Agent` or `Referer` header set any other way is replaced.
++- **parserRequestHeader**: Sets request headers, cookies, content type, referer, and user agent based on client and request properties. Client headers are applied first and request headers with the same key replace them. The user agent defaults to `fiber`, and the user agent and referer come from `SetUserAgent` and `SetReferer`, so a `User-Agent` or `Referer` header set any other way is replaced. No `Referer` header is sent unless a referer is set.
+ - **parserRequestBody**: Automatically serializes the request body (JSON, XML, form, file uploads, etc.).
+ 
+ :::info
+@@ -242,7 +242,7 @@ X-Cache: HIT
+ 
+ Fiber includes built-in response hooks:
+ 
+-- **parserResponseCookie**: Parses cookies from the response and stores them in the response object and cookie jar if available. A cookie with an attribute that cannot be parsed keeps its name and value.
++- **parserResponseCookie**: Parses cookies from the response and stores them in the response object and cookie jar if available. An attribute that cannot be parsed is ignored on its own, in the response and in the jar alike; the cookie keeps its name, its value and its other attributes.
+ - **logger**: Logs information about the raw request and response. It uses the `log.CommonLogger` interface. Only the headers are logged for a streamed body, and nothing is logged when the client has no logger.
+ 
+ :::info
+diff --git a/docs/client/request.md b/docs/client/request.md
+index 2173b76c07c..bd91c679e25 100644
+--- a/docs/client/request.md
++++ b/docs/client/request.md
+@@ -305,7 +305,6 @@ fmt.Println(resp.String())
+   "headers": {
+     "Golang": "Fiber", 
+     "Host": "httpbin.org", 
+-    "Referer": "", 
+     "Test": "123456,654321", 
+     "User-Agent": "fiber", 
+     "X-Amzn-Trace-Id": "Root=1-664105d2-033cf7173457adb56d9e7193"
+@@ -346,7 +345,6 @@ fmt.Println(resp.String())
+   "headers": {
+     "Golang": "Fiber", 
+     "Host": "httpbin.org", 
+-    "Referer": "", 
+     "Test": "654321", 
+     "User-Agent": "fiber", 
+     "X-Amzn-Trace-Id": "Root=1-664105e5-5d676ba348450cdb62847f04"
+@@ -551,7 +549,7 @@ func (r *Request) Referer() string
+ 
+ ## SetReferer
+ 
+-**SetReferer** sets the Referer header for the request, overriding the one set at the client level if any. A `Referer` set with `SetHeader` or `AddHeader` is replaced when the request is sent, so use this method for it.
++**SetReferer** sets the Referer header for the request, overriding the one set at the client level if any. When neither is set, no `Referer` header is sent. A `Referer` set with `SetHeader` or `AddHeader` is replaced when the request is sent, or removed when no referer is set, so use this method for it.
+ 
+ ```go title="Signature"
+ func (r *Request) SetReferer(referer string) *Request
+@@ -662,7 +660,7 @@ A value stays inside the one path segment its placeholder occupies. Path normali
+ 
+ The host can be templated too (`https://:tenant.example.com/api`). A placeholder in the authority whose name is only digits is treated as the port and is left unchanged, and the colons inside an IPv6 literal such as `http://[2001:db8::1]/api` are part of the address rather than placeholders. A value substituted into the authority is **not** escaped — a `%XX` below `0x80` inside a host makes the URL parser discard the rest of the URL — so it must already be a valid host: unreserved characters, `$`, `&`, `+`, `=` and valid UTF-8 for an IDN label. Malformed UTF-8 is rejected too — the bytes reach the `Host` header verbatim, and an overlong sequence such as `%C0%AF` is a `/` to a lenient decoder. Anything else, including a `:` or `@` that would add a port or a userinfo section and send the request to another host, fails the request with `ErrPathParamInHost`. A port can still be templated by giving the placeholder a name that is not all digits, as in `https://example.com::port/api`.
+ 
+-`SetDisablePathNormalizing(true)` on the client or request turns that check off. It is only safe together with a wrapped fasthttp client created with `DisablePathNormalizing: true`, see [NewWithClient](./rest.md#newwithclient): such a client sends the path as built, so nothing decodes it afterwards, a `/` in a value is emitted as `%2F` and the value is sent as one segment. Whether it stays one segment is then up to the server — one that unescapes paths, including a Fiber server configured with `UnescapePath`, decodes it again while routing. With the default client the Fiber setting alone only lifts the check: fasthttp still normalizes the path when it writes the request, so a value such as `x/../../admin` is no longer rejected and changes the path that is sent. A `?` or `#` in a value is always contained; normalizing does not decode those.
++`SetDisablePathNormalizing(true)` on the client or request turns that check off for `/` and `\`, but only for a client that Fiber knows sends the path as built: one whose wrapped fasthttp client has path normalizing turned off and has not served a host while it was on. [SetDisablePathNormalizing](./rest.md#setdisablepathnormalizing) on the client does that for a client from `New`, `NewWithHostClient` or `NewWithLBClient`. A `fasthttp.Client` given to [NewWithClient](./rest.md#newwithclient) may have served hosts already and Fiber cannot tell, so it counts only when it was created with `DisablePathNormalizing: true`. Nothing decodes the path afterwards then, a `/` in a value is emitted as `%2F` and the value is sent as one segment. Whether it stays one segment is up to the server — one that unescapes paths, including a Fiber server configured with `UnescapePath`, decodes it again while routing. On any other client the check stays on, whatever the client or the request asks for, so a value such as `x/../../admin` is rejected rather than changing the path that is sent. The values the setting never lets through are `.` and `..`, which would go out as dot segments that the receiving server resolves, and an empty value, which leaves a `//` that a server merging slashes drops: no escape keeps them in place. A `?` or `#` in a value is always contained; normalizing does not decode those.
+ 
+ ```go title="Signature"
+ func (r *Request) SetPathParam(key, val string) *Request
+@@ -1110,7 +1108,7 @@ func (r *Request) DisablePathNormalizing() bool
+ 
+ ## SetDisablePathNormalizing
+ 
+-**SetDisablePathNormalizing** turns path normalizing off or on for the request. It is on by default: the request path is normalized before it is sent, which decodes percent-escapes, collapses `//` and resolves `.` and `..` segments, so `/a//b/./c%2Fd` goes out as `/a/b/c/d`. With normalizing off, Fiber builds the URL without normalizing it, but the wrapped fasthttp client normalizes the path again when it writes the request unless it was created with `DisablePathNormalizing: true` (see [NewWithClient](./rest.md#newwithclient)); only then is the path sent as written. The setting of the client, [SetDisablePathNormalizing](./rest.md#setdisablepathnormalizing), applies to every request it sends. Path parameter values are checked differently while normalizing is off, as described under [SetPathParam](#setpathparam).
++**SetDisablePathNormalizing** turns path normalizing off or on for the request. It is on by default: the request path is normalized before it is sent, which decodes percent-escapes, collapses `//` and resolves `.` and `..` segments, so `/a//b/./c%2Fd` goes out as `/a/b/c/d`. With normalizing off, Fiber builds the URL without normalizing it. Whether the path is normalized again when the request is written is up to the wrapped fasthttp client, which a single request cannot change: the path goes out as written only when the client has normalizing turned off, with [SetDisablePathNormalizing](./rest.md#setdisablepathnormalizing) on the client or with a fasthttp client created with `DisablePathNormalizing: true` (see [NewWithClient](./rest.md#newwithclient)). On any other client this setting changes neither what is sent nor the path parameter check. Path parameter values are checked differently while normalizing is off, as described under [SetPathParam](#setpathparam).
+ 
+ ```go title="Signature"
+ func (r *Request) SetDisablePathNormalizing(disable bool) *Request
+diff --git a/docs/client/rest.md b/docs/client/rest.md
+index 074108deba7..c29d333afd3 100644
+--- a/docs/client/rest.md
++++ b/docs/client/rest.md
+@@ -104,6 +104,8 @@ func New() *Client
+ 
+ **NewWithClient** creates and returns a new Client object from an existing `fasthttp.Client`. It panics if `c` is `nil`.
+ 
++Fiber cannot tell whether that client has served a host already. Unless it was created with `DisablePathNormalizing: true`, [SetDisablePathNormalizing](#setdisablepathnormalizing) changes what is sent to hosts it has not served yet, but the check that keeps a path parameter value inside its segment stays on.
++
+ ```go title="Signature"
+ func NewWithClient(c *fasthttp.Client) *Client
+ ```
+@@ -705,7 +707,7 @@ func (c *Client) DelParams(key ...string) *Client
+ 
+ ## UserAgent & Referer
+ 
+-Requests are sent with `User-Agent: fiber` unless a user agent is set on the client or on the request, and the request's value wins. Use these methods, or `Config.UserAgent` and `Config.Referer`, for these two headers: a `User-Agent` or `Referer` set through `SetHeader`, `AddHeader` or `Config.Header` is replaced when the request is sent.
++Requests are sent with `User-Agent: fiber` unless a user agent is set on the client or on the request, and the request's value wins. They are sent without a `Referer` header unless a referer is set the same way. Use these methods, or `Config.UserAgent` and `Config.Referer`, for these two headers: a `User-Agent` or `Referer` set through `SetHeader`, `AddHeader` or `Config.Header` is replaced when the request is sent, and a `Referer` is removed when no referer is set.
+ 
+ ### SetUserAgent
+ 
+@@ -771,7 +773,7 @@ func (c *Client) DelPathParams(key ...string) *Client
+ 
+ ### DisablePathNormalizing
+ 
+-Reports whether path normalizing is disabled for the client.
++Reports whether path normalizing was disabled with [SetDisablePathNormalizing](#setdisablepathnormalizing). It does not read the setting of a fasthttp client that was created with `DisablePathNormalizing: true`.
+ 
+ ```go title="Signature"
+ func (c *Client) DisablePathNormalizing() bool
+@@ -779,7 +781,7 @@ func (c *Client) DisablePathNormalizing() bool
+ 
+ ### SetDisablePathNormalizing
+ 
+-Turns path normalizing off or on for every request of the client. It is on by default: the request path is normalized before it is sent, which decodes percent-escapes, collapses `//` and resolves `.` and `..` segments, so `/a//b/./c%2Fd` goes out as `/a/b/c/d`. With normalizing off, Fiber builds the URL without normalizing it, but the wrapped fasthttp client normalizes the path again when it writes the request unless it was created with `DisablePathNormalizing: true` (see [NewWithClient](#newwithclient)); only then is the path sent as written. A request skips Fiber's normalizing when either the client or the request disables it; see [SetDisablePathNormalizing](./request.md#setdisablepathnormalizing) for the request-level setting.
++Turns path normalizing off or on for every request of the client. It is on by default: the request path is normalized before it is sent, which decodes percent-escapes, collapses `//` and resolves `.` and `..` segments, so `/a//b/./c%2Fd` goes out as `/a/b/c/d`. With normalizing off, the path is sent as written. fasthttp normalizes the path when it writes the request, according to the client that sends it, so the setting is applied to the `DisablePathNormalizing` field of the wrapped fasthttp client, and of every host client behind a load balancer: a client created with [NewWithClient](#newwithclient), [NewWithHostClient](#newwithhostclient) or [NewWithLBClient](#newwithlbclient) changes the fasthttp client it wraps, for everyone who shares it. Call it before the first request, because a `fasthttp.Client` copies the setting into each host client when it first creates it, and a host it already serves keeps normalizing until fasthttp drops its entry, see the note under [TLS](#tls) for when. Fiber keeps rejecting path parameter values that would leave their segment unless it knows that the path is sent as built. It knows for a client from `New`, until a request has gone out through it while it normalized; for a client from `NewWithHostClient`, which reads the field on every request; for a client from `NewWithLBClient` whose host clients all have the field on; and for a `fasthttp.Client` given to `NewWithClient` that was created with `DisablePathNormalizing: true`. A `fasthttp.Client` given to `NewWithClient` without it may have served hosts already, so Fiber cannot tell and keeps the check on, although hosts it has not served yet get the setting. A balancer that holds a client that is neither a `*fasthttp.HostClient` nor a wrapper exposing a nested balancer through `LBClient()` cannot be told either and counts as normalizing. A request skips Fiber's normalizing when either the client or the request disables it; see [SetDisablePathNormalizing](./request.md#setdisablepathnormalizing) for the request-level setting.
+ 
+ ```go title="Signature"
+ func (c *Client) SetDisablePathNormalizing(disable bool) *Client
+@@ -870,7 +872,7 @@ func (c *Client) SetTimeout(t time.Duration) *Client
+ 
+ ### Debug
+ 
+-Enables debug-level logging output. With debug enabled, the raw request and response are logged through the client's logger after each response. When either body is a stream, only its headers are logged so the stream stays readable for the caller. Nothing is logged when the client has no logger. Use [SetLogger](#setlogger) to choose the logger.
++Enables debug-level logging output. With debug enabled, the raw request and response are logged through the client's logger after each response, as they are: the `Authorization` and `Cookie` headers and the bodies are in the log, so keep debug logging off wherever people who should not see them can read it. When either body is a stream, only its headers are logged so the stream stays readable for the caller. A new client logs through Fiber's default logger, the one the `log` package writes to. Nothing is logged when the logger was set to `nil`. Use [SetLogger](#setlogger) to choose the logger.
+ 
+ ```go title="Signature"
+ func (c *Client) Debug() *Client
+@@ -888,7 +890,7 @@ func (c *Client) DisableDebug() *Client
+ 
+ ### SetCookieJar
+ 
+-Assigns a cookie jar to the client to store and manage cookies across requests. A cookie received with a `Max-Age` attribute expires that many seconds after it was received, taking precedence over `Expires`; a `Max-Age` of zero or less expires it immediately (RFC 6265). A `Max-Age` that is not an integer is ignored, but the jar also loses the attributes after it in the same `Set-Cookie` header (`Path`, `Domain`, `Secure` and so on). When the attribute repeats, the last integer value counts. Cookies for the same host and path are stored under the origin that answered, so a redirect cannot plant cookies for another host. See [Cookie jar](./examples.md#cookie-jar) for how the jar scopes, orders and limits cookies.
++Assigns a cookie jar to the client to store and manage cookies across requests. A cookie received with a `Max-Age` attribute expires that many seconds after it was received, taking precedence over `Expires`; a `Max-Age` of zero or less expires it immediately (RFC 6265). A `Max-Age` that is not an integer is ignored on its own, as is any other attribute the parser cannot read, such as an `Expires` in an unrecognized format (RFC 6265 Section 5.2): the cookie keeps its name, its value and every other attribute, `Path`, `Domain` and `Secure` included. When the attribute repeats, the last integer value counts. A `Set-Cookie` whose name and value cannot be parsed is dropped. Cookies for the same host and path are stored under the origin that answered, so a redirect cannot plant cookies for another host. See [Cookie jar](./examples.md#cookie-jar) for how the jar scopes, orders and limits cookies.
+ 
+ ```go title="Signature"
+ func (c *Client) SetCookieJar(cookieJar *CookieJar) *Client
+@@ -972,7 +974,7 @@ func (c *Client) SetDial(dial fasthttp.DialFunc) *Client
+ 
+ ### SetLogger
+ 
+-Sets the logger instance used by the client.
++Sets the logger instance used by the client. A new client starts with Fiber's default logger. `nil` turns client logging off; [SetRootCertificate](#setrootcertificate) and [SetRootCertificateFromString](#setrootcertificatefromstring) still panic on invalid input, only without a log line.
+ 
+ ```go title="Signature"
+ func (c *Client) SetLogger(logger log.CommonLogger) *Client
+diff --git a/docs/guide/context.md b/docs/guide/context.md
+index 925a5b29cdf..c3310e5c581 100644
+--- a/docs/guide/context.md
++++ b/docs/guide/context.md
+@@ -148,7 +148,7 @@ app.Get("/job", func(c fiber.Ctx) error {
+ Read what you need from the context inside the handler and hand the goroutine a copy. A retained context keeps working after the handler returns, but what it holds may not stay valid:
+ 
+ - A string that comes from the request, such as the request ID when the client sent one or the key that `keyauth` extracted, points into a buffer that fasthttp reuses for the next request on the connection. Unless [`Immutable`](../api/fiber.md#immutable) is set, a goroutine that reads it later can see another request's ID or token. Copy it with `strings.Clone` before you hand it over; see [Zero Allocation](../intro.md#zero-allocation).
+-- The `*session.Middleware` that `session.FromContext` returns goes back to a pool when the request ends and then serves another request, so a goroutine that outlives the handler and calls `session.FromContext` on a retained context can read or change another user's session. Read what you need inside the handler, for example the session ID, and hand that to the goroutine; see the [Store Pattern](../middleware/session.md#store-pattern-advanced) for background work on a session.
++- A context you keep stops resolving a session when its request ends: `session.FromContext` returns `nil` for it from then on, so a goroutine that outlives the handler cannot reach the session, and never another user's. The `*session.Middleware` it returned while the request was running is only valid until the handler returns, so do not hand that pointer to a goroutine that may outlive the handler either. Read what you need inside the handler, for example the session ID, and hand that to the goroutine; see the [Store Pattern](../middleware/session.md#store-pattern-advanced) for background work on a session.
+ 
+ :::
+ 
+diff --git a/docs/middleware/basicauth.md b/docs/middleware/basicauth.md
+index 35b6c7229a7..a09e20744f8 100644
+--- a/docs/middleware/basicauth.md
++++ b/docs/middleware/basicauth.md
+@@ -6,7 +6,9 @@ id: basicauth
+ 
+ Basic Authentication middleware for [Fiber](https://github.com/gofiber/fiber) that provides HTTP basic auth. It calls the next handler for valid credentials and returns [`401 Unauthorized`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401) for missing or invalid credentials, [`400 Bad Request`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400) for malformed `Authorization` headers, among them a request that carries the field on more than one line, or [`431 Request Header Fields Too Large`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/431) when the header exceeds size limits. Credentials may omit Base64 padding as permitted by RFC 7235's `token68` syntax.
+ 
+-The default unauthorized response includes the header `WWW-Authenticate: Basic realm="Restricted", charset="UTF-8"`, sets `Cache-Control: no-store`, and adds a `Vary: Authorization` header. Only the `UTF-8` charset is supported; any other value will panic. Generated realm and charset values are escaped as RFC 9110 HTTP quoted strings.
++The default unauthorized response includes the header `WWW-Authenticate: Basic realm="Restricted", charset="UTF-8"`, sets `Cache-Control: no-store`, and adds `Authorization` to the `Vary` header, keeping the fields an earlier middleware put there. Only the `UTF-8` charset is supported; any other value will panic. Generated realm and charset values are escaped as RFC 9110 HTTP quoted strings.
++
++With no `Users` and no `Authorizer`, which is what `New()` called without a config gives, no credentials are valid and no request is let through: well-formed credentials, or none, are answered `401 Unauthorized`, and a malformed `Authorization` header still gets `400 Bad Request`.
+ 
+ ## Signatures
+ 
+diff --git a/docs/middleware/cache.md b/docs/middleware/cache.md
+index abfa246d28e..1b6764464fa 100644
+--- a/docs/middleware/cache.md
++++ b/docs/middleware/cache.md
+@@ -14,7 +14,7 @@ By default, cached responses expire after five minutes and the middleware stores
+ - `Cache-Control: no-store` skips caching and always forwards a fresh response.
+ - `Cache-Control: max-age=<seconds>` serves the cached response only if it is no older than that, and `min-fresh=<seconds>` only if it stays fresh for at least that much longer. Otherwise the middleware revalidates: the handler runs and its response replaces the entry. `max-age=0` always revalidates.
+ - `Cache-Control: max-stale` accepts an expired entry, and `max-stale=<seconds>` one that expired no more than that long ago. The hit carries `Warning: 110 - "Response is stale"`. An entry stored from a response with `must-revalidate` or `proxy-revalidate` is never served stale. The storage keeps an entry for the longer of its own lifetime and `Expiration`, counted from when it is stored, and `max-stale` can only reach an entry while the storage still holds it after it has stopped being fresh. That leaves a window when the lifetime is shorter than `Expiration`, and also when an upstream `Age` or an earlier `Date` has used up part of a lifetime that is `Expiration` or longer, because the entry stops being fresh that much before the storage drops it. A lifetime taken from `Expires` is not shortened by `Age` or `Date`, so it leaves a window only when it is shorter than `Expiration`.
+-- `Cache-Control: only-if-cached` answers `504 Gateway Timeout`, with the `unreachable` status, instead of calling the handler when there is no entry to serve.
++- `Cache-Control: only-if-cached` answers `504 Gateway Timeout`, with the `unreachable` status, instead of calling the handler when there is no entry to serve. That includes a request that also sends `no-cache` (or `Pragma: no-cache`) or `max-age=0`: a stored response cannot be served to it without validating it, which means calling the handler. The stored entry is kept for the requests that can use it.
+ 
+ ## Entry lifetime
+ 
+diff --git a/docs/middleware/limiter.md b/docs/middleware/limiter.md
+index a791c7d44f2..112c6df3a80 100644
+--- a/docs/middleware/limiter.md
++++ b/docs/middleware/limiter.md
+@@ -118,7 +118,7 @@ app.Use("/users/:id", limiter.New(limiter.Config{
+ 
+ You can also calculate the expiration dynamically using the `ExpirationFunc` parameter. It receives the request context and allows you to set a different expiration window for each request.
+ 
+-Window accounting is whole-second, so a positive duration below one second is treated as a one-second window. A zero or negative duration falls back to the default expiration of one minute, not to the configured `Expiration`.
++Window accounting is whole-second, so a positive duration below one second is treated as a one-second window. A zero or negative duration falls back to the configured `Expiration`, which is one minute unless you set another.
+ 
+ Example:
+ 
+@@ -140,7 +140,7 @@ app.Use(limiter.New(limiter.Config{
+ | MaxFunc                | `func(fiber.Ctx) int`     | Function that calculates the maximum number of recent connections within `Expiration` seconds before sending a 429 response. | A function that returns `cfg.Max`    |
+ | KeyGenerator           | `func(fiber.Ctx) string` | Function to generate custom keys; uses `c.IP()` by default. A key longer than 192 bytes, or starting with `sha256:`, is replaced by its SHA-256 digest (`sha256:<hex>`) before it reaches the storage, so oversized keys are still limited per client. | A function using `c.IP()` as the default   |
+ | Expiration             | `time.Duration`           | Duration to keep request records in memory, which is also the length of the window. It is counted in whole seconds: a positive value below one second is floored to one second, and zero or a negative value selects the default. | 1 * time.Minute                          |
+-| ExpirationFunc         | `func(fiber.Ctx) time.Duration` | Function that calculates the expiration duration dynamically. Positive values below one second are floored to one second; non-positive values fall back to the default expiration (1 minute), not to `Expiration`. | A function that returns `cfg.Expiration` |
++| ExpirationFunc         | `func(fiber.Ctx) time.Duration` | Function that calculates the expiration duration dynamically. Positive values below one second are floored to one second; non-positive values fall back to `Expiration`. | A function that returns `cfg.Expiration` |
+ | LimitReached           | `fiber.Handler`           | Called when a request exceeds the limit.                                       | A function sending a 429 response          |
+ | SkipFailedRequests     | `bool`                    | When set to `true`, requests with status code ≥ 400 aren't counted.                         | false                                    |
+ | SkipSuccessfulRequests | `bool`                    | When set to `true`, requests with status code < 400 aren't counted.                          | false                                    |
+diff --git a/docs/middleware/session.md b/docs/middleware/session.md
+index c5e4c478171..a44b2d6ab7d 100644
+--- a/docs/middleware/session.md
++++ b/docs/middleware/session.md
+@@ -669,7 +669,7 @@ sess.Store() *session.Store
+ 
+ `FromContext` accepts a `fiber.CustomCtx`, `fiber.Ctx`, a `*fasthttp.RequestCtx`, or a `context.Context`.
+ 
+-The returned `*session.Middleware` is only valid while the request is being handled. When the request ends it goes back to a pool and serves another request, even though a context you kept from `c.Context()` still holds it (with `PassLocalsToContext` enabled). Do not call `FromContext` on a retained context from a goroutine that outlives the handler: it can reach another request's session. Pass the session ID to that goroutine and use the [Store Pattern](#store-pattern-advanced) instead.
++The returned `*session.Middleware` is only valid while the request is being handled. A context you kept from `c.Context()` (with `PassLocalsToContext` enabled) stops resolving it when the request ends: `FromContext` returns `nil` for that context from then on, so a goroutine that outlives the handler cannot reach the session, and never another request's. Do not hand the pointer itself to such a goroutine. Pass it the session ID and use the [Store Pattern](#store-pattern-advanced) instead.
+ 
+ A session that was only read is written back to storage without being re-encoded. `Get` and `Keys` give that up when the value or key they return could share memory with the session (a map, slice, array, pointer or struct; scalars and `time.Time` are safe), because the caller could then change it in place without calling `Set`.
+ 
+diff --git a/docs/whats_new.md b/docs/whats_new.md
+index 8a18bbf1c25..8878dc92cce 100644
+--- a/docs/whats_new.md
++++ b/docs/whats_new.md
+@@ -1111,12 +1111,12 @@ cc := client.New().
+     SetBaseURL("https://api.service.local").
+     AddHeader("Authorization", "Bearer <token>").
+     SetTimeout(5 * time.Second).
+-    SetPathParam("tenant", "acme")
++    SetPathParam("tenant", "acme").
++    SetDisablePathNormalizing(true)
+ 
+ resp, err := cc.Get("/users/:tenant/:id", client.Config{
+-    PathParam:              map[string]string{"id": "42"},
+-    Param:                  map[string]string{"include": "profile"},
+-    DisablePathNormalizing: true,
++    PathParam: map[string]string{"id": "42"},
++    Param:     map[string]string{"include": "profile"},
+ })
+ if err != nil {
+     panic(err)
+@@ -1131,8 +1131,21 @@ or `\`, a value that is exactly `.` or `..`, and an empty value are rejected
+ with `ErrPathParamInPath`; a value substituted into the host must already be a
+ valid host or the request fails with `ErrPathParamInHost`. Previously such a
+ value was pasted in unchanged, so `SetPathParam("id", "../../admin")` on
+-`/api/:id` quietly sent the request to `/admin`. Set
+-`SetDisablePathNormalizing(true)` to send a multi-segment value on purpose.
++`/api/:id` quietly sent the request to `/admin`. Call
++`SetDisablePathNormalizing(true)` on the client to send a multi-segment value on
++purpose (for a client from `NewWithClient`, create the fasthttp client with
++`DisablePathNormalizing: true` as well); the setting on a single request only
++counts for a client that already sends paths as written. `.`, `..` and an empty
++value stay rejected either way, because a server resolves a dot segment and may
++merge slashes.
++:::
++
++:::note
++`Debug()` logs the raw request and response after each response through the
++client's logger, which is Fiber's default logger unless `SetLogger` chose
++another one. The text is logged as it is, `Authorization` and `Cookie` headers
++and bodies included. A request with no referer set carries no `Referer` header;
++it used to carry an empty one.
+ :::
+ 
+ ### Fasthttp transport integration
+@@ -1948,6 +1961,8 @@ The Retry addon is a new addon that implements a retry mechanism for unsuccessfu
+ It calls the function multiple times and tries to make it successful. If all calls are failed, then, it returns an error.
+ It adds a jitter at each retry step because adding a jitter is a way to break synchronization across the client and avoid collision.
+ 
++A field of `retry.ExponentialBackoff` left at zero takes its default, also on a struct literal, so even the zero value calls the function and waits between the attempts as the default config does. A literal that sets only `MaxRetryCount` used to retry at once; it now waits too.
++
+ <details>
+ <summary>Example</summary>
+ 
+diff --git a/hooks.go b/hooks.go
+index e1ee77f5f13..06bc152b4a1 100644
+--- a/hooks.go
++++ b/hooks.go
+@@ -25,7 +25,7 @@ type (
+ 	OnPreShutdownHandler = func() error
+ 	// OnPostShutdownHandler runs after shutdown and receives the shutdown result.
+ 	OnPostShutdownHandler = func(error) error
+-	// OnForkHandler runs inside a forked worker process and receives the worker ID.
++	// OnForkHandler runs in the prefork master process each time it starts a child process and receives that child's PID.
+ 	OnForkHandler = func(int) error
+ 	// OnMountHandler runs after a sub-application mounts to a parent and receives the parent app reference.
+ 	OnMountHandler = func(*App) error
+@@ -113,7 +113,7 @@ func (sm *PreStartupMessageData) AddInfo(key, title, value string, priority ...i
+ 	sm.addEntry(key, title, value, pri, StartupMessageLevelInfo)
+ }
+ 
+-// AddWarning adds a warning entry to the startup message with "WARNING" label.
++// AddWarning adds a warning entry to the startup message with "WARN" label.
+ func (sm *PreStartupMessageData) AddWarning(key, title, value string, priority ...int) {
+ 	pri := -1
+ 	if len(priority) > 0 {
+@@ -307,7 +307,8 @@ func (h *Hooks) OnPostShutdown(handler ...OnPostShutdownHandler) {
+ 	h.app.mutex.Unlock()
+ }
+ 
+-// OnFork is a hook to execute user function after fork process.
++// OnFork is a hook to execute user functions in the prefork master process each time it starts a child process,
++// including a child it starts again after a crash. The handler receives the PID of that child; the children do not run it.
+ func (h *Hooks) OnFork(handler ...OnForkHandler) {
+ 	h.app.mutex.Lock()
+ 	h.onFork = append(h.onFork, handler...)
+diff --git a/internal/byterange/byterange.go b/internal/byterange/byterange.go
+index f650cc16726..914565cea45 100644
+--- a/internal/byterange/byterange.go
++++ b/internal/byterange/byterange.go
+@@ -88,7 +88,8 @@ func classify(dst, field []byte) plan {
+ // Wrap returns handler, a fasthttp file server with byte ranges enabled, with the
+ // Range field handled as RFC 9110 asks. The field is ignored, and the whole file
+ // sent, for a non-GET request, a unit other than "bytes", several ranges, or an
+-// If-Range that does not match the Last-Modified the file server sent.
++// If-Range that does not match the response's ETag (when the caller set one) or
++// its Last-Modified.
+ func Wrap(handler fasthttp.RequestHandler) fasthttp.RequestHandler {
+ 	return func(ctx *fasthttp.RequestCtx) {
+ 		serveAt(ctx, handler, time.Now)
+diff --git a/listen.go b/listen.go
+index 4e3705c0c4e..fe7c8523e64 100644
+--- a/listen.go
++++ b/listen.go
+@@ -74,7 +74,9 @@ type ListenConfig struct {
+ 	// Default: nil
+ 	TLSConfig *tls.Config `json:"tls_config"`
+ 
+-	// ListenerFunc allows accessing and customizing net.Listener.
++	// ListenerAddrFunc is called with the net.Addr of the listener that Listen creates,
++	// for example to read the port the OS picked for ":0". It cannot change the listener.
++	// With prefork it runs once in each child process, and Listener does not call it.
+ 	//
+ 	// Default: nil
+ 	ListenerAddrFunc func(addr net.Addr) `json:"listener_addr_func"`
+diff --git a/log/context.go b/log/context.go
+index 339eda37735..2512d549b77 100644
+--- a/log/context.go
++++ b/log/context.go
+@@ -79,8 +79,9 @@ var (
+ )
+ 
+ var (
+-	// ErrContextTagInvalid is returned by RegisterContextTag and SetContextTemplate
+-	// when the supplied tag name or renderer is empty.
++	// ErrContextTagInvalid is returned by RegisterContextTag when the supplied tag
++	// name is empty or the renderer is nil. SetContextTemplate does not validate
++	// ContextConfig.CustomTags and never returns it.
+ 	ErrContextTagInvalid = errors.New("log: context tag name and function are required")
+ 	// ErrContextTagReserved is returned by RegisterContextTag and SetContextTemplate
+ 	// when the caller attempts to override the reserved TagContextValue ("value:") tag.
+diff --git a/log/fiberlog.go b/log/fiberlog.go
+index e35fe4fdad1..b8a06c88e1a 100644
+--- a/log/fiberlog.go
++++ b/log/fiberlog.go
+@@ -69,7 +69,7 @@ func Tracef(format string, v ...any) {
+ 	logger.Tracef(format, v...)
+ }
+ 
+-// Panicf calls the default logger's Tracef method.
++// Panicf calls the default logger's Panicf method.
+ func Panicf(format string, v ...any) {
+ 	logger.Panicf(format, v...)
+ }
+diff --git a/middleware/basicauth/config.go b/middleware/basicauth/config.go
+index 6f86d34fc1d..218d5057e55 100644
+--- a/middleware/basicauth/config.go
++++ b/middleware/basicauth/config.go
+@@ -116,14 +116,14 @@ var ConfigDefault = Config{
+ 
+ // Helper function to set default values
+ func configDefault(config ...Config) Config {
+-	// Return default config if nothing provided
+-	if len(config) < 1 {
+-		return ConfigDefault
++	// Start from the default config, and override it when one is provided. The
++	// default has to go through the defaulting below as well: it leaves
++	// Authorizer, Unauthorized and BadRequest nil, which are built from the rest.
++	cfg := ConfigDefault
++	if len(config) > 0 {
++		cfg = config[0]
+ 	}
+ 
+-	// Override default config
+-	cfg := config[0]
+-
+ 	// Set default values
+ 	if cfg.Next == nil {
+ 		cfg.Next = ConfigDefault.Next
+@@ -173,7 +173,8 @@ func configDefault(config ...Config) Config {
+ 			}
+ 			c.Set(fiber.HeaderWWWAuthenticate, header)
+ 			c.Set(fiber.HeaderCacheControl, "no-store")
+-			c.Set(fiber.HeaderVary, fiber.HeaderAuthorization)
++			// Added to the Vary an earlier middleware may have set, not replacing it.
++			c.Vary(fiber.HeaderAuthorization)
+ 			return c.SendStatus(fiber.StatusUnauthorized)
+ 		}
+ 	}
+diff --git a/middleware/cache/cache.go b/middleware/cache/cache.go
+index 3fd5947103d..4485264ad9f 100644
+--- a/middleware/cache/cache.go
++++ b/middleware/cache/cache.go
+@@ -717,6 +717,19 @@ func New(config ...Config) fiber.Handler {
+ 			return c.SendStatus(fiber.StatusGatewayTimeout)
+ 		}
+ 
++		// An entry is still held here, so the switch found it unusable for this
++		// request: the request said no-cache, which forbids serving a stored
++		// response unvalidated, or the entry carries no expiry. Validating or
++		// refreshing it means calling the handler, and only-if-cached forbids that
++		// (RFC 9111 Section 5.2.1.7), so the answer is the same 504 as for a miss.
++		// The entry stays stored for the requests that can use it.
++		if e != nil && reqDirectives.onlyIfCached {
++			manager.release(e)
++			unlock()
++			c.Set(cfg.CacheHeader, cacheUnreachable)
++			return c.SendStatus(fiber.StatusGatewayTimeout)
++		}
++
+ 		// Remember the superseded entry's heap node so the replacement takes over its accounting.
+ 		if e != nil {
+ 			oldHeapIdx = e.heapidx
+diff --git a/middleware/cors/config.go b/middleware/cors/config.go
+index 765ad93da31..ac6f944d331 100644
+--- a/middleware/cors/config.go
++++ b/middleware/cors/config.go
+@@ -14,26 +14,30 @@ type Config struct {
+ 	// AllowOriginsFunc defines a function that will set the 'Access-Control-Allow-Origin'
+ 	// response header to the 'origin' request header when returned true. This allows for
+ 	// dynamic evaluation of allowed origins. Note if AllowCredentials is true, wildcard origins
+-	// will be not have the 'Access-Control-Allow-Credentials' header set to 'true'.
++	// will not have the 'Access-Control-Allow-Credentials' header set to 'true'.
+ 	//
+-	// The function receives serialized origins (scheme + host) or the literal "null" string.
++	// The function is called with the Origin request header exactly as the client sent it, and only
++	// when that origin did not already match AllowOrigins. A true result takes effect only when the
++	// value is a serialized origin (scheme + host) or the literal "null" string.
+ 	// According to the CORS specification (https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS#origin),
+ 	// browsers send "null" for privacy-sensitive contexts like sandboxed iframes or file:// URLs.
+ 	//
+-	// Origins with userinfo, paths, queries, fragments, or wildcards are rejected and will not
+-	// be passed to this function.
++	// Origins with userinfo, paths, queries, fragments, or wildcards are still passed to this
++	// function, but a true result for them is discarded and no 'Access-Control-Allow-Origin'
++	// header is set.
+ 	//
+ 	// Optional. Default: nil
+ 	AllowOriginsFunc func(origin string) bool
+ 
+-	// AllowOrigin defines a list of origins that may access the resource.
++	// AllowOrigins defines a list of origins that may access the resource.
+ 	//
+ 	// This supports wildcard matching for subdomains by prefixing the domain with a `*.`
+-	// e.g. "http://.domain.com". This will allow all level of subdomains of domain.com to access the resource.
++	// e.g. "http://*.domain.com". This will allow all level of subdomains of domain.com to access the resource.
+ 	//
+ 	// If the special wildcard `"*"` is present in the list, all origins will be allowed.
++	// An empty list also allows all origins, unless AllowOriginsFunc is set.
+ 	//
+-	// Optional. Default value []string{}
++	// Optional. Default value []string{"*"}
+ 	AllowOrigins []string
+ 
+ 	// AllowMethods defines a list methods allowed when accessing the resource.
+diff --git a/middleware/keyauth/config.go b/middleware/keyauth/config.go
+index c0547f04c39..77bbcd2ae7c 100644
+--- a/middleware/keyauth/config.go
++++ b/middleware/keyauth/config.go
+@@ -30,7 +30,7 @@ type Config struct {
+ 	// ErrorHandler defines a function which is executed for an invalid key.
+ 	// It may be used to define a custom error.
+ 	//
+-	// Optional. Default: 401 Missing or invalid API Key
++	// Optional. Default: 401 with the body "missing or invalid API Key" (ErrMissingOrMalformedAPIKey)
+ 	ErrorHandler fiber.ErrorHandler
+ 
+ 	// Validator is a function to validate the key.
+diff --git a/middleware/limiter/config.go b/middleware/limiter/config.go
+index 9fd9e50b6b3..62e62be5515 100644
+--- a/middleware/limiter/config.go
++++ b/middleware/limiter/config.go
+@@ -34,7 +34,7 @@ type Config struct {
+ 
+ 	// A function to dynamically calculate the expiration time for rate limiter entries.
+ 	// Window accounting is whole-second, so a positive value below one second is floored to
+-	// one second. A zero or negative value falls back to the default expiration.
++	// one second. A zero or negative value falls back to the configured Expiration.
+ 	//
+ 	// Default: A function that returns the static `Expiration` value from the config.
+ 	ExpirationFunc func(c fiber.Ctx) time.Duration
+@@ -159,10 +159,16 @@ func configDefault(config ...Config) Config {
+ }
+ 
+ // windowSeconds turns a per-request expiration into the whole-second window used
+-// for accounting. A positive sub-second value floors to 1s instead of truncating
+-// to a 0-second window (NaN rate in sliding, no limiting at all in fixed).
+-func windowSeconds(d time.Duration) uint64 {
++// for accounting. A zero or negative value falls back to configured, the
++// Expiration the limiter was set up with. A positive sub-second value floors
++// to 1s instead of truncating to a 0-second window (NaN rate in sliding, no
++// limiting at all in fixed).
++func windowSeconds(d, configured time.Duration) uint64 {
+ 	if d <= 0 {
++		d = configured
++	}
++	if d <= 0 {
++		// A Config that did not go through configDefault carries no Expiration.
+ 		d = ConfigDefault.Expiration
+ 	}
+ 	if sec := uint64(d.Seconds()); sec > 0 {
+diff --git a/middleware/limiter/limiter_fixed.go b/middleware/limiter/limiter_fixed.go
+index 31f75480824..96dad42a7cb 100644
+--- a/middleware/limiter/limiter_fixed.go
++++ b/middleware/limiter/limiter_fixed.go
+@@ -38,7 +38,7 @@ func (FixedWindow) New(cfg *Config) fiber.Handler {
+ 
+ 		// Generate expiration from generator. The storage TTL is derived from the
+ 		// window so a sub-second value cannot expire the entry mid-window.
+-		expiration := windowSeconds(cfg.ExpirationFunc(c))
++		expiration := windowSeconds(cfg.ExpirationFunc(c), cfg.Expiration)
+ 		expirationDuration, _ := secondsToDuration(expiration)
+ 
+ 		// Get key from request
+diff --git a/middleware/limiter/limiter_sliding.go b/middleware/limiter/limiter_sliding.go
+index 021bc56e979..85f6621797f 100644
+--- a/middleware/limiter/limiter_sliding.go
++++ b/middleware/limiter/limiter_sliding.go
+@@ -39,7 +39,7 @@ func (SlidingWindow) New(cfg *Config) fiber.Handler {
+ 		}
+ 
+ 		// Generate expiration from generator
+-		expiration := windowSeconds(cfg.ExpirationFunc(c))
++		expiration := windowSeconds(cfg.ExpirationFunc(c), cfg.Expiration)
+ 
+ 		// Get key from request
+ 		key := cfg.KeyGenerator(c)
+diff --git a/middleware/proxy/proxy.go b/middleware/proxy/proxy.go
+index b2536eb771c..0d0e897224a 100644
+--- a/middleware/proxy/proxy.go
++++ b/middleware/proxy/proxy.go
+@@ -651,21 +651,6 @@ func selectClient(globalClient *fasthttp.Client, clients ...*fasthttp.Client) (*
+ 	return globalClient, nil
+ }
+ 
+-// DomainForward performs an http request based on the given domain and populates the given http response.
+-// This method will return a fiber.Handler.
+-//
+-// The upstream addr is validated at handler construction: scheme allowlist,
+-// SSRF block, and URL parsing all run once. Unlike Balancer (which defers
+-// DNS to dial time to survive transient resolver failures at startup), this
+-// construction check resolves the host, so a misconfigured or unresolvable
+-// addr panics at startup instead of failing per request. Each request also
+-// re-validates the host against the current policy before dispatch.
+-//
+-// SSRF note: the per-request validation is an up-front host check, and
+-// when AllowPrivateIPs is false the dispatching client's dial-time guard
+-// re-validates the resolved IP at connect time — so a rebinding-capable
+-// resolver cannot reach a private address through this handler.
+-
+ // foldHostnameLabel returns hostname with its host label folded to lowercase
+ // Punycode, preserving an explicit port unchanged. It is the construction-time
+ // counterpart to hostWithoutPort: that strips a port from the per-request wire
+@@ -692,6 +677,20 @@ func hostWithoutPort(host string) string {
+ 	return host
+ }
+ 
++// DomainForward performs an http request based on the given domain and populates the given http response.
++// This method will return a fiber.Handler.
++//
++// The upstream addr is validated at handler construction: scheme allowlist,
++// SSRF block, and URL parsing all run once. Unlike Balancer (which defers
++// DNS to dial time to survive transient resolver failures at startup), this
++// construction check resolves the host, so a misconfigured or unresolvable
++// addr panics at startup instead of failing per request. Each request also
++// re-validates the host against the current policy before dispatch.
++//
++// SSRF note: the per-request validation is an up-front host check, and
++// when AllowPrivateIPs is false the dispatching client's dial-time guard
++// re-validates the resolved IP at connect time — so a rebinding-capable
++// resolver cannot reach a private address through this handler.
+ func DomainForward(hostname, addr string, clients ...*fasthttp.Client) fiber.Handler {
+ 	base, err := validateUpstream(addr, currentSecurityPolicy())
+ 	if err != nil {
+diff --git a/middleware/session/config.go b/middleware/session/config.go
+index 036801cfcb9..dc94b9702c2 100644
+--- a/middleware/session/config.go
++++ b/middleware/session/config.go
+@@ -17,9 +17,10 @@ type Config struct {
+ 	// Optional. Default: memory.New()
+ 	Storage fiber.Storage
+ 
+-	// Store defines the session store.
++	// Store defines a pre-built session store, for example one shared with
++	// other handlers or one that has custom types registered.
+ 	//
+-	// Required.
++	// Optional. Default: nil, which creates a store from this Config.
+ 	Store *Store
+ 
+ 	// Next defines a function to skip this middleware when it returns true.
+diff --git a/middleware/session/middleware.go b/middleware/session/middleware.go
+index 69ebe9ef861..5ebc7fbf95d 100644
+--- a/middleware/session/middleware.go
++++ b/middleware/session/middleware.go
+@@ -6,6 +6,7 @@ import (
+ 	"context"
+ 	"errors"
+ 	"sync"
++	"sync/atomic"
+ 
+ 	"github.com/gofiber/fiber/v3"
+ 	"github.com/gofiber/fiber/v3/internal/ctxlocal"
+@@ -17,11 +18,17 @@ import (
+ // Middleware serializes access to its internal state with a mutex, but it is
+ // request-scoped and must not be used after the request lifecycle ends.
+ type Middleware struct {
+-	Session     *Session
+-	ctx         fiber.Ctx
+-	config      Config
+-	mu          sync.RWMutex
++	Session *Session
++	ctx     fiber.Ctx
++	config  Config
++	mu      sync.RWMutex
++	// released is set when the request is over and the middleware was published
++	// to the request context, so FromContext stops returning it.
++	released    atomic.Bool
+ 	isDestroyed bool
++	// escaped marks a middleware the request context holds, which releaseMiddleware
++	// must not recycle.
++	escaped bool
+ }
+ 
+ // Context key for session middleware lookup.
+@@ -144,9 +151,17 @@ func registerLogContextTags() {
+ 	})
+ }
+ 
+-func storeMiddlewareContext(c fiber.Ctx, session *Session, m *Middleware) {
++// storeMiddlewareContext publishes the session ID and the middleware to the
++// Fiber locals and, with PassLocalsToContext, to the request context. It
++// reports whether the request context now holds m. Unlike the locals, which are
++// cleared when the request ends, that context can be kept by a goroutine, so a
++// middleware it holds must never go back to the pool.
++func storeMiddlewareContext(c fiber.Ctx, session *Session, m *Middleware) bool {
+ 	fiber.StoreInContext(c, sessionIDContextKey, session.ID())
+ 	fiber.StoreInContext(c, middlewareContextKey, m)
++
++	held, ok := c.Context().Value(middlewareContextKey).(*Middleware)
++	return ok && held == m
+ }
+ 
+ // clearMiddlewareContext clears both Fiber locals and the request context
+@@ -174,7 +189,7 @@ func (m *Middleware) initialize(c fiber.Ctx, cfg *Config) error {
+ 	m.Session = session
+ 	m.ctx = c
+ 
+-	storeMiddlewareContext(c, session, m)
++	m.escaped = storeMiddlewareContext(c, session, m)
+ 	return nil
+ }
+ 
+@@ -210,7 +225,13 @@ func acquireMiddleware() *Middleware {
+ 	return m
+ }
+ 
+-// releaseMiddleware resets and returns middleware to the pool.
++// releaseMiddleware resets the middleware and returns it to the pool.
++//
++// A middleware the request context holds is reset and marked released but not
++// pooled. A goroutine can keep that context, and with it the pointer, past the
++// end of the request; if the object were reused, the next request's session
++// would be reachable through the old context. Dropping it leaves the old
++// pointer pointing at a finished, empty middleware that nothing else uses.
+ //
+ // Parameters:
+ //   - m: The middleware object to release.
+@@ -220,6 +241,12 @@ func acquireMiddleware() *Middleware {
+ //	releaseMiddleware(m)
+ func releaseMiddleware(m *Middleware) {
+ 	m.mu.Lock()
++	escaped := m.escaped
++	if escaped {
++		// First, so a lookup that races the release finds a middleware that is
++		// visibly gone instead of one that is half reset.
++		m.released.Store(true)
++	}
+ 	if m.ctx != nil {
+ 		clearMiddlewareContext(m.ctx)
+ 	}
+@@ -228,27 +255,36 @@ func releaseMiddleware(m *Middleware) {
+ 	m.ctx = nil
+ 	m.isDestroyed = false
+ 	m.mu.Unlock()
+-	middlewarePool.Put(m)
++
++	if !escaped {
++		middlewarePool.Put(m)
++	}
+ }
+ 
+ // FromContext returns the Middleware from the Fiber context.
+ // It accepts fiber.CustomCtx, fiber.Ctx, *fasthttp.RequestCtx, and context.Context.
+ //
++// A context kept from c.Context() (with PassLocalsToContext enabled) stops
++// resolving when the request ends: FromContext returns nil for it afterwards,
++// never another request's session.
++//
+ // Parameters:
+ //   - c: The Fiber context.
+ //
+ // Returns:
+-//   - *Middleware: The middleware object if found; otherwise, nil.
++//   - *Middleware: The middleware object if found and its request is still being
++//     handled; otherwise, nil.
+ //
+ // Usage:
+ //
+ //	m := session.FromContext(c)
+ func FromContext(ctx any) *Middleware {
+-	if m, ok := fiber.ValueFromContext[*Middleware](ctx, middlewareContextKey); ok {
+-		return m
++	m, ok := fiber.ValueFromContext[*Middleware](ctx, middlewareContextKey)
++	if !ok || m == nil || m.released.Load() {
++		return nil
+ 	}
+ 
+-	return nil
++	return m
+ }
+ 
+ // Set sets a key-value pair in the session.
+diff --git a/redirect.go b/redirect.go
+index 28a9fd183c7..08662ccdc7f 100644
+--- a/redirect.go
++++ b/redirect.go
+@@ -159,7 +159,8 @@ func (r *Redirect) Status(code int) *Redirect {
+ // With You can send flash messages by using With().
+ // They will be sent as a cookie.
+ // You can get them by using: Redirect().Messages(), Redirect().Message()
+-// Note: You must use escape char before using ',' and ':' chars to avoid wrong parsing.
++// The cookie payload is MessagePack encoded, so keys and values need no escaping.
++// Calling With again with the same key replaces the earlier message.
+ // No cookie is set when Config.DisableFlashMessages is on.
+ func (r *Redirect) With(key, value string, level ...uint8) *Redirect {
+ 	// Get level
+diff --git a/req.go b/req.go
+index 62f42cab349..63f10994a63 100644
+--- a/req.go
++++ b/req.go
+@@ -99,7 +99,7 @@ func (r *DefaultReq) App() *App {
+ 	return r.c.app
+ }
+ 
+-// BaseURL returns (protocol + host + base path).
++// BaseURL returns (protocol + host), such as "https://example.com". It carries no path.
+ func (r *DefaultReq) BaseURL() string {
+ 	return r.c.BaseURL()
+ }
+diff --git a/req_interface_gen.go b/req_interface_gen.go
+index a5b5f35457f..a9bfad453e1 100644
+--- a/req_interface_gen.go
++++ b/req_interface_gen.go
+@@ -30,7 +30,7 @@ type Req interface {
+ 	AcceptsLanguagesExtended(offers ...string) string
+ 	// App returns the *App reference to the instance of the Fiber application
+ 	App() *App
+-	// BaseURL returns (protocol + host + base path).
++	// BaseURL returns (protocol + host), such as "https://example.com". It carries no path.
+ 	BaseURL() string
+ 	// BodyRaw contains the raw body submitted in a POST request.
+ 	// Returned value is only valid within the handler. Do not store any references.
+diff --git a/res.go b/res.go
+index 64f52864b77..d3ebd1c68ab 100644
+--- a/res.go
++++ b/res.go
+@@ -286,8 +286,10 @@ func contentDispositionAttachment(fname string) string {
+ 
+ // Add appends the value as a new field line, where Append folds values into one
+ // comma-separated line. The headers fasthttp keeps in a slot of their own are
+-// the exception: Content-Type, Server and the rest are replaced and Date and TE
+-// ignored, though Set-Cookie is slotted and does append. Use Cookie for that.
++// the exception: Content-Type, Content-Encoding, Content-Length, Connection and
++// Server are replaced, and Transfer-Encoding and Date are ignored because fasthttp
++// writes them itself. Set-Cookie is slotted too but does append, though Cookie
++// builds that field value for you. Trailer accumulates, extending the announced set.
+ func (r *DefaultRes) Add(key, val string) {
+ 	r.c.fasthttp.Response.Header.Add(key, val)
+ }
+@@ -1479,8 +1481,9 @@ func (r *DefaultRes) SendStatus(status int) error {
+ 		resp := &r.c.fasthttp.Response
+ 		resp.ResetBody()
+ 		// ResetBody drops the body but keeps a Content-Length the handler
+-		// declared, which RFC 9110 Section 8.6 forbids here and which leaves a
+-		// keep-alive peer waiting for bytes that never come.
++		// declared. RFC 9110 Section 8.6 forbids that field in a 1xx or 204
++		// response only; Fiber drops it for a 205 and a 304 as well, because the
++		// length of the body just discarded describes nothing that follows.
+ 		resp.Header.Del(HeaderContentLength)
+ 		return nil
+ 	}
+diff --git a/res_interface_gen.go b/res_interface_gen.go
+index a4ee12983b3..53e919823bc 100644
+--- a/res_interface_gen.go
++++ b/res_interface_gen.go
+@@ -22,8 +22,10 @@ type Res interface {
+ 	Append(field string, values ...string)
+ 	// Add appends the value as a new field line, where Append folds values into one
+ 	// comma-separated line. The headers fasthttp keeps in a slot of their own are
+-	// the exception: Content-Type, Server and the rest are replaced and Date and TE
+-	// ignored, though Set-Cookie is slotted and does append. Use Cookie for that.
++	// the exception: Content-Type, Content-Encoding, Content-Length, Connection and
++	// Server are replaced, and Transfer-Encoding and Date are ignored because fasthttp
++	// writes them itself. Set-Cookie is slotted too but does append, though Cookie
++	// builds that field value for you. Trailer accumulates, extending the announced set.
+ 	Add(key, val string)
+ 	// Attachment sets the HTTP response Content-Disposition header field to attachment.
+ 	Attachment(filename ...string)

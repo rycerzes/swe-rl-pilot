@@ -1,0 +1,352 @@
+diff --git a/ctx_interface_gen.go b/ctx_interface_gen.go
+index a410fcd25c9..006bcfcb4eb 100644
+--- a/ctx_interface_gen.go
++++ b/ctx_interface_gen.go
+@@ -444,6 +444,7 @@ type Ctx interface {
+ 	// Example: URL: https://example.com:8080 -> Host: example.com:8080
+ 	// Make copies or use the Immutable setting instead.
+ 	// Please use Config.TrustProxy to prevent header spoofing if your app is behind a proxy.
++	// Behind a trusted proxy it is the first non-empty X-Forwarded-Host element when there is one, trimmed but neither validated nor case-folded.
+ 	Host() string
+ 	// Hostname contains the hostname derived from the X-Forwarded-Host or Host HTTP header using the c.Host() method.
+ 	// Returned value is only valid within the handler. Do not store any references.
+diff --git a/helpers.go b/helpers.go
+index cfa6c2c26bb..ca9d1eecec1 100644
+--- a/helpers.go
++++ b/helpers.go
+@@ -946,41 +946,6 @@ func (app *App) isEtagStale(etag string, noneMatchBytes []byte) bool {
+ 	return !etagpkg.AnyMatch(app.toString(noneMatchBytes), etag)
+ }
+ 
+-func parseAddr(raw string) (host, port string) { //nolint:nonamedreturns // gocritic unnamedResult requires naming host and port parts for clarity
+-	if raw == "" {
+-		return "", ""
+-	}
+-
+-	raw = utils.TrimSpace(raw)
+-
+-	// Handle IPv6 addresses enclosed in brackets as defined by RFC 3986
+-	if strings.HasPrefix(raw, "[") {
+-		if end := strings.IndexByte(raw, ']'); end != -1 {
+-			host = raw[:end+1] // keep the closing ]
+-			if len(raw) > end+1 && raw[end+1] == ':' {
+-				return host, raw[end+2:]
+-			}
+-			return host, ""
+-		}
+-	}
+-
+-	// Everything else with a colon
+-	if i := strings.LastIndexByte(raw, ':'); i != -1 {
+-		host, port = raw[:i], raw[i+1:]
+-
+-		// If “host” still contains ':', we must have hit an un-bracketed IPv6
+-		// literal. In that form a port is impossible, so treat the whole thing
+-		// as host.
+-		if strings.IndexByte(host, ':') >= 0 {
+-			return raw, ""
+-		}
+-		return host, port
+-	}
+-
+-	// No colon, nothing to split
+-	return raw, ""
+-}
+-
+ // isNoCache checks if the cacheControl header value contains a `no-cache` directive.
+ // Per RFC 9111 §5.2.2.4, no-cache can appear as either:
+ // - "no-cache" (applies to entire response)
+diff --git a/internal/hostname/hostname.go b/internal/hostname/hostname.go
+new file mode 100644
+index 00000000000..d6ac3db2d18
+--- /dev/null
++++ b/internal/hostname/hostname.go
+@@ -0,0 +1,63 @@
++// Package hostname splits host:port values and converts IDN host names.
++package hostname
++
++import (
++	"strings"
++
++	"github.com/gofiber/utils/v2"
++	"golang.org/x/net/idna"
++)
++
++// SplitPort splits "host[:port]" into host and port without trimming. A
++// bracketed IPv6 literal keeps its brackets and ends at the first ']', and
++// anything after it but a ":port" is dropped. A value with several colons is
++// returned whole as a bare IPv6 literal. An unclosed '[' is not a literal, so
++// "[a:80" splits like any other host into "[a" and "80".
++func SplitPort(authority string) (host, port string) { //nolint:nonamedreturns // gocritic unnamedResult requires naming host and port parts for clarity
++	// An IPv6 literal enclosed in brackets, as defined by RFC 3986.
++	if strings.HasPrefix(authority, "[") {
++		if end := strings.IndexByte(authority, ']'); end != -1 {
++			host = authority[:end+1] // keep the closing ]
++			if len(authority) > end+1 && authority[end+1] == ':' {
++				return host, authority[end+2:]
++			}
++			return host, ""
++		}
++	}
++
++	// No colon leaves nothing to split, and a second one makes this an
++	// unbracketed IPv6 literal, where a port is impossible.
++	i := strings.IndexByte(authority, ':')
++	if i < 0 || strings.IndexByte(authority[i+1:], ':') >= 0 {
++		return authority, ""
++	}
++	return authority[:i], authority[i+1:]
++}
++
++// ToASCII converts a non-ASCII host to Punycode. IDNA has no concept of a port,
++// so a caller holding "host:port" splits it first: a host with a colon is
++// returned unchanged. So are an ASCII host and one idna.Lookup rejects, so an
++// invalid host fails by not matching.
++func ToASCII(host string) string {
++	if host == "" || strings.IndexByte(host, ':') >= 0 || utils.IsASCII(host) {
++		return host
++	}
++	if ascii, err := idna.Lookup.ToASCII(host); err == nil {
++		return ascii
++	}
++	return host
++}
++
++// ToUnicode decodes the Punycode labels of host. "xn--" anywhere in host sends
++// all of it through idna.Lookup, which also maps the other labels (width, dots,
++// soft hyphens), and a single label it rejects leaves the whole host unchanged.
++// The xn-- check is case-sensitive, so callers fold ASCII case first.
++func ToUnicode(host string) string {
++	if !strings.Contains(host, "xn--") {
++		return host
++	}
++	if u, err := idna.Lookup.ToUnicode(host); err == nil {
++		return u
++	}
++	return host
++}
+diff --git a/internal/idnafold/idnafold.go b/internal/idnafold/idnafold.go
+deleted file mode 100644
+index 1fe37837e27..00000000000
+--- a/internal/idnafold/idnafold.go
++++ /dev/null
+@@ -1,34 +0,0 @@
+-// Package idnafold converts a Unicode hostname label to the Punycode form a
+-// browser puts on the wire (RFC 5891), so a hostname literal written in
+-// source still matches the requests that name actually generates.
+-package idnafold
+-
+-import (
+-	"strings"
+-
+-	"github.com/gofiber/utils/v2"
+-	"golang.org/x/net/idna"
+-)
+-
+-// ToASCII converts host to its Punycode ("xn--...") form when it carries
+-// non-ASCII characters, and returns it unchanged otherwise — including when
+-// it is already Punycode, which is itself ASCII.
+-//
+-// A value containing a colon is returned unchanged: IDNA has no concept of a
+-// port, and a bracketed IPv6 literal is never subject to IDNA. A caller with
+-// a "host:port" or "[ipv6]:port" value splits it first and folds the host
+-// part alone.
+-//
+-// Input idna.Lookup's stricter validation rejects is also returned
+-// unchanged rather than as an error: it will not match any Punycode-encoded
+-// value, which is the correct security default — reject by non-match, not by
+-// a second error path every caller would have to remember to handle.
+-func ToASCII(host string) string {
+-	if host == "" || strings.IndexByte(host, ':') >= 0 || utils.IsASCII(host) {
+-		return host
+-	}
+-	if ascii, err := idna.Lookup.ToASCII(host); err == nil {
+-		return ascii
+-	}
+-	return host
+-}
+diff --git a/listen.go b/listen.go
+index 1f8cbe15bd4..b2963a76c0e 100644
+--- a/listen.go
++++ b/listen.go
+@@ -24,10 +24,12 @@ import (
+ 	"text/tabwriter"
+ 	"time"
+ 
++	"github.com/gofiber/utils/v2"
+ 	"github.com/mattn/go-colorable"
+ 	"github.com/mattn/go-isatty"
+ 	"golang.org/x/crypto/acme/autocert"
+ 
++	"github.com/gofiber/fiber/v3/internal/hostname"
+ 	"github.com/gofiber/fiber/v3/log"
+ )
+ 
+@@ -526,7 +528,7 @@ func (app *App) printMessages(cfg *ListenConfig, listenData *ListenData) {
+ 
+ // prepareListenData creates a ListenData instance populated with the application metadata.
+ func (app *App) prepareListenData(addr string, isTLS bool, cfg *ListenConfig, childPIDs []int) *ListenData { //revive:disable-line:flag-parameter // Accepting a bool param named isTLS is fine here
+-	host, port := parseAddr(addr)
++	host, port := hostname.SplitPort(utils.TrimSpace(addr))
+ 	if host == "" {
+ 		if cfg.ListenerNetwork == NetworkTCP6 {
+ 			host = "[::1]"
+diff --git a/middleware/hostauthorization/hostauthorization.go b/middleware/hostauthorization/hostauthorization.go
+index 19b28798bda..46c4789fdd2 100644
+--- a/middleware/hostauthorization/hostauthorization.go
++++ b/middleware/hostauthorization/hostauthorization.go
+@@ -6,7 +6,7 @@ import (
+ 	"strings"
+ 
+ 	"github.com/gofiber/fiber/v3"
+-	"github.com/gofiber/fiber/v3/internal/idnafold"
++	"github.com/gofiber/fiber/v3/internal/hostname"
+ 	"github.com/gofiber/fiber/v3/internal/ipv6host"
+ 	"github.com/gofiber/utils/v2"
+ 	utilsstrings "github.com/gofiber/utils/v2/strings"
+@@ -129,7 +129,7 @@ func invalidEntry(entry, reason string) string {
+ // normalizeName drops one trailing dot, lowercases, and converts IDN labels to
+ // Punycode, matching what browsers send.
+ func normalizeName(host string) string {
+-	return idnafold.ToASCII(utilsstrings.ToLower(trimOneTrailingDot(host)))
++	return hostname.ToASCII(utilsstrings.ToLower(trimOneTrailingDot(host)))
+ }
+ 
+ // canonicalIPv6 writes an IPv6 address in the form browsers send (see ipv6host),
+diff --git a/middleware/proxy/domain.go b/middleware/proxy/domain.go
+index 96489b944dc..e79953f0bd0 100644
+--- a/middleware/proxy/domain.go
++++ b/middleware/proxy/domain.go
+@@ -2,11 +2,10 @@ package proxy
+ 
+ import (
+ 	"net"
+-	"strings"
+ 
+ 	"github.com/gofiber/fiber/v3"
+ 	"github.com/gofiber/fiber/v3/internal/errorreplay"
+-	"github.com/gofiber/fiber/v3/internal/idnafold"
++	hostnamepkg "github.com/gofiber/fiber/v3/internal/hostname"
+ 	"github.com/gofiber/utils/v2"
+ 	utilsstrings "github.com/gofiber/utils/v2/strings"
+ 	"github.com/valyala/fasthttp"
+@@ -14,28 +13,12 @@ import (
+ 
+ // foldHostnameLabel returns hostname with its host label folded to lowercase
+ // Punycode, preserving an explicit port unchanged. It is the construction-time
+-// counterpart to hostWithoutPort: that strips a port from the per-request wire
+-// value, this normalizes the configured value once so the two sides compare
+-// correctly regardless of how the operator spelled the domain.
++// counterpart to the SplitPort in DomainForward.
+ func foldHostnameLabel(hostname string) string {
+ 	if host, port, ok := utils.SplitHostPort(hostname); ok {
+-		return net.JoinHostPort(idnafold.ToASCII(utilsstrings.ToLower(host)), port)
++		return net.JoinHostPort(hostnamepkg.ToASCII(utilsstrings.ToLower(host)), port)
+ 	}
+-	return idnafold.ToASCII(utilsstrings.ToLower(hostname))
+-}
+-
+-// hostWithoutPort strips the port from a Host header value, keeping a bracketed IPv6 literal.
+-func hostWithoutPort(host string) string {
+-	if strings.HasPrefix(host, "[") {
+-		if end := strings.IndexByte(host, ']'); end != -1 {
+-			return host[:end+1]
+-		}
+-		return host
+-	}
+-	if i := strings.LastIndexByte(host, ':'); i != -1 && strings.IndexByte(host[:i], ':') == -1 {
+-		return host[:i]
+-	}
+-	return host
++	return hostnamepkg.ToASCII(utilsstrings.ToLower(hostname))
+ }
+ 
+ // DomainForward performs an http request based on the given domain and populates the given http response.
+@@ -63,15 +46,17 @@ func DomainForward(hostname, addr string, clients ...*fasthttp.Client) fiber.Han
+ 	// every request, is what makes the two sides comparable at all.
+ 	hostname = foldHostnameLabel(hostname)
+ 	return func(c fiber.Ctx) error {
+-		// Host names are case-insensitive (RFC 9110 §4.2.3) and fasthttp
+-		// does not case-fold the raw Host header, so compare with
+-		// EqualFold — otherwise "API.Example.com" would slip past a
+-		// DomainForward("api.example.com", ...) gate and be passed
+-		// through unproxied.
++		// Host names are case-insensitive (RFC 9110 §4.2.3), so compare with EqualFold.
+ 		// Match the host with or without its port; another host is passed on to the next handler.
+ 		host := utils.UnsafeString(c.Request().Host())
+-		if !utils.EqualFold(host, hostname) && !utils.EqualFold(hostWithoutPort(host), hostname) {
+-			return c.Next()
++		if !utils.EqualFold(host, hostname) {
++			// SplitPort returns a prefix of host, so only a longer host can still match.
++			if len(host) <= len(hostname) {
++				return c.Next()
++			}
++			if bare, _ := hostnamepkg.SplitPort(host); !utils.EqualFold(bare, hostname) {
++				return c.Next()
++			}
+ 		}
+ 		// See Balancer: a refused request is not forwarded.
+ 		if errorreplay.Active(c.RequestCtx()) {
+diff --git a/req.go b/req.go
+index 1a0b9bf8732..062e2f4aa11 100644
+--- a/req.go
++++ b/req.go
+@@ -16,12 +16,12 @@ import (
+ 	utilsstrings "github.com/gofiber/utils/v2/strings"
+ 	"github.com/valyala/bytebufferpool"
+ 	"github.com/valyala/fasthttp"
+-	"golang.org/x/net/idna"
+ 
+ 	"github.com/gofiber/fiber/v3/internal/bodystream"
+ 	etagpkg "github.com/gofiber/fiber/v3/internal/etag"
+ 	"github.com/gofiber/fiber/v3/internal/fieldname"
+ 	"github.com/gofiber/fiber/v3/internal/headerlist"
++	"github.com/gofiber/fiber/v3/internal/hostname"
+ 	"github.com/gofiber/fiber/v3/internal/mediatype"
+ )
+ 
+@@ -792,6 +792,7 @@ func (r *DefaultReq) GetHeaders() map[string][]string {
+ // Example: URL: https://example.com:8080 -> Host: example.com:8080
+ // Make copies or use the Immutable setting instead.
+ // Please use Config.TrustProxy to prevent header spoofing if your app is behind a proxy.
++// Behind a trusted proxy it is the first non-empty X-Forwarded-Host element when there is one, trimmed but neither validated nor case-folded.
+ func (r *DefaultReq) Host() string {
+ 	if r.IsProxyTrusted() {
+ 		// Received order, as for X-Forwarded-For: fasthttp reorders repeated lines when it deletes a header.
+@@ -808,7 +809,7 @@ func (r *DefaultReq) Host() string {
+ // Make copies or use the Immutable setting instead.
+ // Please use Config.TrustProxy to prevent header spoofing if your app is behind a proxy.
+ func (r *DefaultReq) Hostname() string {
+-	addr, _ := parseAddr(r.Host())
++	addr, _ := hostname.SplitPort(utils.TrimSpace(r.Host()))
+ 
+ 	return addr
+ }
+@@ -1753,14 +1754,7 @@ func (r *DefaultReq) Subdomains(offset ...int) []string {
+ 	if strings.HasSuffix(host, ".") {
+ 		host = utils.TrimRight(host, '.')
+ 	}
+-	host = utilsstrings.ToLower(host)
+-
+-	// Decode punycode labels only when necessary
+-	if strings.Contains(host, "xn--") {
+-		if u, err := idna.Lookup.ToUnicode(host); err == nil {
+-			host = utilsstrings.ToLower(u)
+-		}
+-	}
++	host = hostname.ToUnicode(utilsstrings.ToLower(host))
+ 
+ 	// Return nothing for IP addresses
+ 	ip := host
+diff --git a/req_interface_gen.go b/req_interface_gen.go
+index 6f739e2c5b6..99109b33375 100644
+--- a/req_interface_gen.go
++++ b/req_interface_gen.go
+@@ -204,6 +204,7 @@ type Req interface {
+ 	// Example: URL: https://example.com:8080 -> Host: example.com:8080
+ 	// Make copies or use the Immutable setting instead.
+ 	// Please use Config.TrustProxy to prevent header spoofing if your app is behind a proxy.
++	// Behind a trusted proxy it is the first non-empty X-Forwarded-Host element when there is one, trimmed but neither validated nor case-folded.
+ 	Host() string
+ 	// Hostname contains the hostname derived from the X-Forwarded-Host or Host HTTP header using the c.Host() method.
+ 	// Returned value is only valid within the handler. Do not store any references.

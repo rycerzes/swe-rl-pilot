@@ -1,0 +1,150 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15432"
+description = "Add ImageResource.FrameCount"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "0732eadd5aead94d4bd4674d87e9bfc79aaf10a7"
+reference = "https://github.com/gohugoio/hugo/pull/15432"
+source_access = "auto"
+built_at = "2026-11-10T23:53:28.170655+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:4a38c47b496ede1ded3c5d3cb72dbcc8ed1aac94d0e228458ad1e1d41d51ddc2"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15432"
+pr_merged_at = "2026-10-11T14:31:06Z"
+base_commit = "0732eadd5aead94d4bd4674d87e9bfc79aaf10a7"
+fail_to_pass = [
+    "TestImageFrameCount",
+]
+pass_to_pass = [
+    "TestAddColorToPalette",
+    "TestAutoOrient",
+    "TestColorLuminance",
+    "TestColorToHexString",
+    "TestColorToHexString/#000000",
+    "TestColorToHexString/#4287f5",
+    "TestColorToHexString/#4287f580",
+    "TestColorToHexString/#ffffff",
+    "TestColorsIssue14453",
+    "TestDecodeConfig",
+    "TestDecodeImageConfig",
+    "TestExpandCropRectToMinSize",
+    "TestExpandCropRectToMinSize/bottom_right",
+    "TestExpandCropRectToMinSize/centered",
+    "TestExpandCropRectToMinSize/source_too_small",
+    "TestExpandCropRectToMinSize/top_left",
+    "TestFilterHash",
+    "TestHexStringToColor",
+    "TestHexStringToColor/#000",
+    "TestHexStringToColor/#00f7",
+    "TestHexStringToColor/#4287f5",
+    "TestHexStringToColor/#f",
+    "TestHexStringToColor/#fff",
+    "TestHexStringToColor/#ffffff",
+    "TestHexStringToColor/#fffffff",
+    "TestHexStringToColor/4287f580",
+    "TestHexStringToColor/777",
+    "TestHexStringToColor/FFF",
+    "TestHexStringToColor/FfF",
+    "TestHexStringToColor/f",
+    "TestHexStringToColor/fff",
+    "TestHexStringToColor/ffffff",
+    "TestHexStringToColor/fffffff",
+    "TestImageConfigPerFormat",
+    "TestImageCropSmartKeepsTargetSizeIssue13688",
+    "TestImagesGoldenConfigLossyVsQuality",
+    "TestImagesGoldenFiltersMask",
+    "TestImagesGoldenFiltersMaskCacheIssues",
+    "TestImagesGoldenFiltersMisc",
+    "TestImagesGoldenFiltersPaddingTransparentColor",
+    "TestImagesGoldenFiltersPaletted",
+    "TestImagesGoldenFiltersText",
+    "TestImagesGoldenMethods",
+    "TestImagesGoldenProcessAviStraws",
+    "TestImagesGoldenProcessAvif",
+    "TestImagesGoldenProcessMisc",
+    "TestImagesGoldenProcessSmartCropRotate",
+    "TestImagesGoldenProcessWebP",
+    "TestImagesGoldenWebPAnimation",
+    "TestImagingGlobalsDeprecated",
+    "TestOrientationEq",
+    "TestReplaceColorInPalette",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:85fb23f1c23a"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 99.305
+measured_overhead_seconds = 7.137
+measured_copy_seconds = 0.254
+run_timeout_sec = 210
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 1
+p2p_count = 52
+source_files = 6
+loc_changed = 114
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:10.360817+00:00"
+inline_recipe_sha256 = "sha256:8f09ee17fc8fda9ff131b2d55752d144814877d7dcd93e9fe35e16f492c59500"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 40
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15432-09862f60e37c"

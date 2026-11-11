@@ -1,0 +1,165 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gofiber__fiber-4708"
+description = "🐛 bug: honor repeated Accept-Encoding and Cache-Control lines in compress"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "fiber",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gofiber/fiber"
+ref = "73fa3b3faf150ce67fff8eb2947d20fbeb3acf71"
+reference = "https://github.com/gofiber/fiber/pull/4708"
+source_access = "auto"
+built_at = "2026-11-11T00:16:11.219360+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:223e2f960e40bb187cf7f69db8033de3b8fd1fbbd41917b41fd0bd867d4a51ef"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gofiber/fiber/pull/4708"
+pr_merged_at = "2026-10-01T17:12:45Z"
+base_commit = "73fa3b3faf150ce67fff8eb2947d20fbeb3acf71"
+fail_to_pass = [
+    "Test_Compress_Repeated_Accept_Encoding_Lines",
+    "Test_Compress_Repeated_Cache_Control_Lines_No_Transform",
+]
+pass_to_pass = [
+    "Test_Compress_AcceptEncoding_Negotiation",
+    "Test_Compress_AcceptEncoding_Negotiation/#00",
+    "Test_Compress_AcceptEncoding_Negotiation/*",
+    "Test_Compress_AcceptEncoding_Negotiation/*;foo=bar",
+    "Test_Compress_AcceptEncoding_Negotiation/br;q=0.5,_gzip;q=1",
+    "Test_Compress_AcceptEncoding_Negotiation/deflate,gzip,br",
+    "Test_Compress_AcceptEncoding_Negotiation/gzip;foo=bar",
+    "Test_Compress_AcceptEncoding_Negotiation/gzip;foo=bar;q=0.4,_br;q=0.2",
+    "Test_Compress_AcceptEncoding_Negotiation/gzip;q=0",
+    "Test_Compress_AcceptEncoding_Negotiation/gzip;q=1.0",
+    "Test_Compress_AcceptEncoding_Negotiation/gzip;q=bogus",
+    "Test_Compress_AcceptEncoding_Negotiation/identity",
+    "Test_Compress_AcceptEncoding_Negotiation/identity,gzip",
+    "Test_Compress_AcceptEncoding_Negotiation/identity;q=0,_gzip;q=0.5",
+    "Test_Compress_Adds_Vary_Header",
+    "Test_Compress_Brotli",
+    "Test_Compress_Deflate",
+    "Test_Compress_Different_Level",
+    "Test_Compress_Different_Level/br_level_0",
+    "Test_Compress_Different_Level/br_level_1",
+    "Test_Compress_Different_Level/br_level_2",
+    "Test_Compress_Different_Level/deflate_level_0",
+    "Test_Compress_Different_Level/deflate_level_1",
+    "Test_Compress_Different_Level/deflate_level_2",
+    "Test_Compress_Different_Level/gzip_level_0",
+    "Test_Compress_Different_Level/gzip_level_1",
+    "Test_Compress_Different_Level/gzip_level_2",
+    "Test_Compress_Different_Level/zstd_level_0",
+    "Test_Compress_Different_Level/zstd_level_1",
+    "Test_Compress_Different_Level/zstd_level_2",
+    "Test_Compress_Disabled",
+    "Test_Compress_Gzip",
+    "Test_Compress_Next",
+    "Test_Compress_Next_Error",
+    "Test_Compress_No_Transform_After_Escaped_Quote",
+    "Test_Compress_Quoted_Cache_Control_Argument_Is_Not_No_Transform",
+    "Test_Compress_RequestHeaderUntouched",
+    "Test_Compress_RespectsBodyLimitOnCompressedRequestBody",
+    "Test_Compress_ShouldSkip_DoesNotMaterialize_BodyStream",
+    "Test_Compress_Skip_Head",
+    "Test_Compress_Skip_NoTransform",
+    "Test_Compress_Skip_NoTransform/request",
+    "Test_Compress_Skip_NoTransform/response",
+    "Test_Compress_Skip_Range",
+    "Test_Compress_Skip_Range_NoAcceptEncoding",
+    "Test_Compress_Skip_Range_Vary_Similar_Substring",
+    "Test_Compress_Skip_Range_Vary_Star",
+    "Test_Compress_Skip_Status_NoContent",
+    "Test_Compress_Skip_Status_NotModified",
+    "Test_Compress_Skip_Status_PartialContent",
+    "Test_Compress_Skip_When_Content_Encoding_Set",
+    "Test_Compress_Skip_When_Content_Encoding_Set_Vary_List_Star",
+    "Test_Compress_Skip_When_Content_Encoding_Set_Vary_Similar_Substring",
+    "Test_Compress_Skip_When_Content_Encoding_Set_Vary_Star",
+    "Test_Compress_StreamedBody_KeepsETagWeak",
+    "Test_Compress_Streaming_With_Compression",
+    "Test_Compress_Strong_ETag_Recalculated",
+    "Test_Compress_Strong_ETag_Unchanged_When_Not_Compressed",
+    "Test_Compress_Vary_List_Star",
+    "Test_Compress_Vary_Similar_Substring",
+    "Test_Compress_Vary_Star",
+    "Test_Compress_Weak_ETag_Unchanged",
+    "Test_Compress_Zstd",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gofiber__fiber:548756be19a8"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "mutants"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 59.246
+measured_overhead_seconds = 2.329
+measured_copy_seconds = 0.06
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 2
+verifier_timeout_sec = 720
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 2
+p2p_count = 63
+source_files = 7
+loc_changed = 113
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:12.098061+00:00"
+inline_recipe_sha256 = "sha256:47e3602e816c57cd7a9cd3d29ec43ec0f7cf69f963e5c6a774a507fd8a63c533"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = [
+    "Test_Compress_Repeated_Accept_Encoding_Lines",
+    "Test_Compress_Repeated_Cache_Control_Lines_No_Transform",
+]
+instruction_description_words = 188
+instruction_ok = false
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 720.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gofiber__fiber-4708-4a90d9ed2dbc"

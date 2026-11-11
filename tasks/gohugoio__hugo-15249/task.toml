@@ -1,0 +1,110 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15249"
+description = "Two CVE fixes"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "bcde80634079098932afa3666fa9d7de957b7b93"
+reference = "https://github.com/gohugoio/hugo/pull/15249"
+source_access = "auto"
+built_at = "2026-11-10T23:45:12.918783+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:d734ec641dade5e17681911ca816ef749e999e5e1e1dc7f60971d0a23edef3ee"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15249"
+pr_merged_at = "2026-08-28T11:03:10Z"
+base_commit = "bcde80634079098932afa3666fa9d7de957b7b93"
+fail_to_pass = [
+    "TestCodeblockAttributeValueEscape",
+]
+pass_to_pass = [
+    "TestAttributes",
+    "TestAttributesChroma",
+    "TestAttributesValidation",
+    "TestCodeChomp",
+    "TestCodePosition",
+    "TestCodeblockLangEscape",
+    "TestCodeblockPosition",
+    "TestCodeblocks",
+    "TestCodeblocksBugs",
+    "TestHighlightCodeblock",
+    "TestPanics",
+    "TestPanics/issue-9819",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:850f11c060b4"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 75.687
+measured_overhead_seconds = 5.698
+measured_copy_seconds = 0.198
+run_timeout_sec = 180
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 1
+p2p_count = 12
+source_files = 5
+loc_changed = 99
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:09.819434+00:00"
+inline_recipe_sha256 = "sha256:c6484c799ea1216557646f51d98b3f691946f59828ef958abebdd612fc41dea5"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 18
+instruction_ok = false
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15249-9cac5089163f"

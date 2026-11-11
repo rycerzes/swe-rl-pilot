@@ -1,0 +1,114 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15539"
+description = "resources: Resolve remote media type from Hugo's media types"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "fa5a3d48b8dcf6c0bfcd7d06726a6530b2efc174"
+reference = "https://github.com/gohugoio/hugo/pull/15539"
+source_access = "auto"
+built_at = "2026-11-11T00:05:47.821814+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:1226b1d79c2f89b43438610ce1b7c43548eb4e87b84a1935a0789cf0090fad81"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15539"
+pr_merged_at = "2026-11-06T19:09:34Z"
+base_commit = "fa5a3d48b8dcf6c0bfcd7d06726a6530b2efc174"
+fail_to_pass = [
+    "TestGetRemoteCustomMediaTypeIssue11601",
+    "TestGetRemoteMediaTypeFromHugoMediaTypesIssue11601",
+]
+pass_to_pass = [
+    "TestDecodeRemoteOptions",
+    "TestDecodeRemoteOptions/Body",
+    "TestDecodeRemoteOptions/Body,_string",
+    "TestDecodeRemoteOptions/POST",
+    "TestGetRemoteHead",
+    "TestGetRemotePerRequestTimeoutBodyRead",
+    "TestGetRemoteRedirectSecurityCheckIssue14871",
+    "TestGetRemoteResponseHeaders",
+    "TestGetRemoteRetryAfterIssue14828",
+    "TestGetRemoteRetryAfterIssue14828/Honored",
+    "TestGetRemoteRetryAfterIssue14828/TimeoutMessage",
+    "TestOptionsNewRequest",
+    "TestRemoteResourceKeys",
+    "TestSecureBaseTransportBlocksInternalAddress",
+    "TestSecureBaseTransportProxyFromEnvironment",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:bca2cec8875b"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 77.455
+measured_overhead_seconds = 4.298
+measured_copy_seconds = 0.121
+run_timeout_sec = 180
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 2
+p2p_count = 15
+source_files = 1
+loc_changed = 17
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:10.744233+00:00"
+inline_recipe_sha256 = "sha256:4cc82e3d629b1c3cb536e23a6624772af0004d6045cb5527d068672db0d098ae"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 270
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15539-6a0a076e6c58"

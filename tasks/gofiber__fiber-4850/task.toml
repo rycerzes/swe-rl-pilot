@@ -1,0 +1,390 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gofiber__fiber-4850"
+description = "🐛 bug: fix header, body, routing and session handling defects"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "fiber",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gofiber/fiber"
+ref = "f994fd2e2c618c33c2129759f2e2f3475be7111d"
+reference = "https://github.com/gofiber/fiber/pull/4850"
+source_access = "auto"
+built_at = "2026-11-10T23:46:07.833600+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:8282048032cfca758d4e5269e58aab374a66f8e85deae3185ac5e6f1b404709c"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gofiber/fiber/pull/4850"
+pr_merged_at = "2026-11-03T17:44:35Z"
+base_commit = "f994fd2e2c618c33c2129759f2e2f3475be7111d"
+fail_to_pass = [
+    "Test_CSRF_SessionModeCookieExpiresWithTheToken",
+    "Test_CSRF_SessionModeKeepsConcurrentSessionChange",
+]
+pass_to_pass = [
+    "Test_CSRF",
+    "Test_CSRFLogContextTagRedactsToken",
+    "Test_CSRFLoggerTagRedactsToken",
+    "Test_CSRF_All_Extractors",
+    "Test_CSRF_All_Extractors/Chain_Empty",
+    "Test_CSRF_All_Extractors/Chain_HeaderTakesPrecedenceOverForm",
+    "Test_CSRF_All_Extractors/Chain_NoToken",
+    "Test_CSRF_All_Extractors/Chain_SingleExtractor_NoToken",
+    "Test_CSRF_All_Extractors/Chain_SingleExtractor_TokenInHeader",
+    "Test_CSRF_All_Extractors/Chain_TokenInForm",
+    "Test_CSRF_All_Extractors/Chain_TokenInHeader",
+    "Test_CSRF_All_Extractors/Chain_WrongTokenInBothLocations",
+    "Test_CSRF_All_Extractors/FromCustom",
+    "Test_CSRF_All_Extractors/FromCustomHeader",
+    "Test_CSRF_All_Extractors/FromCustomHeader_Missing",
+    "Test_CSRF_All_Extractors/FromCustom_EmptyString",
+    "Test_CSRF_All_Extractors/FromCustom_NoToken",
+    "Test_CSRF_All_Extractors/FromForm",
+    "Test_CSRF_All_Extractors/FromForm_Missing",
+    "Test_CSRF_All_Extractors/FromForm_NoCookieNoToken",
+    "Test_CSRF_All_Extractors/FromHeader",
+    "Test_CSRF_All_Extractors/FromHeader_Missing",
+    "Test_CSRF_All_Extractors/FromParam_Missing",
+    "Test_CSRF_All_Extractors/FromQuery",
+    "Test_CSRF_All_Extractors/FromQuery_InvalidToken",
+    "Test_CSRF_All_Extractors/FromQuery_Missing",
+    "Test_CSRF_All_Extractors/FromQuery_ValidToken",
+    "Test_CSRF_Chain_Extractor_Metadata",
+    "Test_CSRF_Chain_Extractor_Metadata/EmptyChain",
+    "Test_CSRF_Chain_Extractor_Metadata/MultipleExtractors",
+    "Test_CSRF_Chain_Extractor_Metadata/SingleExtractor",
+    "Test_CSRF_Cookie_Injection_Exploit",
+    "Test_CSRF_CrossOriginProtection",
+    "Test_CSRF_CrossOriginProtection/browser_navigation",
+    "Test_CSRF_CrossOriginProtection/cross_site_fetch_metadata",
+    "Test_CSRF_CrossOriginProtection/cross_site_overrides_matching_origin_host",
+    "Test_CSRF_CrossOriginProtection/cross_site_without_origin",
+    "Test_CSRF_CrossOriginProtection/malformed_fetch_metadata",
+    "Test_CSRF_CrossOriginProtection/malformed_origin",
+    "Test_CSRF_CrossOriginProtection/matching_origin_host",
+    "Test_CSRF_CrossOriginProtection/matching_origin_host_over_http",
+    "Test_CSRF_CrossOriginProtection/mismatched_origin_host",
+    "Test_CSRF_CrossOriginProtection/mixed_case_fetch_metadata",
+    "Test_CSRF_CrossOriginProtection/next_bypass",
+    "Test_CSRF_CrossOriginProtection/non_browser_request",
+    "Test_CSRF_CrossOriginProtection/null_origin",
+    "Test_CSRF_CrossOriginProtection/origin_default_port_is_not_folded",
+    "Test_CSRF_CrossOriginProtection/origin_host_case_mismatch",
+    "Test_CSRF_CrossOriginProtection/query_is_unsafe",
+    "Test_CSRF_CrossOriginProtection/repeated_fetch_metadata",
+    "Test_CSRF_CrossOriginProtection/repeated_fetch_metadata_reversed",
+    "Test_CSRF_CrossOriginProtection/repeated_origin",
+    "Test_CSRF_CrossOriginProtection/repeated_trusted_origin",
+    "Test_CSRF_CrossOriginProtection/safe_get",
+    "Test_CSRF_CrossOriginProtection/safe_head",
+    "Test_CSRF_CrossOriginProtection/safe_options",
+    "Test_CSRF_CrossOriginProtection/same_origin_fetch_metadata",
+    "Test_CSRF_CrossOriginProtection/same_origin_fetch_metadata_does_not_read_origin",
+    "Test_CSRF_CrossOriginProtection/same_site_fetch_metadata",
+    "Test_CSRF_CrossOriginProtection/trace_is_unsafe",
+    "Test_CSRF_CrossOriginProtection/trusted_origin",
+    "Test_CSRF_CrossOriginProtection/trusted_origin_entry_is_normalized",
+    "Test_CSRF_CrossOriginProtection/trusted_origin_exempts_malformed_fetch_metadata",
+    "Test_CSRF_CrossOriginProtection/trusted_origin_match_is_exact",
+    "Test_CSRF_CrossOriginProtection/trusted_origin_without_fetch_metadata",
+    "Test_CSRF_CrossOriginProtection/trusted_subdomain",
+    "Test_CSRF_CrossOriginProtection/trusted_subdomain_match_is_exact",
+    "Test_CSRF_CrossOriginProtection/untrusted_origin",
+    "Test_CSRF_CrossOriginProtection/wildcard_covers_nested_subdomains",
+    "Test_CSRF_CrossOriginProtection/wildcard_does_not_cover_the_apex",
+    "Test_CSRF_CrossOriginProtection/wildcard_needs_a_label_boundary",
+    "Test_CSRF_CrossOriginProtection_DisableHeaderNormalizing",
+    "Test_CSRF_CrossOriginProtection_DisableHeaderNormalizing/origin",
+    "Test_CSRF_CrossOriginProtection_DisableHeaderNormalizing/sec-fetch-site",
+    "Test_CSRF_CrossOriginProtection_EmptyHost",
+    "Test_CSRF_CrossOriginProtection_IgnoresForwardedHost",
+    "Test_CSRF_CrossOriginProtection_IgnoresForwardedHost/forwarded_host_cannot_vouch_for_a_foreign_origin",
+    "Test_CSRF_CrossOriginProtection_IgnoresForwardedHost/forwarded_host_does_not_replace_a_rewritten_host",
+    "Test_CSRF_CrossOriginProtection_IgnoresForwardedHost/host_header_still_matches",
+    "Test_CSRF_CrossOriginProtection_InvalidTrustedOrigin",
+    "Test_CSRF_CrossOriginProtection_InvalidTrustedOrigin/capacitor://localhost",
+    "Test_CSRF_CrossOriginProtection_InvalidTrustedOrigin/https://trusted.example/path",
+    "Test_CSRF_CrossOriginProtection_InvalidTrustedOrigin/trusted.example",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/browser_navigation",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/cross_site",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/cross_site_with_matching_host",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/host_header_case_mismatch",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/malformed_fetch_metadata",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/malformed_origin",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/matching_origin_host",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/matching_origin_host_over_http",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/matching_origin_host_with_port",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/mismatched_origin_host",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/mixed_case_fetch_metadata",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/no_browser_headers",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/null_origin",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/origin_default_port_is_not_folded",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/origin_host_case_mismatch",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/query",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/safe_method",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/same_origin_fetch_metadata",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/same_origin_fetch_metadata_with_mismatched_origin",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/same_site",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/trace",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/trusted_origin",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/trusted_origin_exact_mismatch",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/trusted_origin_exempts_malformed_fetch_metadata",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/trusted_origin_without_fetch_metadata",
+    "Test_CSRF_CrossOriginProtection_MatchesNetHTTPCheck/untrusted_origin",
+    "Test_CSRF_CrossSiteWithoutOriginOverPlaintext",
+    "Test_CSRF_DeleteToken",
+    "Test_CSRF_DeleteToken_Errors",
+    "Test_CSRF_DeleteToken_Errors/no_cookie",
+    "Test_CSRF_DeleteToken_Errors/storage_error",
+    "Test_CSRF_DeleteToken_WithSession",
+    "Test_CSRF_DeleteToken_WithSessionMiddleware",
+    "Test_CSRF_DisableValueRedaction_TrustedOrigin",
+    "Test_CSRF_DisableValueRedaction_TrustedOrigin/origin",
+    "Test_CSRF_DisableValueRedaction_TrustedOrigin/wildcard",
+    "Test_CSRF_ErrorHandler_MissingReferer",
+    "Test_CSRF_ErrorHandler_MissingReferer/no_Referer_over_HTTPS",
+    "Test_CSRF_ErrorHandler_Token",
+    "Test_CSRF_ErrorHandler_Token/empty_CSRF_token",
+    "Test_CSRF_ErrorHandler_Token/invalid_CSRF_token",
+    "Test_CSRF_ExpiredToken",
+    "Test_CSRF_ExpiredToken_WithSession",
+    "Test_CSRF_ExtractorSecurity_Validation",
+    "Test_CSRF_ExtractorSecurity_Validation/CookieName_CaseInsensitive_Warning",
+    "Test_CSRF_ExtractorSecurity_Validation/DeeplyNestedSecureChain",
+    "Test_CSRF_ExtractorSecurity_Validation/DifferentCookieNames",
+    "Test_CSRF_ExtractorSecurity_Validation/InsecureChainedExtractor",
+    "Test_CSRF_ExtractorSecurity_Validation/InsecureConfig/FromParam",
+    "Test_CSRF_ExtractorSecurity_Validation/InsecureConfig/FromQuery",
+    "Test_CSRF_ExtractorSecurity_Validation/InsecureCookieExtractor",
+    "Test_CSRF_ExtractorSecurity_Validation/InsecureNestedChainedExtractor",
+    "Test_CSRF_ExtractorSecurity_Validation/SecureConfigurations/Chain",
+    "Test_CSRF_ExtractorSecurity_Validation/SecureConfigurations/FromForm",
+    "Test_CSRF_ExtractorSecurity_Validation/SecureConfigurations/FromHeader",
+    "Test_CSRF_ExtractorSecurity_Validation/SecureConfigurations/FromParam",
+    "Test_CSRF_ExtractorSecurity_Validation/SecureConfigurations/FromQuery",
+    "Test_CSRF_Extractor_Error_Types",
+    "Test_CSRF_Extractor_Error_Types/MissingForm",
+    "Test_CSRF_Extractor_Error_Types/MissingForm_Post",
+    "Test_CSRF_Extractor_Error_Types/MissingHeader",
+    "Test_CSRF_Extractor_Error_Types/MissingHeader_Named",
+    "Test_CSRF_Extractor_Error_Types/MissingParam",
+    "Test_CSRF_Extractor_Error_Types/MissingParam_Named",
+    "Test_CSRF_Extractor_Error_Types/MissingQuery",
+    "Test_CSRF_Extractor_Error_Types/MissingQuery_Named",
+    "Test_CSRF_Extractor_Metadata",
+    "Test_CSRF_Extractor_Metadata/FromForm",
+    "Test_CSRF_Extractor_Metadata/FromHeader",
+    "Test_CSRF_Extractor_Metadata/FromParam",
+    "Test_CSRF_Extractor_Metadata/FromQuery",
+    "Test_CSRF_Extractor_NonNotFoundError",
+    "Test_CSRF_FromContextMethods",
+    "Test_CSRF_FromContextMethods_Invalid",
+    "Test_CSRF_InvalidURLHeaders",
+    "Test_CSRF_InvalidURLHeaders/invalid_Origin",
+    "Test_CSRF_InvalidURLHeaders/invalid_Referer",
+    "Test_CSRF_MultiUseToken",
+    "Test_CSRF_Next",
+    "Test_CSRF_Origin",
+    "Test_CSRF_Origin/Correct_Origin_with_ReverseProxy",
+    "Test_CSRF_Origin/Correct_Origin_with_ReverseProxy_Missing_X-Forwarded-*_Headers",
+    "Test_CSRF_Origin/Correct_Origin_with_null",
+    "Test_CSRF_Origin/Correct_Origin_with_port",
+    "Test_CSRF_Origin/Correct_Origin_with_wrong_port",
+    "Test_CSRF_Origin/Origin_with_default_HTTPS_port_against_host_without_port",
+    "Test_CSRF_Origin/Origin_with_default_HTTP_port_against_host_without_port",
+    "Test_CSRF_Origin/Origin_without_default_HTTPS_port_against_host_with_default_port",
+    "Test_CSRF_Origin/Origin_without_default_HTTP_port_against_host_with_default_port",
+    "Test_CSRF_Origin/Wrong_Origin",
+    "Test_CSRF_OriginCheckIgnoresHeaderNameCase",
+    "Test_CSRF_OriginCheckIgnoresHeaderNameCase/normalize=false",
+    "Test_CSRF_OriginCheckIgnoresHeaderNameCase/normalize=true",
+    "Test_CSRF_Param_Extractor",
+    "Test_CSRF_Param_Extractor/FromParam_Invalid",
+    "Test_CSRF_Param_Extractor/FromParam_NoCookie",
+    "Test_CSRF_Param_Extractor/FromParam_Valid",
+    "Test_CSRF_Referer",
+    "Test_CSRF_Referer/Correct_Referer_with_ReverseProxy",
+    "Test_CSRF_Referer/Correct_Referer_with_ReverseProxy_Missing_X-Forwarded-*_Headers",
+    "Test_CSRF_Referer/Correct_Referer_with_path",
+    "Test_CSRF_Referer/Correct_Referer_with_port",
+    "Test_CSRF_Referer/HTTPS_request_with_an_HTTP_Origin",
+    "Test_CSRF_Referer/Referer_with_default_HTTPS_port_against_host_without_port",
+    "Test_CSRF_Referer/Referer_with_default_HTTP_port_against_host_without_port",
+    "Test_CSRF_Referer/Referer_without_default_HTTPS_port_against_host_with_default_port",
+    "Test_CSRF_Referer/Referer_without_default_HTTP_port_against_host_with_default_port",
+    "Test_CSRF_Referer/Wrong_Referer",
+    "Test_CSRF_RepeatedOriginIsRefused",
+    "Test_CSRF_RepeatedOriginIsRefused/normalize=false",
+    "Test_CSRF_RepeatedOriginIsRefused/normalize=true",
+    "Test_CSRF_RepeatedSecFetchSiteAndRefererAreRefused",
+    "Test_CSRF_SecFetchSite",
+    "Test_CSRF_SecFetchSite/GET_allowed",
+    "Test_CSRF_SecFetchSite/HEAD_allowed",
+    "Test_CSRF_SecFetchSite/OPTIONS_allowed",
+    "Test_CSRF_SecFetchSite/PUT_with_mismatched_origin_blocked",
+    "Test_CSRF_SecFetchSite/cross-site_with_mismatched_origin_blocked",
+    "Test_CSRF_SecFetchSite/cross-site_with_origin_allowed",
+    "Test_CSRF_SecFetchSite/invalid_header_blocked",
+    "Test_CSRF_SecFetchSite/no_header_with_matching_origin",
+    "Test_CSRF_SecFetchSite/no_header_with_mismatched_origin",
+    "Test_CSRF_SecFetchSite/no_header_with_mixed-case_matching_origin",
+    "Test_CSRF_SecFetchSite/no_header_with_no_origin",
+    "Test_CSRF_SecFetchSite/no_header_with_null_origin",
+    "Test_CSRF_SecFetchSite/no_header_with_uppercase_null_origin_over_http",
+    "Test_CSRF_SecFetchSite/none_allowed",
+    "Test_CSRF_SecFetchSite/same-origin_allowed",
+    "Test_CSRF_SecFetchSite/same-site_with_null_origin_blocked",
+    "Test_CSRF_SecFetchSite/same-site_with_origin_allowed",
+    "Test_CSRF_Security_CompareConstantTime",
+    "Test_CSRF_Security_CompareConstantTime/strings",
+    "Test_CSRF_Security_CompareConstantTime/tokens",
+    "Test_CSRF_Security_CookieAttributes",
+    "Test_CSRF_Security_DoubleSubmitMismatch",
+    "Test_CSRF_Security_ForgedTokenNotInStorage",
+    "Test_CSRF_Security_SecFetchSite_Normalization",
+    "Test_CSRF_Security_SecFetchSite_Normalization/embedded_space_rejected",
+    "Test_CSRF_Security_SecFetchSite_Normalization/empty_header_is_ignored",
+    "Test_CSRF_Security_SecFetchSite_Normalization/leading/trailing_spaces",
+    "Test_CSRF_Security_SecFetchSite_Normalization/mixed_case_same-origin",
+    "Test_CSRF_Security_SecFetchSite_Normalization/none",
+    "Test_CSRF_Security_SecFetchSite_Normalization/same-origin",
+    "Test_CSRF_Security_SecFetchSite_Normalization/unknown_value_rejected",
+    "Test_CSRF_Security_SecFetchSite_Normalization/upper_case_cross-site",
+    "Test_CSRF_Security_TrustedOriginSchemeIsolation",
+    "Test_CSRF_Security_TrustedOriginSchemeIsolation/the_exact_trusted_origin_(https)_is_accepted",
+    "Test_CSRF_Security_TrustedOriginSchemeIsolation/the_same_host_over_http_is_NOT_trusted",
+    "Test_CSRF_SingleUseToken",
+    "Test_CSRF_StorageErrors",
+    "Test_CSRF_StorageErrors/delete_error",
+    "Test_CSRF_StorageErrors/get_error",
+    "Test_CSRF_StorageErrors/get_error_on_validation",
+    "Test_CSRF_StorageErrors/set_error",
+    "Test_CSRF_Storage_KeyOutlivesRequest",
+    "Test_CSRF_TokenCannotNameForeignStorageEntry",
+    "Test_CSRF_TokenCannotNameForeignStorageEntry/SingleUseToken=false",
+    "Test_CSRF_TokenCannotNameForeignStorageEntry/SingleUseToken=true",
+    "Test_CSRF_TokenFromContext",
+    "Test_CSRF_TrustedOriginIsAllowedWhenCrossSite",
+    "Test_CSRF_TrustedOrigins",
+    "Test_CSRF_TrustedOrigins/Trusted_Origin",
+    "Test_CSRF_TrustedOrigins/Trusted_Origin_Invalid",
+    "Test_CSRF_TrustedOrigins/Trusted_Origin_Subdomain",
+    "Test_CSRF_TrustedOrigins/Trusted_Origin_deeply_nested_subdomain",
+    "Test_CSRF_TrustedOrigins/Trusted_Origin_malformed_subdomain",
+    "Test_CSRF_TrustedOrigins/Trusted_Origin_with_mixed-case_header",
+    "Test_CSRF_TrustedOrigins/Trusted_Origin_with_mixed-case_header_(wildcard_subdomain_entry)",
+    "Test_CSRF_TrustedOrigins/Trusted_Referer",
+    "Test_CSRF_TrustedOrigins/Trusted_Referer_Invalid",
+    "Test_CSRF_TrustedOrigins/Trusted_Referer_Wildcard",
+    "Test_CSRF_TrustedOrigins/Trusted_Referer_Wildcard_with_path",
+    "Test_CSRF_TrustedOrigins/Trusted_Referer_deeply_nested_subdomain",
+    "Test_CSRF_TrustedOrigins/Trusted_Referer_with_default_port_is_not_folded",
+    "Test_CSRF_TrustedOrigins/Trusted_Referer_with_mixed-case_header",
+    "Test_CSRF_TrustedOrigins/Trusted_Referer_with_mixed-case_scheme_and_host_(exact_entry)",
+    "Test_CSRF_TrustedOrigins/Trusted_Referer_with_path",
+    "Test_CSRF_TrustedOrigins/same-origin_Referer_with_mixed-case_header",
+    "Test_CSRF_TrustedOrigins_InvalidOrigins",
+    "Test_CSRF_TrustedOrigins_InvalidOrigins/FTP_Scheme",
+    "Test_CSRF_TrustedOrigins_InvalidOrigins/File_Scheme",
+    "Test_CSRF_TrustedOrigins_InvalidOrigins/Multiple_Wildcards",
+    "Test_CSRF_TrustedOrigins_InvalidOrigins/No_Scheme",
+    "Test_CSRF_TrustedOrigins_InvalidOrigins/Port_Wildcard",
+    "Test_CSRF_TrustedOrigins_InvalidOrigins/Wildcard",
+    "Test_CSRF_TrustedOrigins_InvalidOrigins/Wildcard_domain",
+    "Test_CSRF_UnsafeHeaderValue",
+    "Test_CSRF_VaryDoesNotShareFieldsWithCustomCtx",
+    "Test_CSRF_WithSession",
+    "Test_CSRF_WithSession_Middleware",
+    "Test_CSRF_validateExtractorSecurity_NilConfig",
+    "Test_SessionManager_SaveError",
+    "Test_SessionManager_SaveError/DelRaw",
+    "Test_SessionManager_SaveError/SetRaw",
+    "Test_SessionManager_StoreError",
+    "Test_SessionManager_StoreError/DelRaw",
+    "Test_SessionManager_StoreError/GetRaw",
+    "Test_SessionManager_StoreError/SetRaw",
+    "Test_StorageManager_Memory_UnexpectedType",
+    "Test_StorageManager_Storage_Success",
+    "Test_deleteTokenFromStorage",
+    "Test_isInsecureCookieExtractor",
+    "Test_isInsecureCookieExtractor/CookieExtractorDifferentName",
+    "Test_isInsecureCookieExtractor/CustomExtractorSafeName",
+    "Test_isInsecureCookieExtractor/InsecureCookieExtractor",
+    "Test_isInsecureCookieExtractor/SecureHeaderExtractor",
+    "Test_storageManager_logKey",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "sha256:10f6cab9d6fad98bcdc3c2d856141e5b815ebbaf26cea9ca446e4b42bfdf2194"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 68.559
+measured_overhead_seconds = 2.647
+measured_copy_seconds = 0.054
+run_timeout_sec = 150
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 2
+p2p_count = 291
+source_files = 39
+loc_changed = 1097
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:12.836917+00:00"
+inline_recipe_sha256 = "sha256:2b7057e689df4da30ad78ba0d436a0dd62e8f73c9aec5d1cc469582b407ca925"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 681
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gofiber__fiber-4850-ef57de0235b4"

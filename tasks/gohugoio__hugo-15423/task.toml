@@ -1,0 +1,106 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15423"
+description = "Add Translate and Format* methods to Language"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "31f5395d40941f8527ccfedaf6aea5a33d9e9f58"
+reference = "https://github.com/gohugoio/hugo/pull/15423"
+source_access = "auto"
+built_at = "2026-11-11T00:09:55.697982+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:eb05d25f7761ca507dd433a5f8090a6462aae164d156744cbf7d3aefad3e7d40"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15423"
+pr_merged_at = "2026-10-11T14:30:48Z"
+base_commit = "31f5395d40941f8527ccfedaf6aea5a33d9e9f58"
+fail_to_pass = [
+    "TestLanguageTranslateAndFormat",
+]
+pass_to_pass = [
+    "TestCollator",
+    "TestDefaultContentLanguageFallback14243",
+    "TestDraftTermIssue14031",
+    "TestLanguageLegacyFieldFallbacks",
+    "TestLanguagesContentSharedResource",
+    "TestLanguagesContentSimple",
+    "TestLocaleAsLocalizationKeyIssue9109",
+    "TestMultipleLanguageVariants7982",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:85fb23f1c23a"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 89.527
+measured_overhead_seconds = 6.084
+measured_copy_seconds = 0.256
+run_timeout_sec = 180
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 1
+p2p_count = 8
+source_files = 7
+loc_changed = 259
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:10.357482+00:00"
+inline_recipe_sha256 = "sha256:8f09ee17fc8fda9ff131b2d55752d144814877d7dcd93e9fe35e16f492c59500"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 41
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15423-9aeaf258befb"

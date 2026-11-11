@@ -1,0 +1,118 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15564"
+description = "Misc fixes"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "5b44cfcec8459352ba9cb892009519ab815e2912"
+reference = "https://github.com/gohugoio/hugo/pull/15564"
+source_access = "auto"
+built_at = "2026-11-10T23:36:40.408899+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:f2a80d4a9e61c4d9044816a294c584277e26cd285063ade5025457a88f64f959"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15564"
+pr_merged_at = "2026-11-10T15:34:47Z"
+base_commit = "5b44cfcec8459352ba9cb892009519ab815e2912"
+fail_to_pass = [
+    "TestHighlightWrapperClassIsEscaped",
+]
+pass_to_pass = [
+    "TestCodeblockWithTypeOverride",
+    "TestConfig",
+    "TestConfig/applyLegacyConfig",
+    "TestConfig/applyOptionsFromMap",
+    "TestConfig/parseOptions",
+    "TestGitHubDarkStyleIncludesNameOther",
+    "TestHighlight",
+    "TestHighlight/Basic",
+    "TestHighlight/Highlight_lines,_default_config",
+    "TestHighlight/Highlight_lines,_default_config#01",
+    "TestHighlight/Highlight_lines,_linenumbers_default_on",
+    "TestHighlight/Highlight_lines,_linenumbers_default_on,_anchorlinenumbers_default_on",
+    "TestHighlight/Highlight_lines,_linenumbers_default_on,_linenumbers_in_table_default_off",
+    "TestHighlight/No_language",
+    "TestHighlight/No_language,_Escape_HTML_string",
+    "TestHighlight/No_language,_guess_syntax",
+    "TestHighlightClass",
+    "TestHighlightInline",
+    "TestHighlightLineNos",
+    "TestIssue11311",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:bca2cec8875b"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 74.669
+measured_overhead_seconds = 4.503
+measured_copy_seconds = 0.119
+run_timeout_sec = 150
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 1
+p2p_count = 20
+source_files = 9
+loc_changed = 142
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:10.750034+00:00"
+inline_recipe_sha256 = "sha256:4cc82e3d629b1c3cb536e23a6624772af0004d6045cb5527d068672db0d098ae"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 13
+instruction_ok = false
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15564-606b21b184e8"

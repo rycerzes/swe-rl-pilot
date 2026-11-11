@@ -1,0 +1,12 @@
+[
+  "Test_HTTPMiddleware_ConnectionCloseSurvivesDownstream",
+  "Test_HTTPMiddleware_ConnectionCloseSurvivesDownstream/handler_asking_to_keep_the_connection",
+  "Test_HTTPMiddleware_ConnectionCloseSurvivesDownstream/handler_resetting_the_response",
+  "Test_HTTPMiddleware_ConnectionCloseSurvivesDownstream/handler_returning_an_error",
+  "Test_HTTPMiddleware_ConnectionCloseSurvivesDownstream/plain_handler",
+  "Test_HTTPMiddleware_JoinsRepeatedConnectionValues",
+  "Test_HTTPMiddleware_JoinsRepeatedConnectionValues/close_alone_still_closes",
+  "Test_HTTPMiddleware_JoinsRepeatedConnectionValues/close_cased",
+  "Test_HTTPMiddleware_JoinsRepeatedConnectionValues/close_first",
+  "Test_HTTPMiddleware_JoinsRepeatedConnectionValues/close_last"
+]

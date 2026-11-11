@@ -1,0 +1,14 @@
+[
+  "TestAttributes",
+  "TestAttributesChroma",
+  "TestAttributesValidation",
+  "TestCodeChomp",
+  "TestCodePosition",
+  "TestCodeblockLangEscape",
+  "TestCodeblockPosition",
+  "TestCodeblocks",
+  "TestCodeblocksBugs",
+  "TestHighlightCodeblock",
+  "TestPanics",
+  "TestPanics/issue-9819"
+]

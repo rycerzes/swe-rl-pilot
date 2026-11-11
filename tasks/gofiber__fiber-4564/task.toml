@@ -1,0 +1,161 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gofiber__fiber-4564"
+description = "🐛 fix(limiter): floor sub-second expiration in sliding window"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "fiber",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gofiber/fiber"
+ref = "990459752ff659aadea561fd3d4d4cfeb628b881"
+reference = "https://github.com/gofiber/fiber/pull/4564"
+source_access = "auto"
+built_at = "2026-11-10T23:52:05.999189+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:ba6ed62d52507e9e14f4ce0d055e56560bc5b235e44bb58ecf4835065a500200"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gofiber/fiber/pull/4564"
+pr_merged_at = "2026-07-30T14:15:08Z"
+base_commit = "990459752ff659aadea561fd3d4d4cfeb628b881"
+fail_to_pass = [
+    "TestLimiterFixedSubSecondExpiration",
+    "TestLimiterSlidingSubSecondExpiration",
+]
+pass_to_pass = [
+    "TestEncodeDecodeitem",
+    "TestGetEffectiveStatusCodeTypedNilCustomError",
+    "TestGetEffectiveStatusCodeTypedNilFiberError",
+    "TestLimiterDefaultConfigNoPanic",
+    "TestLimiterFixedPropagatesRequestContextToStorage",
+    "TestLimiterFixedStorageGetError",
+    "TestLimiterFixedStorageGetErrorDisableRedaction",
+    "TestLimiterFixedStorageSetError",
+    "TestLimiterFixedStorageSetErrorDisableRedaction",
+    "TestLimiterFixedStorageSetErrorOnSkipSuccessfulRequests",
+    "TestLimiterSlidingPropagatesRequestContextToStorage",
+    "TestLimiterSlidingSkipsPostUpdateWhenHeadersDisabled",
+    "TestMarshalUnmarshalitem",
+    "Test_Config_currentSecond_NegativeClock",
+    "Test_Limiter_Bug_NewErrorf_SkipSuccessfulRequests_FixedWindow",
+    "Test_Limiter_Bug_NewErrorf_SkipSuccessfulRequests_SlidingWindow",
+    "Test_Limiter_Concurrency",
+    "Test_Limiter_Concurrency_Store",
+    "Test_Limiter_Disable_Headers",
+    "Test_Limiter_Fixed_ExpirationFuncOverridesStaticExpiration",
+    "Test_Limiter_Fixed_ExpirationFunc_FallbackOnNegativeDuration",
+    "Test_Limiter_Fixed_ExpirationFunc_FallbackOnZeroDuration",
+    "Test_Limiter_Fixed_Window_Custom_Storage_No_Skip_Choices",
+    "Test_Limiter_Fixed_Window_Custom_Storage_Skip_Failed_Requests",
+    "Test_Limiter_Fixed_Window_Custom_Storage_Skip_Successful_Requests",
+    "Test_Limiter_Fixed_Window_No_Skip_Choices",
+    "Test_Limiter_Fixed_Window_SkipSuccessfulRequests_DoesNotCreditNextWindow",
+    "Test_Limiter_Fixed_Window_Skip_Failed_Requests",
+    "Test_Limiter_Fixed_Window_Skip_Successful_Requests",
+    "Test_Limiter_Headers",
+    "Test_Limiter_Next",
+    "Test_Limiter_Sliding_ExpirationFuncOverridesStaticExpiration",
+    "Test_Limiter_Sliding_ExpirationFunc_FallbackOnNegativeDuration",
+    "Test_Limiter_Sliding_ExpirationFunc_FallbackOnZeroDuration",
+    "Test_Limiter_Sliding_MaxFuncOverridesStaticMax",
+    "Test_Limiter_Sliding_Window_Custom_Storage_No_Skip_Choices",
+    "Test_Limiter_Sliding_Window_Custom_Storage_Skip_Failed_Requests",
+    "Test_Limiter_Sliding_Window_Custom_Storage_Skip_Successful_Requests",
+    "Test_Limiter_Sliding_Window_ExpiresStalePrevHits",
+    "Test_Limiter_Sliding_Window_No_Skip_Choices",
+    "Test_Limiter_Sliding_Window_RecalculatesAfterHandlerDelay",
+    "Test_Limiter_Sliding_Window_SkipFailedRequests_DecrementsPreviousWindow",
+    "Test_Limiter_Sliding_Window_Skip_Failed_Requests",
+    "Test_Limiter_Sliding_Window_Skip_Successful_Requests",
+    "Test_Limiter_With_Max_Func",
+    "Test_Limiter_With_Max_Func_With_Zero",
+    "Test_Limiter_With_Max_Func_With_Zero_And_Limiter_Sliding",
+    "Test_Sliding_Window",
+    "Test_bucketForOriginalHit",
+    "Test_getEffectiveStatusCode_FiberError",
+    "Test_item_Decode_Truncated",
+    "Test_item_Decode_UnknownField",
+    "Test_item_EncodeMsg_WriterErrors",
+    "Test_manager_get_MemoryUnexpectedType",
+    "Test_manager_get_RoundTripWithStorage",
+    "Test_manager_get_UnmarshalError",
+    "Test_rotateWindow",
+    "Test_secondsToDuration",
+    "Test_ttlDuration",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gofiber__fiber:cb4396488e13"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 42.661
+measured_overhead_seconds = 1.277
+measured_copy_seconds = 0.029
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 2
+p2p_count = 59
+source_files = 4
+loc_changed = 37
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:10.940096+00:00"
+inline_recipe_sha256 = "sha256:b0c1e62097e3a8781526d21c5a23d8f6e7948ef33d7b2e93756d33d0f2702bb8"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_stripped_sections = [
+    "Fix",
+]
+instruction_names_hidden_tests = []
+instruction_description_words = 80
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gofiber__fiber-4564-dd0191b1d7ff"

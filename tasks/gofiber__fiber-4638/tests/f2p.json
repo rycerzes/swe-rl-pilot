@@ -1,0 +1,15 @@
+[
+  "Test_CORS_OriginWithoutHeaderNormalizing",
+  "Test_CORS_PreflightSplitRequestHeaders",
+  "Test_CORS_PreflightWithoutHeaderNormalizing",
+  "Test_Del_TerminatesOnNonCanonicalNameInNormalizingStore",
+  "Test_Del_TerminatesOnSynthesizedContentType",
+  "Test_ETag_HandlerETagSpellingsWithoutNormalizing",
+  "Test_ETag_HandlerETagSpellingsWithoutNormalizing/ETAG",
+  "Test_ETag_HandlerETagSpellingsWithoutNormalizing/ETag",
+  "Test_ETag_HandlerETagSpellingsWithoutNormalizing/eTaG",
+  "Test_ETag_HandlerETagSpellingsWithoutNormalizing/etag",
+  "Test_ETag_HandlerETagWithoutNormalizing",
+  "Test_ETag_SplitIfNoneMatch",
+  "Test_Logger_ResBody_DoesNotDrainStream"
+]

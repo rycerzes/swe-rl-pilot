@@ -1,0 +1,10 @@
+[
+  "TestCollator",
+  "TestDefaultContentLanguageFallback14243",
+  "TestDraftTermIssue14031",
+  "TestLanguageLegacyFieldFallbacks",
+  "TestLanguagesContentSharedResource",
+  "TestLanguagesContentSimple",
+  "TestLocaleAsLocalizationKeyIssue9109",
+  "TestMultipleLanguageVariants7982"
+]

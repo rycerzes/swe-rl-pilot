@@ -1,0 +1,22 @@
+[
+  "TestCodeblockWithTypeOverride",
+  "TestConfig",
+  "TestConfig/applyLegacyConfig",
+  "TestConfig/applyOptionsFromMap",
+  "TestConfig/parseOptions",
+  "TestGitHubDarkStyleIncludesNameOther",
+  "TestHighlight",
+  "TestHighlight/Basic",
+  "TestHighlight/Highlight_lines,_default_config",
+  "TestHighlight/Highlight_lines,_default_config#01",
+  "TestHighlight/Highlight_lines,_linenumbers_default_on",
+  "TestHighlight/Highlight_lines,_linenumbers_default_on,_anchorlinenumbers_default_on",
+  "TestHighlight/Highlight_lines,_linenumbers_default_on,_linenumbers_in_table_default_off",
+  "TestHighlight/No_language",
+  "TestHighlight/No_language,_Escape_HTML_string",
+  "TestHighlight/No_language,_guess_syntax",
+  "TestHighlightClass",
+  "TestHighlightInline",
+  "TestHighlightLineNos",
+  "TestIssue11311"
+]

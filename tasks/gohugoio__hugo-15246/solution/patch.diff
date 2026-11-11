@@ -1,0 +1,120 @@
+diff --git a/modules/npm/package_builder.go b/modules/npm/package_builder.go
+index cea1dc8cd87..631036878e5 100644
+--- a/modules/npm/package_builder.go
++++ b/modules/npm/package_builder.go
+@@ -195,15 +195,28 @@ func Pack(sourceFs, assetsWithDuplicatesPreservedFs afero.Fs, mods modules.Modul
+ 		}
+ 	}
+ 
+-	name := "project"
+-	rfi, err := sourceFs.Stat("")
+-	if err == nil {
+-		name = rfi.Name()
++	// Stable defaults; mark the workspace private so npm never publishes it.
++	// Preserve any hand-set values from an existing file.
++	name, version, private := "hugoautogen", "0.1.0", true
++	if data, err := afero.ReadFile(sourceFs, workspacePackageJSON); err == nil {
++		var existing map[string]any
++		if err := json.Unmarshal(data, &existing); err == nil {
++			if s, ok := existing["name"].(string); ok && s != "" {
++				name = s
++			}
++			if s, ok := existing["version"].(string); ok && s != "" {
++				version = s
++			}
++			if b, ok := existing["private"].(bool); ok {
++				private = b
++			}
++		}
+ 	}
+ 
+ 	autoGenPkg := map[string]any{
+ 		"name":             name,
+-		"version":          "0.1.0",
++		"version":          version,
++		"private":          private,
+ 		dependenciesKey:    moduleDeps,
+ 		devDependenciesKey: moduleDevDeps,
+ 	}
+diff --git a/testscripts/commands/mod_npm.txt b/testscripts/commands/mod_npm.txt
+index 169f26c172e..136277fc5c2 100644
+--- a/testscripts/commands/mod_npm.txt
++++ b/testscripts/commands/mod_npm.txt
+@@ -119,7 +119,8 @@ usePackageJSON="auto"
+     "strip-ansi": "7.2.0",
+     "to-pascal-case": "1.0.0"
+   },
+-  "name": "script-mod_npm",
++  "name": "hugoautogen",
++  "private": true,
+   "version": "0.1.0"
+ }
+ -- golden1/package.json --
+@@ -149,7 +150,8 @@ usePackageJSON="auto"
+     "strip-ansi": "7.2.0",
+     "to-pascal-case": "1.0.0"
+   },
+-  "name": "script-mod_npm",
++  "name": "hugoautogen",
++  "private": true,
+   "version": "0.1.0"
+ }
+ -- golden3/packages/hugoautogen/package.json --
+@@ -168,7 +170,8 @@ usePackageJSON="auto"
+     "strip-ansi": "7.2.0",
+     "to-pascal-case": "1.0.0"
+   },
+-  "name": "script-mod_npm",
++  "name": "hugoautogen",
++  "private": true,
+   "version": "0.1.0"
+ }
+ -- golden4/packages/hugoautogen/package.json --
+@@ -188,7 +191,8 @@ usePackageJSON="auto"
+     "strip-ansi": "7.2.0",
+     "to-pascal-case": "1.0.0"
+   },
+-  "name": "script-mod_npm",
++  "name": "hugoautogen",
++  "private": true,
+   "version": "0.1.0"
+ }
+ -- golden5/packages/hugoautogen/package.json --
+@@ -206,7 +210,8 @@ usePackageJSON="auto"
+     "strip-ansi": "7.2.0",
+     "to-pascal-case": "1.0.0"
+   },
+-  "name": "script-mod_npm",
++  "name": "hugoautogen",
++  "private": true,
+   "version": "0.1.0"
+ }
+ -- go.mod --
+diff --git a/testscripts/commands/mod_npm__moduleorder.txt b/testscripts/commands/mod_npm__moduleorder.txt
+index 4dc20204641..20228e548a3 100644
+--- a/testscripts/commands/mod_npm__moduleorder.txt
++++ b/testscripts/commands/mod_npm__moduleorder.txt
+@@ -42,7 +42,8 @@ go 1.20
+     "strip-ansi": "7.0.0",
+     "to-pascal-case": "1.0.0"
+   },
+-  "name": "script-mod_npm__moduleorder",
++  "name": "hugoautogen",
++  "private": true,
+   "version": "0.1.0"
+ }
+ -- golden1/packages/hugoautogen/hugo_packagemeta.json --
+diff --git a/testscripts/commands/mod_npm_withexisting.txt b/testscripts/commands/mod_npm_withexisting.txt
+index b11a4a3b6a6..aa5a77bca5b 100644
+--- a/testscripts/commands/mod_npm_withexisting.txt
++++ b/testscripts/commands/mod_npm_withexisting.txt
+@@ -37,7 +37,8 @@ path="github.com/gohugoio/hugoTestModule2"
+     "@babel/preset-env": "7.9.5",
+     "postcss-cli": "7.1.0"
+   },
+-  "name": "script-mod_npm_withexisting",
++  "name": "hugoautogen",
++  "private": true,
+   "version": "0.1.0"
+ }
+ -- golden/package.json --

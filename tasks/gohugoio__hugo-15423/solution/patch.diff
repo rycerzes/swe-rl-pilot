@@ -1,0 +1,465 @@
+diff --git a/deps/deps.go b/deps/deps.go
+index 3899024d65e..36aebef3db0 100644
+--- a/deps/deps.go
++++ b/deps/deps.go
+@@ -14,7 +14,6 @@
+ package deps
+ 
+ import (
+-	"context"
+ 	"fmt"
+ 	"io"
+ 	"os"
+@@ -81,9 +80,6 @@ type Deps struct {
+ 	// The memory cache to use.
+ 	MemCache *dynacache.Cache
+ 
+-	// The translation func to use
+-	Translate func(ctx context.Context, translationID string, templateData any) string `json:"-"`
+-
+ 	// The site building.
+ 	Site page.Site
+ 
+diff --git a/docs/content/en/methods/site/Language.md b/docs/content/en/methods/site/Language.md
+index b1424058ab6..0d1aa06d857 100644
+--- a/docs/content/en/methods/site/Language.md
++++ b/docs/content/en/methods/site/Language.md
+@@ -35,6 +35,38 @@ weight = 2
+   {{ .Site.Language.Direction }} → ltr
+   ```
+ 
++`FormatAccounting`
++: {{< new-in 0.168.0 />}}
++: (`string`) Formats a number as currency in accounting notation for this language. See [`lang.FormatAccounting`][].
++
++  ```go-html-template
++  {{ .Site.Language.FormatAccounting 2 "EUR" -12.3 }} → -12,30 €
++  ```
++
++`FormatCurrency`
++: {{< new-in 0.168.0 />}}
++: (`string`) Formats a number as currency for this language. See [`lang.FormatCurrency`][].
++
++  ```go-html-template
++  {{ .Site.Language.FormatCurrency 2 "EUR" 12.3 }} → 12,30 €
++  ```
++
++`FormatNumber`
++: {{< new-in 0.168.0 />}}
++: (`string`) Formats a number for this language. See [`lang.FormatNumber`][].
++
++  ```go-html-template
++  {{ .Site.Language.FormatNumber 2 1234.5 }} → 1.234,50
++  ```
++
++`FormatPercent`
++: {{< new-in 0.168.0 />}}
++: (`string`) Formats a number as a percentage for this language. See [`lang.FormatPercent`][].
++
++  ```go-html-template
++  {{ .Site.Language.FormatPercent 1 12.3 }} → 12,3 %
++  ```
++
+ `IsDefault`
+ : {{< new-in 0.153.0 />}}
+ : (`bool`) Reports whether this is the [default language](g).
+@@ -83,6 +115,22 @@ weight = 2
+   {{ .Site.Language.Name }} → de
+   ```
+ 
++`Translate`
++: {{< new-in 0.168.0 />}}
++: (`string`) Translates a string using the translation tables for this language. See [`lang.Translate`][].
++
++  ```go-html-template
++  {{ .Site.Language.Translate "hello" }} → Hallo
++  ```
++
++  Use this to translate a string into a language other than that of the current page:
++
++  ```go-html-template
++  {{ range .Site.Languages }}
++    {{ .Translate "hello" }}
++  {{ end }}
++  ```
++
+ `Weight`
+ : {{<deprecated-in 0.158.0 />}}
+ 
+@@ -99,6 +147,11 @@ Some of the methods above are commonly used in a _base_ template as attributes f
+ 
+ [RFC 5646]: https://datatracker.ietf.org/doc/html/rfc5646
+ [`direction`]: /configuration/languages/#direction
++[`lang.FormatAccounting`]: /functions/lang/formataccounting/
++[`lang.FormatCurrency`]: /functions/lang/formatcurrency/
++[`lang.FormatNumber`]: /functions/lang/formatnumber/
++[`lang.FormatPercent`]: /functions/lang/formatpercent/
++[`lang.Translate`]: /functions/lang/translate/
+ [`label`]: /configuration/languages/#label
+ [`locale`]: /configuration/languages/#locale
+ [details]: /methods/page/language/
+diff --git a/langs/i18n/i18n.go b/langs/i18n/i18n.go
+index 3893e0a43f9..693a001b42e 100644
+--- a/langs/i18n/i18n.go
++++ b/langs/i18n/i18n.go
+@@ -24,36 +24,35 @@ import (
+ 	"github.com/gohugoio/hugo/common/hreflect"
+ 	"github.com/gohugoio/hugo/common/loggers"
+ 	"github.com/gohugoio/hugo/config"
++	"github.com/gohugoio/hugo/langs"
+ 	"github.com/gohugoio/hugo/resources/page"
+ 
+ 	"github.com/gohugoio/go-i18n/v2/i18n"
+ )
+ 
+-type translateFunc func(ctx context.Context, translationID string, templateData any) string
+-
+ // Translator handles i18n translations.
+ type Translator struct {
+-	translateFuncs map[string]translateFunc
++	translateFuncs map[string]langs.TranslateFunc
+ 	cfg            config.AllProvider
+ 	logger         loggers.Logger
+ }
+ 
+ // NewTranslator creates a new Translator for the given language bundle and configuration.
+ func NewTranslator(b *i18n.Bundle, cfg config.AllProvider, logger loggers.Logger) Translator {
+-	t := Translator{cfg: cfg, logger: logger, translateFuncs: make(map[string]translateFunc)}
++	t := Translator{cfg: cfg, logger: logger, translateFuncs: make(map[string]langs.TranslateFunc)}
+ 	t.initFuncs(b)
+ 	return t
+ }
+ 
+ // Lookup looks up the translate func for the given language.
+-func (t Translator) Lookup(lang string) (translateFunc, bool) {
++func (t Translator) Lookup(lang string) (langs.TranslateFunc, bool) {
+ 	f, ok := t.translateFuncs[lang]
+ 	return f, ok
+ }
+ 
+ // Func gets the translate func for the given language, or for the default
+ // configured language if not found.
+-func (t Translator) Func(lang string) translateFunc {
++func (t Translator) Func(lang string) langs.TranslateFunc {
+ 	if f, ok := t.translateFuncs[lang]; ok {
+ 		return f
+ 	}
+diff --git a/langs/i18n/translationProvider.go b/langs/i18n/translationProvider.go
+index 08bc0bf2bbe..a8a94deae06 100644
+--- a/langs/i18n/translationProvider.go
++++ b/langs/i18n/translationProvider.go
+@@ -97,7 +97,10 @@ func (tp *TranslationProvider) NewResource(dst *deps.Deps) error {
+ 
+ 	tp.t = NewTranslator(bundle, dst.Conf, dst.Log)
+ 
+-	dst.Translate = tp.getTranslateFunc(dst)
++	defaultLang := defaultLanguage(dst.Conf)
++	for _, l := range dst.Conf.Languages().(langs.Languages) {
++		langs.SetTranslateFunc(l, tp.getTranslateFunc(l, defaultLang))
++	}
+ 
+ 	return nil
+ }
+@@ -142,9 +145,8 @@ func addTranslationFile(bundle *i18n.Bundle, r *source.File) error {
+ 	return nil
+ }
+ 
+-// CloneResource sets the language func for the new language.
++// CloneResource is a no-op, the translate funcs are shared between sites.
+ func (tp *TranslationProvider) CloneResource(dst, src *deps.Deps) error {
+-	dst.Translate = tp.getTranslateFunc(dst)
+ 	return nil
+ }
+ 
+@@ -158,11 +160,9 @@ func defaultLanguage(conf config.AllProvider) *langs.Language {
+ 	return conf.Language().(*langs.Language)
+ }
+ 
+-// getTranslateFunc returns the translation function for the language in Deps.
++// getTranslateFunc returns the translation function for the given language.
+ // The lookup order is: current locale, current key, default locale, default key.
+-func (tp *TranslationProvider) getTranslateFunc(dst *deps.Deps) func(ctx context.Context, translationID string, templateData any) string {
+-	current := dst.Conf.Language().(*langs.Language)
+-	defaultLang := defaultLanguage(dst.Conf)
++func (tp *TranslationProvider) getTranslateFunc(current, defaultLang *langs.Language) langs.TranslateFunc {
+ 	for _, l := range []*langs.Language{current, defaultLang} {
+ 		for _, key := range []string{strings.ToLower(l.Locale()), l.Lang} {
+ 			if fn, ok := tp.t.Lookup(key); ok {
+diff --git a/langs/language.go b/langs/language.go
+index fc33518b1e2..7c6cb5f21c7 100644
+--- a/langs/language.go
++++ b/langs/language.go
+@@ -15,6 +15,7 @@
+ package langs
+ 
+ import (
++	"context"
+ 	"fmt"
+ 	"sync"
+ 	"time"
+@@ -29,9 +30,22 @@ import (
+ 	"github.com/gohugoio/hugo/common/hugo"
+ 	"github.com/gohugoio/hugo/common/loggers"
+ 	"github.com/gohugoio/hugo/hugolib/sitesmatrix"
++	"github.com/spf13/cast"
+ )
+ 
+-var _ sitesmatrix.DimensionInfo = (*Language)(nil)
++var (
++	_ sitesmatrix.DimensionInfo = (*Language)(nil)
++	_ LanguageTranslateOps      = (*Language)(nil)
++)
++
++// LanguageTranslateOps is implemented by Language and the lang template namespace.
++type LanguageTranslateOps interface {
++	Translate(ctx context.Context, id any, args ...any) (string, error)
++	FormatNumber(precision, number any) (string, error)
++	FormatPercent(precision, number any) (string, error)
++	FormatCurrency(precision, currency, number any) (string, error)
++	FormatAccounting(precision, currency, number any) (string, error)
++}
+ 
+ type Language struct {
+ 	// The language code, e.g. "en" or "no".
+@@ -45,6 +59,7 @@ type Language struct {
+ 	// Used for date formatting etc. We don't want these exported to the
+ 	// templates.
+ 	translator    golocales.Translator
++	translate     TranslateFunc
+ 	timeFormatter htime.TimeFormatter
+ 	tag           language.Tag
+ 
+@@ -122,6 +137,89 @@ func NewLanguage(lang, defaultContentLanguage, timeZone string, languageConfig L
+ 	return l, l.loadLocation(timeZone)
+ }
+ 
++// TranslateFunc translates the given translationID using the i18n bundles.
++type TranslateFunc func(ctx context.Context, translationID string, templateData any) string
++
++// Translate returns a translated string for id.
++func (l *Language) Translate(ctx context.Context, id any, args ...any) (string, error) {
++	var templateData any
++
++	if len(args) > 0 {
++		if len(args) > 1 {
++			return "", fmt.Errorf("wrong number of arguments, expecting at most 2, got %d", len(args)+1)
++		}
++		templateData = args[0]
++	}
++
++	sid, err := cast.ToStringE(id)
++	if err != nil {
++		return "", err
++	}
++
++	return l.translate(ctx, sid, templateData), nil
++}
++
++// FormatNumber formats number with the given precision for this language.
++func (l *Language) FormatNumber(precision, number any) (string, error) {
++	p, n, err := castPrecisionNumber(precision, number)
++	if err != nil {
++		return "", err
++	}
++	return l.translator.FormatNumber(n, p), nil
++}
++
++// FormatPercent formats number with the given precision for this language.
++// Note that the number is assumed to be a percentage.
++func (l *Language) FormatPercent(precision, number any) (string, error) {
++	p, n, err := castPrecisionNumber(precision, number)
++	if err != nil {
++		return "", err
++	}
++	return l.translator.FormatPercent(n, p), nil
++}
++
++// FormatCurrency returns the currency representation of number for the given currency and precision
++// for this language.
++//
++// The return value is formatted with at least two decimal places.
++func (l *Language) FormatCurrency(precision, currency, number any) (string, error) {
++	p, n, err := castPrecisionNumber(precision, number)
++	if err != nil {
++		return "", err
++	}
++	return l.translator.FormatCurrency(n, p, cast.ToString(currency)), nil
++}
++
++// FormatAccounting returns the currency representation of number for the given currency and precision
++// for this language in accounting notation.
++//
++// The return value is formatted with at least two decimal places.
++func (l *Language) FormatAccounting(precision, currency, number any) (string, error) {
++	p, n, err := castPrecisionNumber(precision, number)
++	if err != nil {
++		return "", err
++	}
++	return l.translator.FormatAccounting(n, p, cast.ToString(currency)), nil
++}
++
++func castPrecisionNumber(precision, number any) (int, float64, error) {
++	p, err := cast.ToIntE(precision)
++	if err != nil {
++		return 0, 0, err
++	}
++
++	// Sanity check.
++	if p > 20 {
++		return 0, 0, fmt.Errorf("invalid precision: %d", precision)
++	}
++
++	n, err := cast.ToFloat64E(number)
++	if err != nil {
++		return 0, 0, err
++	}
++	return p, n, nil
++}
++
+ // This is injected from hugolib to avoid circular dependencies.
+ var DeprecationFunc = func(item, alternative string, err bool) {}
+ 
+@@ -220,6 +318,10 @@ func SetParams(l *Language, params hmaps.Params) {
+ 	l.params = params
+ }
+ 
++func SetTranslateFunc(l *Language, fn TranslateFunc) {
++	l.translate = fn
++}
++
+ func GetTimeFormatter(l *Language) htime.TimeFormatter {
+ 	return l.timeFormatter
+ }
+diff --git a/tpl/lang/init.go b/tpl/lang/init.go
+index 1b2db6a470a..519c2be4837 100644
+--- a/tpl/lang/init.go
++++ b/tpl/lang/init.go
+@@ -25,7 +25,7 @@ const name = "lang"
+ 
+ func init() {
+ 	f := func(d *deps.Deps) *internal.TemplateFuncsNamespace {
+-		ctx := New(d, langs.GetTranslator(d.Conf.Language().(*langs.Language)))
++		ctx := New(d.Conf.Language().(*langs.Language))
+ 
+ 		ns := &internal.TemplateFuncsNamespace{
+ 			Name:    name,
+diff --git a/tpl/lang/lang.go b/tpl/lang/lang.go
+index cf510f534da..2bd83270ed2 100644
+--- a/tpl/lang/lang.go
++++ b/tpl/lang/lang.go
+@@ -22,62 +22,39 @@ import (
+ 	"strconv"
+ 	"strings"
+ 
+-	"github.com/bep/golocales"
+ 	"github.com/gohugoio/hugo/common/hreflect"
+-	"github.com/gohugoio/hugo/deps"
++	"github.com/gohugoio/hugo/langs"
+ 	"github.com/spf13/cast"
+ )
+ 
++var _ langs.LanguageTranslateOps = (*Namespace)(nil)
++
+ // New returns a new instance of the lang-namespaced template functions.
+-func New(deps *deps.Deps, translator golocales.Translator) *Namespace {
++func New(language *langs.Language) *Namespace {
+ 	return &Namespace{
+-		translator: translator,
+-		deps:       deps,
++		language: language,
+ 	}
+ }
+ 
+ // Namespace provides template functions for the "lang" namespace.
+ type Namespace struct {
+-	translator golocales.Translator
+-	deps       *deps.Deps
++	language *langs.Language
+ }
+ 
+ // Translate returns a translated string for id.
+ func (ns *Namespace) Translate(ctx context.Context, id any, args ...any) (string, error) {
+-	var templateData any
+-
+-	if len(args) > 0 {
+-		if len(args) > 1 {
+-			return "", fmt.Errorf("wrong number of arguments, expecting at most 2, got %d", len(args)+1)
+-		}
+-		templateData = args[0]
+-	}
+-
+-	sid, err := cast.ToStringE(id)
+-	if err != nil {
+-		return "", err
+-	}
+-
+-	return ns.deps.Translate(ctx, sid, templateData), nil
++	return ns.language.Translate(ctx, id, args...)
+ }
+ 
+ // FormatNumber formats number with the given precision for the current language.
+ func (ns *Namespace) FormatNumber(precision, number any) (string, error) {
+-	p, n, err := ns.castPrecisionNumber(precision, number)
+-	if err != nil {
+-		return "", err
+-	}
+-	return ns.translator.FormatNumber(n, p), nil
++	return ns.language.FormatNumber(precision, number)
+ }
+ 
+ // FormatPercent formats number with the given precision for the current language.
+ // Note that the number is assumed to be a percentage.
+ func (ns *Namespace) FormatPercent(precision, number any) (string, error) {
+-	p, n, err := ns.castPrecisionNumber(precision, number)
+-	if err != nil {
+-		return "", err
+-	}
+-	return ns.translator.FormatPercent(n, p), nil
++	return ns.language.FormatPercent(precision, number)
+ }
+ 
+ // FormatCurrency returns the currency representation of number for the given currency and precision
+@@ -85,11 +62,7 @@ func (ns *Namespace) FormatPercent(precision, number any) (string, error) {
+ //
+ // The return value is formatted with at least two decimal places.
+ func (ns *Namespace) FormatCurrency(precision, currency, number any) (string, error) {
+-	p, n, err := ns.castPrecisionNumber(precision, number)
+-	if err != nil {
+-		return "", err
+-	}
+-	return ns.translator.FormatCurrency(n, p, cast.ToString(currency)), nil
++	return ns.language.FormatCurrency(precision, currency, number)
+ }
+ 
+ // FormatAccounting returns the currency representation of number for the given currency and precision
+@@ -97,29 +70,7 @@ func (ns *Namespace) FormatCurrency(precision, currency, number any) (string, er
+ //
+ // The return value is formatted with at least two decimal places.
+ func (ns *Namespace) FormatAccounting(precision, currency, number any) (string, error) {
+-	p, n, err := ns.castPrecisionNumber(precision, number)
+-	if err != nil {
+-		return "", err
+-	}
+-	return ns.translator.FormatAccounting(n, p, cast.ToString(currency)), nil
+-}
+-
+-func (ns *Namespace) castPrecisionNumber(precision, number any) (int, float64, error) {
+-	p, err := cast.ToIntE(precision)
+-	if err != nil {
+-		return 0, 0, err
+-	}
+-
+-	// Sanity check.
+-	if p > 20 {
+-		return 0, 0, fmt.Errorf("invalid precision: %d", precision)
+-	}
+-
+-	n, err := cast.ToFloat64E(number)
+-	if err != nil {
+-		return 0, 0, err
+-	}
+-	return p, n, nil
++	return ns.language.FormatAccounting(precision, currency, number)
+ }
+ 
+ // FormatNumberCustom formats a number with the given precision. The first

@@ -1,0 +1,690 @@
+diff --git a/docs/client/request.md b/docs/client/request.md
+index dbfb5606d10..e934a14c2e0 100644
+--- a/docs/client/request.md
++++ b/docs/client/request.md
+@@ -204,7 +204,7 @@ func (r *Request) Context() context.Context
+ 
+ **SetContext** sets the `context.Context` for the request, allowing you to cancel or time out the request. See the [Go blog](https://blog.golang.org/context) and [context](https://pkg.go.dev/context) docs for more details.
+ 
+-A deadline bounds the exchange at the transport. A cancellation ends it on a client from `client.New` as well: the connection the request was using is closed, so neither the goroutine nor the connection outlives the call once the connection is open. A cancellation while the client is still dialing, or waiting for a free connection, takes effect when the dial or the wait ends, and the connection it produced is then closed unused: the built-in dialer gives up after 3 seconds, a dialer set with `SetDial` or `SetProxyURL` bounds itself. With `SetStreamResponseBody(true)` a cancellation does not reach the transport: the caller returns at once, the exchange waits for the server or the client's timeouts, and a body already being streamed ends when it is closed. A wrapped `fasthttp` client (`NewWithClient`, `NewWithHostClient`, `NewWithLBClient`) returns the caller at once while its exchange ends on its own, when the server answers or the client's own timeouts pass, so give such a client `ReadTimeout` and `WriteTimeout`.
++A deadline bounds the exchange at the transport. A cancellation ends it on a client from `client.New` as well: the connection the request was using is closed, so neither the goroutine nor the connection outlives the call once the connection is open. A cancellation while the client is still dialing, or waiting for a free connection, takes effect when the dial or the wait ends, and the connection it produced is then closed unused: the built-in dialer gives up after 3 seconds, a dialer set with `SetDial` or `SetProxyURL` bounds itself. With `SetStreamResponseBody(true)` a cancellation does not reach the transport: the caller returns at once, the exchange waits for the server or the client's timeouts, and a body already being streamed ends when it is closed. A timeout or deadline does reach it, since the connection takes it as its read and write deadline, so give a streamed request one (`SetTimeout`, or a context with a deadline): a server that never answers then leaves no goroutine or connection behind once it passes. A wrapped `fasthttp` client (`NewWithClient`, `NewWithHostClient`, `NewWithLBClient`) returns the caller at once while its exchange ends on its own, when the server answers or the client's own timeouts pass, so give such a client `ReadTimeout` and `WriteTimeout`.
+ 
+ ```go title="Signature"
+ func (r *Request) SetContext(ctx context.Context) *Request
+diff --git a/docs/middleware/cache.md b/docs/middleware/cache.md
+index e91a8384653..a49aa2262cf 100644
+--- a/docs/middleware/cache.md
++++ b/docs/middleware/cache.md
+@@ -136,7 +136,7 @@ The middleware **does not include request body/form values in the default cache
+ 
+ Cache lookup/storage is applied only for `GET` and `HEAD` requests by default. Other HTTP methods bypass the cache middleware. You can change this via the `Methods` config field (for example, adding `fiber.MethodQuery`). If you supply a custom `KeyGenerator` and enable a body-bearing method such as `QUERY`, make sure it incorporates `c.Request().Body()` and those two headers, otherwise requests with the same URL but different bodies will collide. With [`StreamRequestBody`](../api/fiber.md#streamrequestbody), a request whose body is chunked or declares more than `BodyLimit` bypasses the cache (`X-Cache: unreachable`) and its body is left unread for the handler, so a key generator never reads more than `BodyLimit`.
+ 
+-If a response sets `Vary`, request lookup/storage is also partitioned by those header values unless `DisableVaryHeaders` is `true`. Each response is stored under the headers its own `Vary` names, while a lookup uses the list of the response stored last for the URL: when the responses of one URL name different lists, a variant stored under another list is a miss until a response names that list again, so send the same `Vary` on every response of a URL to keep all of them reachable. Both use the header values the request carried when it reached the cache, so middleware registered after it that rewrites a request header, as `encryptcookie` does with the cookies it decrypts, does not change the key. A header such middleware adds, as one deriving `X-User-Id` from the session cookie does when the client sent none, is a dimension no request's key selects by, and so is a cookie it adds beside the ones the client sent, so a response that varies on it is not stored and is sent with `X-Cache: unreachable`. When such middleware overwrites a header the client sent, the key keeps the client's value, which the cache cannot tell from a rewrite such as the decryption: a response derived from another input, the session cookie here, must vary on that input as well (`Vary: Cookie, X-User-Id`), or the cache must be registered behind the middleware that derives it, or any client sending the header, a placeholder included, is served another client's page. A header it removes, as `encryptcookie` removes a cookie it cannot decrypt, keeps the client's key, and the response stored under it is the one for the header's absence. With `MaxBytes` set, the URL's record of that list, its Vary manifest, is deleted by the next stored response once no entry stored under it is left, so URLs evicted to stay within the limit leave none behind. Responses with `Vary: *` remain uncacheable, and so does a response whose `Vary` names more than 32 fields or is longer than 2048 bytes. That holds when `DisableVaryHeaders` is `true` as well.
++If a response sets `Vary`, request lookup/storage is also partitioned by those header values unless `DisableVaryHeaders` is `true`. Each response is stored under the headers its own `Vary` names, while a lookup uses the list of the response stored last for the URL: when the responses of one URL name different lists, a variant stored under another list is a miss until a response names that list again, so send the same `Vary` on every response of a URL to keep all of them reachable. Both use the header values the request carried when it reached the cache, and a response is stored only if the headers it varies on reach the handler as they came. Middleware registered after the cache that adds, rewrites or removes one of them, as `encryptcookie` does with the cookies it decrypts or drops, or as one deriving `X-User-Id` from the session cookie does, builds the page from a value the key does not hold: stored under the client's value, the page would be served to every client sending the same one, a placeholder included. Such a response is not stored and is sent with `X-Cache: unreachable`, and so is one that varies on a cookie such middleware adds beside the ones the client sent. Register the cache behind that middleware, so the lookup reads what the handler does, and have a response derived from another input vary on the input the client sends (`Vary: Cookie`) rather than on the header derived from it. With `MaxBytes` set, the URL's record of that list, its Vary manifest, is deleted by the next stored response once no entry stored under it is left, so URLs evicted to stay within the limit leave none behind. Responses with `Vary: *` remain uncacheable, and so does a response whose `Vary` names more than 32 fields or is longer than 2048 bytes. That holds when `DisableVaryHeaders` is `true` as well.
+ 
+ With an external `Storage`, an entry is decoded under size limits, and a response past one of them is not stored and reports `unreachable`: 256 bytes for `Content-Type` and `ETag`, 128 for `Content-Encoding` and `Expires`, 2048 for `Cache-Control`, and for the stored header list (`Location`, or every header with `StoreResponseHeaders`) 1024 fields with 512 bytes per name and 16384 per value. The default in-memory store keeps the entry as it is and has no such limits.
+ 
+@@ -236,7 +236,11 @@ app.Use(cache.New())
+ ```
+ 
+ The same applies to any handler wrapper of the form
+-`err := c.Next(); c.Cookie(...); return err`. Note also that a response
++`err := c.Next(); c.Cookie(...); return err`. [EncryptCookie](./encryptcookie.md)
++only rewrites the cookies a response already sets, so the cache sees them in the
++clear either way round; it also decrypts the request's cookies, and a response
++that varies on `Cookie` is stored only when the cache is registered **behind**
++it (see `Vary` above). Note also that a response
+ personalized from a **request** cookie without setting one is cached and shared
+ by design — use `KeyCookies` or `Vary: Cookie` to key those apart. A hit on an
+ entry keyed that way is sent with `Cache-Control: private`, as described below.
+diff --git a/docs/middleware/encryptcookie.md b/docs/middleware/encryptcookie.md
+index b89a68fc8f9..80e5a0392ca 100644
+--- a/docs/middleware/encryptcookie.md
++++ b/docs/middleware/encryptcookie.md
+@@ -107,6 +107,8 @@ var ConfigDefault = Config{
+ 
+ Place `encryptcookie` before middleware that reads or writes cookies. If you use the CSRF middleware, register `encryptcookie` first so it can read the token.
+ 
++Register it before the [cache](./cache.md) middleware as well. `encryptcookie` replaces the request's cookies with their decrypted values, so a response that varies on `Cookie` is stored only when the cache reads the cookies the handler does; behind the cache it is sent with `X-Cache: unreachable`.
++
+ Exclude cookies from encryption by listing them in `Except`. If a frontend framework such as Angular reads the CSRF token from a cookie, add that name to the `Except` array:
+ 
+ ```go
+diff --git a/docs/middleware/proxy.md b/docs/middleware/proxy.md
+index 51a59d65bad..4eb0fcfb7a0 100644
+--- a/docs/middleware/proxy.md
++++ b/docs/middleware/proxy.md
+@@ -139,9 +139,9 @@ The request reaches the upstream as HTTP/1.1, whatever protocol the inbound requ
+ 
+ ### Response body size, timeouts and connection caps
+ 
+-`Config.MaxResponseBodySize` (default 100 MiB, a negative value for none) bounds upstream response bodies to protect against memory exhaustion. `Config.MaxConnsPerHost` (default `1024`) caps concurrent connections per upstream to limit fan-out from a single hot host. `Balancer` also bounds each request with `Config.Timeout` (default one second).
++`Config.MaxResponseBodySize` (default 100 MiB, a negative value for none) bounds upstream response bodies to protect against memory exhaustion. A body the proxy streams, a response set to stream with `c.Response().StreamBody` or one read by a client that streams, is held to it as well, which fasthttp does not do for a stream: a body that declares more is refused before any of it is sent, and one that passes the bound without declaring its length ends the response early. A `ModifyResponse` hook that reads a streamed body into memory takes in no more than the bound: the read fails past it, and `c.Response().Body()` then holds the error's text in place of the body. The request fails with that error, unless the hook sets a response of its own after the read, as one that reads `c.Response().BodyStream()` itself can on seeing `fasthttp.ErrBodyTooLarge`. A body that is exactly the error's text cannot be told from the failure left in place, so a hook that wants a status of its own returns an error, such as `fiber.ErrRequestEntityTooLarge`. A `Config.Client` keeps the bounds of its own clients for the bodies they buffer. fasthttp applies none to a body a client streams, whatever its `MaxResponseBodySize`, and the default does not apply to a `Config.Client`, so such a body is held only to a `Config.MaxResponseBodySize` you set and is unbounded when you leave it out. `Config.MaxConnsPerHost` (default `1024`) caps concurrent connections per upstream to limit fan-out from a single hot host. `Balancer` also bounds each request with `Config.Timeout` (default one second).
+ 
+-The runtime helpers (`Do`, `DoRedirects`, `Forward`, `DomainForward` and `BalancerForward`) dispatch through a client that bounds every request: each request, and each hop `DoRedirects` follows, has 30 seconds for the whole exchange, the connect, the write and the read of the response included, in one attempt, and a response body of at most 100 MiB, which the proxy buffers whole, so an upstream that stalls or streams without end holds neither the handler nor the memory; a transfer that takes longer than the bound fails with it too. `DoTimeout` and `DoDeadline` set the bound of their own request, longer or shorter, and the time they allow, like `Config.Timeout`, covers the connect as well. For other bounds, hand the proxy a client with `ReadTimeout`, `WriteTimeout` and `MaxResponseBodySize` set, registered with `proxy.WithClient` or passed per call; it replaces the default client with its bounds, and fasthttp applies a client's read and write timeouts to each attempt it makes:
++The runtime helpers (`Do`, `DoRedirects`, `Forward`, `DomainForward` and `BalancerForward`) dispatch through a client that bounds every request: each request, and each hop `DoRedirects` follows, has 30 seconds for the whole exchange, the connect, the write and the read of the response included, in one attempt, and a response body of at most 100 MiB, which the proxy buffers whole or, for a response set to stream, relays up to that size, so an upstream that stalls or streams without end holds neither the handler nor the memory; a transfer that takes longer than the bound fails with it too. `DoTimeout` and `DoDeadline` set the bound of their own request, longer or shorter, and the time they allow, like `Config.Timeout`, covers the connect as well. For other bounds, hand the proxy a client with `ReadTimeout`, `WriteTimeout` and `MaxResponseBodySize` set, registered with `proxy.WithClient` or passed per call; it replaces the default client with its bounds, and fasthttp applies a client's read and write timeouts to each attempt it makes. A client that streams response bodies is held to its `MaxResponseBodySize` as well, which fasthttp ignores for a stream:
+ 
+ ```go
+ proxy.WithClient(&fasthttp.Client{
+@@ -418,9 +418,9 @@ app.Use(proxy.Balancer(proxy.Config{
+ | KeepConnectionHeader | `bool` | Keeps the `Connection` header when set to `true`. By default the header is removed to comply with RFC 9110 §7.6.1 and avoid proxy loops. Other hop-by-hop headers are still stripped regardless of this setting. | `false` |
+ | TLSConfig       | `*tls.Config` | TLS config for the HTTP client. Cloned with `MinVersion: tls.VersionTLS12` when no minimum is set. | `nil`           |
+ | DialDualStack   | `bool`                                         | Client will attempt to connect to both IPv4 and IPv6 host addresses if set to true.                                                                                                                                                | `false`         |
+-| Client          | `*fasthttp.LBClient`                           | Client is a custom client when client config is complex. Each `*fasthttp.HostClient` among its `Clients` gets `DisablePathNormalizing` set when the balancer is built, unless it has it set already, in which case it is left alone; see [Request target](#request-target). When it is set, `Servers`, `Timeout`, `MaxConnsPerHost`, `ReadBufferSize`, `WriteBufferSize`, `MaxResponseBodySize`, `TLSConfig` and `DialDualStack` are not used, and its dialers are yours to guard (see [SSRF protection](#ssrf-protection)).                                                                                                                                                                           | `nil`           |
++| Client          | `*fasthttp.LBClient`                           | Client is a custom client when client config is complex. Each `*fasthttp.HostClient` among its `Clients` gets `DisablePathNormalizing` set when the balancer is built, unless it has it set already, in which case it is left alone; see [Request target](#request-target). When it is set, `Servers`, `Timeout`, `MaxConnsPerHost`, `ReadBufferSize`, `WriteBufferSize`, `MaxResponseBodySize`, `TLSConfig` and `DialDualStack` are not used, and its dialers are yours to guard (see [SSRF protection](#ssrf-protection)); a `MaxResponseBodySize` you set still holds a body the client streams, which fasthttp does not bound.                                                                                                                                                                           | `nil`           |
+ | SecurityPolicy  | `*SecurityPolicy`                              | Overrides the default SSRF, redirect, and hop-by-hop header rules for this balancer. When `nil`, the package-level policy set via `WithSecurityPolicy` is used. Either way it is settled once, when the balancer is built. See [Security](#security).                                          | `nil`           |
+-| MaxResponseBodySize | `int`                                       | Maximum upstream response body size in bytes. `0` takes the default of 100 MiB; a negative value removes the bound, as fasthttp's unlimited default does.                                                                                                                                                | `100 << 20`     |
++| MaxResponseBodySize | `int`                                       | Maximum upstream response body size in bytes, a streamed body included. `0` takes the default of 100 MiB; a negative value removes the bound, as fasthttp's unlimited default does.                                                                                                                                                | `100 << 20`     |
+ 
+ ## Default Config
+ 
+diff --git a/docs/whats_new.md b/docs/whats_new.md
+index 7f6c1b44ea0..686b7ed6b89 100644
+--- a/docs/whats_new.md
++++ b/docs/whats_new.md
+@@ -1237,7 +1237,7 @@ it used to carry an empty one.
+ - Redirects are off by default (`MaxRedirects` is `0`). The `Request` methods follow them for `GET`, `HEAD` and `QUERY` requests only, while `Client.DoRedirects` follows any method. A redirect to a host that is neither the original hostname (on any port) nor one of its subdomains drops the credentials of the original request (`Authorization`, `Proxy-Authorization`, `Cookie` and related headers), and a redirect from HTTPS to HTTP fails with `client.ErrRedirectDowngrade`. Headers named with `Client.SetRedirectSensitiveHeaders`, `Request.SetRedirectSensitiveHeaders` or `Config.RedirectSensitiveHeaders` are dropped with them, and all of them are removed whatever case they are stored under; every other header is forwarded. A redirect that drops the body drops the request's trailer section with it, instead of sending its fields to the target as header lines, and fails with `client.ErrRedirectTrailers` when that section announces more than 16 names. With a retry configuration, a chain that fails is retried from the original request.
+ - A client from `client.New`, the default client behind `client.Get` and the other package-level helpers included, buffers a response body of at most 100 MiB and fails a larger one with `fasthttp.ErrBodyTooLarge`. `SetMaxResponseBodySize` changes the limit, and `SetStreamResponseBody(true)` reads a body without buffering it. A wrapped `fasthttp` client keeps its own `MaxResponseBodySize`.
+ - A timeout, set with `SetTimeout`, `Config.Timeout` or a context deadline, now bounds the transport as well as the caller: every attempt, retry and redirect hop gets what is left of it, the connection is closed when it passes, and retries stop once the call is over. On a client from `client.New` it also bounds the TLS handshake. With response streaming the deadline also ends reads from `Response.BodyStream()`, so leave it unset for a long-lived stream.
+-- A canceled context, with or without a deadline, ends the exchange of a client from `client.New` at the transport too, unless the response is streamed: the connection the request was using is closed, so the goroutine and the connection no longer wait for a server that never answers once the connection is open; a dial still in progress runs to its end (3 seconds for the built-in dialer) and its connection is then closed. With `SetStreamResponseBody(true)`, and on a wrapped `fasthttp` client, the caller returns at once while the exchange ends on its own, as before.
++- A canceled context, with or without a deadline, ends the exchange of a client from `client.New` at the transport too, unless the response is streamed: the connection the request was using is closed, so the goroutine and the connection no longer wait for a server that never answers once the connection is open; a dial still in progress runs to its end (3 seconds for the built-in dialer) and its connection is then closed. With `SetStreamResponseBody(true)`, and on a wrapped `fasthttp` client, the caller returns at once while the exchange ends on its own, as before; a timeout or deadline still bounds it, so give such requests one.
+ - A `Request` sent again picks its cookies anew: it no longer carries the cookie jar's cookies for its previous URL or a cookie deleted or expired since, and a cookie written straight to `RawRequest` before the send is dropped. The cookie jar drops a cookie without a name and trims whitespace around a name, and only a host name matches a cookie `Domain` by suffix: an IP address, with or without an IPv6 zone, matches only itself.
+ - `SetParam`, `SetParams`, `SetFormData` and `SetFormDataWithMap` on a `Request`, `SetParam`, `SetParams` and `SetHeader` on the `Client`, and `QueryParam.Set` and `FormData.Set` replace every value stored under the key, not only the first, so a value added before with `AddParam`, `AddFormData` or `AddHeader` is no longer sent next to the new one. The key moves to the end of the query string or form body.
+ 
+@@ -1652,11 +1652,11 @@ The middleware also caches `308 Permanent Redirect` responses and honors the req
+ 
+ Cache hits replay the stored `Vary` header even when `StoreResponseHeaders` is off, and a hit on an entry keyed by a cookie or credential (`Vary: Cookie`, `KeyCookies`, `KeyCredentialHeaders`, or `KeyHeaders` naming `Cookie`, `Authorization` or another header that carries a credential) is sent with `Cache-Control: private` rather than `public`, so a shared cache in front of the app does not store one user's response for the next.
+ 
+-A response is stored under the request headers its own `Vary` names, also when other responses of the same URL name a different list, so a page sent with `Vary: Cookie` is served only to requests with the same `Cookie`. The values are the ones the request carried when it reached the cache: middleware registered after it that rewrites a request header, as `encryptcookie` does with the cookies it decrypts, no longer changes the key a response is stored under. A response that varies on a header such middleware added, to a request that sent none, is not stored, since no request's key selects by it; a header the client sent and the middleware overwrote keeps the client's value in the key, so a response derived from another input must vary on that input too.
++A response is stored under the request headers its own `Vary` names, also when other responses of the same URL name a different list, so a page sent with `Vary: Cookie` is served only to requests with the same `Cookie`. The values are the ones the request carried when it reached the cache, and a response is stored only if the headers it varies on reach the handler as they came. A response that varies on a header middleware registered after the cache added, rewrote or removed, as `encryptcookie` does with the cookies it decrypts or drops, is not stored and is sent with `X-Cache: unreachable`: its key holds the value the client sent, which any client sending the same one, a placeholder the middleware overwrote with its session's included, would have been served the page for. Register the cache behind such middleware, and have a response derived from another input vary on the input the client sends, such as `Cookie`. The key version moves with this rule, so every cache starts cold after the upgrade: an entry stored under the old rule is served, on an external `Storage` that outlives the upgrade, to any client sending the value its key holds, so the earlier entries are not read. They expire on their own, or a shared store can drop them by their key prefix (`v6|`).
+ 
+ A request the server refused while reading it, such as one over `BodyLimit`, is neither served from the cache nor stored: its route never ran. With `QUERY` in `Methods`, the default key includes `Content-Type` and `Content-Encoding` besides the body. With an external `Storage`, a response past the size limits an entry is decoded under is not stored (`X-Cache: unreachable`) instead of making every later lookup of its key fail with `500`.
+ 
+-Credential headers named in `KeyHeaders` (`Cookie`, `Authorization`, `Proxy-Authorization`, `X-API-Key`, `X-Auth-Token`, `X-Access-Token` or a header named in `KeyCredentialHeaders`) and the values of the cookies named in `KeyCookies` are hashed in the cache key, so a key listing of an external `Storage` no longer shows them, and the key version moves with that change: every cache starts cold after the upgrade, whatever its config, since the entries of the earlier version are not read. With an external `Storage` they expire on their own, or a shared store can drop them by the earlier version's key prefix (`v4|`). The body an external `Storage` keeps beside an entry, and the entry's `Vary` manifest, now have keys of their own (`v6|body|...` and `v6|manifest|...`) instead of the entry key plus a suffix, which a request could spell to overwrite the body of another entry. A custom `KeyGenerator`'s key is stored with `\`, `|` and `:` escaped as `\\`, `\p` and `\c`, so client text it copies cannot spell the key of another entry's `Vary` variant.
++Credential headers named in `KeyHeaders` (`Cookie`, `Authorization`, `Proxy-Authorization`, `X-API-Key`, `X-Auth-Token`, `X-Access-Token` or a header named in `KeyCredentialHeaders`) and the values of the cookies named in `KeyCookies` are hashed in the cache key, so a key listing of an external `Storage` no longer shows them, and the key version moves with that change: every cache starts cold after the upgrade, whatever its config, since the entries of the earlier version are not read. With an external `Storage` they expire on their own, or a shared store can drop them by the earlier version's key prefix (`v4|`). The body an external `Storage` keeps beside an entry, and the entry's `Vary` manifest, now have keys of their own (`v7|body|...` and `v7|manifest|...`) instead of the entry key plus a suffix, which a request could spell to overwrite the body of another entry. A custom `KeyGenerator`'s key is stored with `\`, `|` and `:` escaped as `\\`, `\p` and `\c`, so client text it copies cannot spell the key of another entry's `Vary` variant.
+ 
+ Additionally, the caching middleware has been optimized to avoid caching non-cacheable status codes, as defined by the [HTTP standards](https://datatracker.ietf.org/doc/html/rfc7231#section-6.1). This improvement enhances cache accuracy and reduces unnecessary cache storage usage.
+ Cached responses now include an RFC-compliant Age header, providing a standardized indication of how long a response has been stored in cache since it was originally generated. This enhancement improves HTTP compliance and facilitates better client-side caching strategies.
+@@ -2014,7 +2014,7 @@ The headers a request lists in `Connection` are removed before it is forwarded,
+ 
+ `proxy.Balancer` takes its `proxy.Config` as an optional variadic argument, like the other middleware constructors. `Servers` (or a custom `Client` with `Clients`) is required, so `proxy.Balancer()` without a config panics at startup, as `proxy.Balancer(proxy.Config{})` does, and so does a `Client` without `Clients`. A server without a port is dialed on the port of its scheme, and each server is reached with its own scheme, so an `https` upstream works behind a plain-HTTP listener.
+ 
+-The proxy is secure by default. Upstreams that resolve to loopback, private, link-local, multicast, unspecified, CGNAT or other special-use addresses (IPv6 transition forms included) are refused, and so are schemes other than `http` and `https` and HTTPS-to-HTTP redirects. Every request is bounded: `Balancer` buffers at most `MaxResponseBodySize` of an upstream response, 100 MiB unless set (a negative value lifts the bound; a `Config.Client` keeps the bounds of its own clients), and the client behind `Do`, `DoRedirects`, `Forward`, `DomainForward` and `BalancerForward` gives each request, and each redirect hop, 30 seconds for the whole exchange, connect and body included, unless `DoTimeout` or `DoDeadline` set the request's own bound, and buffers at most 100 MiB of a response, until `proxy.WithClient` replaces it. Hop-by-hop headers are stripped, and `Balancer`, `Forward`, `DomainForward` and `BalancerForward` overwrite `X-Real-IP` with `c.IP()`; with `Do`, `DoTimeout`, `DoDeadline` and `DoRedirects` you set it yourself. The trailer section of a chunked request is dropped instead of reaching the upstream as header lines, the trailer section of an upstream's chunked response is dropped instead of reaching the client as header lines, whether the client buffers the response or streams it, and a forwarding header sent on several lines keeps them in the order they were received; a request carrying more than 64 forwarding lines, the `X-Real-IP` line the proxy writes included, is refused with `431 Request Header Fields Too Large`. To proxy to an internal host, relax the policy with `proxy.WithSecurityPolicy` (or `Config.SecurityPolicy` for `Balancer`), for example `proxy.SecurityPolicy{AllowPrivateIPs: true}`, before you build `DomainForward` or `BalancerForward`: they check their upstreams when the handler is built and panic on a rejected one. Keep the policy installed while they serve: `Forward`, `DomainForward` and `BalancerForward` read it on every request, whereas `Balancer` reads it once, when it is built. See [Security](./middleware/proxy.md#security).
++The proxy is secure by default. Upstreams that resolve to loopback, private, link-local, multicast, unspecified, CGNAT or other special-use addresses (IPv6 transition forms included) are refused, and so are schemes other than `http` and `https` and HTTPS-to-HTTP redirects. Every request is bounded: `Balancer` takes at most `MaxResponseBodySize` of an upstream response, 100 MiB unless set, whether it buffers the body or streams it (a negative value lifts the bound; a `Config.Client` keeps the bounds of its own clients for the bodies they buffer, and a `MaxResponseBodySize` you set holds the body it streams, which fasthttp does not bound), and the client behind `Do`, `DoRedirects`, `Forward`, `DomainForward` and `BalancerForward` gives each request, and each redirect hop, 30 seconds for the whole exchange, connect and body included, unless `DoTimeout` or `DoDeadline` set the request's own bound, and takes at most 100 MiB of a response, one set to stream included, until `proxy.WithClient` replaces it; a client of your own that streams is held to its `MaxResponseBodySize`. A streamed body that declares more than the bound is refused before any of it is sent, and one that passes it without declaring its length ends the response early. Hop-by-hop headers are stripped, and `Balancer`, `Forward`, `DomainForward` and `BalancerForward` overwrite `X-Real-IP` with `c.IP()`; with `Do`, `DoTimeout`, `DoDeadline` and `DoRedirects` you set it yourself. The trailer section of a chunked request is dropped instead of reaching the upstream as header lines, the trailer section of an upstream's chunked response is dropped instead of reaching the client as header lines, whether the client buffers the response or streams it, and a forwarding header sent on several lines keeps them in the order they were received; a request carrying more than 64 forwarding lines, the `X-Real-IP` line the proxy writes included, is refused with `431 Request Header Fields Too Large`. To proxy to an internal host, relax the policy with `proxy.WithSecurityPolicy` (or `Config.SecurityPolicy` for `Balancer`), for example `proxy.SecurityPolicy{AllowPrivateIPs: true}`, before you build `DomainForward` or `BalancerForward`: they check their upstreams when the handler is built and panic on a rejected one. Keep the policy installed while they serve: `Forward`, `DomainForward` and `BalancerForward` read it on every request, whereas `Balancer` reads it once, when it is built. See [Security](./middleware/proxy.md#security).
+ 
+ `ErrUpstreamHostUnresolvable` is new: a name that cannot be resolved, or that resolves to no address, is rejected with an error that matches it and `ErrUpstreamHostBlocked` both, and `errors.As` finds the `*net.DNSError` of the lookup. A host with only IPv6 addresses and `DialDualStack` off fails with an error that matches neither, where it matched `ErrUpstreamHostBlocked` before. An address `net/url` cannot parse is rejected with `ErrUpstreamHostInvalid` and the `*url.Error` wrapped beside it, so the message of that error carries the parse error. The time `DoTimeout`, `DoDeadline` or `Config.Timeout` allows bounds the lookup and the connects of the request as well; a connect that nothing bounds has five seconds, as before.
+ 
+diff --git a/internal/fieldname/fieldname.go b/internal/fieldname/fieldname.go
+index 61f56c5c48b..7d790771fc2 100644
+--- a/internal/fieldname/fieldname.go
++++ b/internal/fieldname/fieldname.go
+@@ -472,25 +472,6 @@ func Lines(h Peeker, name string, canonical bool) [][]byte {
+ 	return values
+ }
+ 
+-// CountLines is len(Lines(h, name, canonical)) without the lines.
+-//
+-//nolint:revive // flag-parameter: canonical is a property of the header store, not a mode of operation
+-func CountLines(h Peeker, name string, canonical bool) int {
+-	if canonical && !HasTrailers(h) {
+-		return len(h.PeekAll(name))
+-	}
+-	if req, ok := h.(*fasthttp.RequestHeader); ok && InTrailer(req, name) {
+-		return 0
+-	}
+-	n := 0
+-	h.VisitAll(func(k, _ []byte) {
+-		if utils.EqualFold(utils.UnsafeString(k), name) {
+-			n++
+-		}
+-	})
+-	return n
+-}
+-
+ // First returns the first field line stored under name that holds anything, or
+ // nil if there is none. The names fasthttp keeps in a slot of their own are
+ // unaffected either way: every spelling is routed into the slot on the way in.
+diff --git a/middleware/cache/cache.go b/middleware/cache/cache.go
+index 0441d5abae9..e6cdfc92d36 100644
+--- a/middleware/cache/cache.go
++++ b/middleware/cache/cache.go
+@@ -81,12 +81,16 @@ const (
+ // also retires v4 entries stored under the lookup's Vary list instead of their own. v6:
+ // the body slot and the Vary manifest moved from a suffix of the entry key, which
+ // a request can spell, to a namespace of their own (see bodyKeyPrefix), and a
+-// custom KeyGenerator's key is escaped so it cannot spell a variant's suffix. Bump
++// custom KeyGenerator's key is escaped so it cannot spell a variant's suffix. v7: a
++// response that varies on a request header an inner middleware added, rewrote or
++// removed is no longer stored, as its key held the value the client sent while the
++// page was built from another. One the earlier rule stored would still be served,
++// on a store that survived the upgrade, to every client sending that value. Bump
+ // this whenever what a key stands for, or what its entry carries, changes; the
+ // cost is one cold cache after a deploy. Additive bookkeeping fields such as
+ // heapgen need no bump: old entries decode with generation zero, and older
+ // readers skip the new field without changing the response or key semantics.
+-const cacheKeyVersion = "v6"
++const cacheKeyVersion = "v7"
+ 
+ // The keys derived from an entry key sit right after the version, where no entry
+ // key goes: those continue with their method.
+@@ -1066,16 +1070,14 @@ func New(config ...Config) fiber.Handler {
+ 		shouldStoreVaryManifest := !cfg.DisableVaryHeaders && len(respVaryNames) > 0
+ 		entryManifest := "" // the manifest the entry is stored under, dropped with the last such entry
+ 		if !cfg.DisableVaryHeaders && len(respVaryNames) > 0 {
+-			// The key is built from the request header as the lookup saw it, which is
+-			// what a later lookup reproduces. A line an inner middleware added since, as
+-			// one deriving X-User-Id from the session cookie does, is a dimension no
+-			// client's key selects by, so the first client's page would be served to
+-			// every other: stored nowhere instead. A line rewritten in place or removed,
+-			// as encryptcookie does with Cookie, keeps the lookup's view; a line the
+-			// client sent and such middleware overwrote keeps the client's value too,
+-			// which is right only when the response varies on the input it was derived
+-			// from as well (cache.md says so).
+-			if varyLinesAdded(respVaryNames, lookupHeader, &c.Request().Header, canonical) {
++			// The key is built from the request headers as the lookup saw them, which is
++			// what a later lookup reproduces. A header an inner middleware added,
++			// rewrote or removed since, as one deriving X-User-Id from the session
++			// cookie does, gave the handler a value no client's key selects by, so the
++			// first client's page would be served to every other sending the same
++			// placeholder: stored nowhere instead (cache.md says to register the cache
++			// behind such middleware).
++			if varyHeadersChanged(respVaryNames, lookupHeader, &c.Request().Header, canonical) {
+ 				markUnreachable()
+ 				return nil
+ 			}
+diff --git a/middleware/cache/utils.go b/middleware/cache/utils.go
+index 82d620f10c2..e877d498a8a 100644
+--- a/middleware/cache/utils.go
++++ b/middleware/cache/utils.go
+@@ -152,26 +152,6 @@ func keyFieldLines(h *fasthttp.RequestHeader, name string, normalized bool) [][]
+ 	return fieldname.Lines(h, name, normalized)
+ }
+ 
+-// cookieAdded reports whether live carries more cookies by some name than lookup, the copy taken
+-// before the handler ran: the cookies make one field line once collected, so the line count that
+-// tells an added header from a rewritten one cannot tell an added cookie. Counted by name, since a
+-// cookie added with Add keeps one the client sent by the same name beside it, in one pass over
+-// each: a request may carry thousands, which a scan per cookie would square.
+-func cookieAdded(lookup, live *fasthttp.RequestHeader) bool {
+-	lookup.Cookie("") // collectCookies, as collectKeyField did for live
+-	left := make(map[string]int)
+-	for name := range lookup.Cookies() {
+-		left[string(name)]++
+-	}
+-	for name := range live.Cookies() {
+-		if left[string(name)] == 0 {
+-			return true
+-		}
+-		left[string(name)]--
+-	}
+-	return false
+-}
+-
+ // setFieldLine writes value as the field line for name, replacing whichever
+ // spelling the response carries. Set is byte-exact, so it otherwise left a
+ // differently-spelled line and nothing reconciles two Age or two Date lines.
+diff --git a/middleware/cache/vary.go b/middleware/cache/vary.go
+index 834ff57e92a..d13b0ad4baa 100644
+--- a/middleware/cache/vary.go
++++ b/middleware/cache/vary.go
+@@ -1,6 +1,7 @@
+ package cache
+ 
+ import (
++	"bytes"
+ 	"context"
+ 	"crypto/sha256"
+ 	"encoding/binary"
+@@ -11,7 +12,6 @@ import (
+ 	"sync"
+ 	"time"
+ 
+-	"github.com/gofiber/fiber/v3/internal/fieldname"
+ 	"github.com/gofiber/fiber/v3/internal/headerlist"
+ 	"github.com/gofiber/utils/v2"
+ 	utilsstrings "github.com/gofiber/utils/v2/strings"
+@@ -128,27 +128,20 @@ func varyKey(base string, names []string, hdr *fasthttp.RequestHeader, normalize
+ 	return key
+ }
+ 
+-// varyLinesAdded reports whether the request carries, for a name the response varies on, more
+-// field lines than lookup, the copy taken before the handler ran, or a cookie by a name it has
+-// none by: a line or cookie an inner middleware added, which no client's key selects by. One it
+-// removed, as encryptcookie removes a cookie it cannot decrypt, leaves the key the client's and
+-// the response the one for its absence, and one it rewrote, as encryptcookie decrypts a cookie,
+-// keeps the client's value in the key: the count tells an added line from a rewritten one, which
+-// values could not (see cache.md).
+-func varyLinesAdded(names []string, lookup, live *fasthttp.RequestHeader, normalized bool) bool { //nolint:revive // flag-parameter: normalized is a property of the header store
+-	for _, name := range names {
+-		if collectKeyField(live, name) {
+-			if cookieAdded(lookup, live) {
+-				return true
+-			}
+-			continue
+-		}
+-		collectKeyField(lookup, name)
+-		if n := fieldname.CountLines(live, name, normalized); n > 0 && n > fieldname.CountLines(lookup, name, normalized) {
+-			return true
+-		}
+-	}
+-	return false
++// varyHeadersChanged reports whether a request header the response varies on reads differently now
++// than it did at lookup, the copy taken before the handler ran: a line or cookie an inner middleware
++// added, as one deriving X-User-Id from the session cookie does, a value it rewrote, as encryptcookie
++// does with the cookies it decrypts, or a header it removed.
++//
++// The entry is keyed by the header as the client sent it, which is all a later lookup has to select
++// it by. A response built from anything else would be served to every client sending the same value,
++// the first client's page to whoever sends the placeholder a middleware overwrote with its session's,
++// and the cache cannot tell such a derivation from a rewrite that is a function of the value alone.
++// What counts as a change is what would give the request another key, so the two are compared as the
++// key is built (see cache.md).
++func varyHeadersChanged(names []string, lookup, live *fasthttp.RequestHeader, normalized bool) bool { //nolint:revive // flag-parameter: normalized is a property of the header store
++	var atLookup, now [len("|vary|") + 2*sha256.Size]byte
++	return !bytes.Equal(appendVaryKey(atLookup[:0], names, lookup, normalized), appendVaryKey(now[:0], names, live, normalized))
+ }
+ 
+ // lookupHeaders pools the copies of the request headers a miss keeps while the handler runs.
+diff --git a/middleware/proxy/balancer.go b/middleware/proxy/balancer.go
+index 9f979bb6fd0..f529e3eb351 100644
+--- a/middleware/proxy/balancer.go
++++ b/middleware/proxy/balancer.go
+@@ -75,6 +75,11 @@ func Balancer(config ...Config) fiber.Handler {
+ 	// the proxy can ask neither: its responses are read into one of the proxy's own either way. The
+ 	// host clients the proxy builds for Servers never stream.
+ 	streams := cfg.Client != nil
++	set := 0 // the size the caller put in the config, before the default took the place of none
++	if len(config) > 0 {
++		set = config[0].MaxResponseBodySize
++	}
++	streamLimit := streamedBodyLimit(&cfg, set)
+ 
+ 	return func(c fiber.Ctx) error {
+ 		// Don't execute middleware if Next returns true
+@@ -170,15 +175,22 @@ func Balancer(config ...Config) fiber.Handler {
+ 		// to the response after Do returned: such a response is read into one of the proxy's own, see
+ 		// upstreamResponse.
+ 		upstream := upstreamResponse(streams, res)
+-		if err := adoptUpstreamResponse(res, upstream, lbc.Do(req, upstream), policy, keepHeaders...); err != nil {
++		if err := adoptUpstreamResponse(res, upstream, lbc.Do(req, upstream), policy, streamLimit, keepHeaders...); err != nil {
+ 			return err
+ 		}
+ 
+ 		// Modify response
+ 		if cfg.ModifyResponse != nil {
++			body, streamed := res.BodyStream().(*upstreamBody)
+ 			if err := cfg.ModifyResponse(c); err != nil {
+ 				return err
+ 			}
++			// A hook that read one past the bound fails the request, unless it set a response of its own
++			// since: the stream would end the response early, and fasthttp's Body replaces a body whose
++			// read failed with the error's text, which would go out as the upstream's response.
++			if streamed && body.failureStands(res) {
++				return body.err
++			}
+ 		}
+ 
+ 		// Return nil to end proxying if no error
+@@ -201,6 +213,18 @@ func (c schemeClient) DoDeadline(req *fasthttp.Request, resp *fasthttp.Response,
+ 	return c.HostClient.DoDeadline(req, resp, deadline)
+ }
+ 
++// streamedBodyLimit is the size a body that Balancer streams is held to, which fasthttp does not do for
++// one: the configured size, 100 MiB by default, behind the host clients Balancer builds, and behind a Client
++// of the caller's only a size that was set: its clients keep their own bounds for the bodies they buffer, but
++// fasthttp applies none to a body they stream, whatever their MaxResponseBodySize. set is the size as the
++// caller configured it, cfg's being the default where it was left out. Zero is no bound.
++func streamedBodyLimit(cfg *Config, set int) int {
++	if cfg.Client != nil && set <= 0 {
++		return 0
++	}
++	return max(cfg.MaxResponseBodySize, 0)
++}
++
+ // newHostClient builds the client Balancer dials one validated upstream with.
+ func newHostClient(u *url.URL, cfg *Config, policy SecurityPolicy) *fasthttp.HostClient {
+ 	isTLS := u.Scheme == schemeHTTPS
+diff --git a/middleware/proxy/client.go b/middleware/proxy/client.go
+index 4e61b778ba3..30ee03f2bbd 100644
+--- a/middleware/proxy/client.go
++++ b/middleware/proxy/client.go
+@@ -8,9 +8,9 @@ import (
+ 	"github.com/valyala/fasthttp"
+ )
+ 
+-// defaultMaxResponseBodySize bounds the body the proxy buffers from an
+-// upstream response, so one that streams without end does not take the
+-// memory; it is the bound the client package applies too.
++// defaultMaxResponseBodySize bounds the body the proxy takes from an
++// upstream response, buffered or streamed, so one that streams without end
++// does not take the memory; it is the bound the client package applies too.
+ const defaultMaxResponseBodySize = 100 << 20
+ 
+ // defaultRequestTimeout bounds a request the default client makes to an upstream,
+@@ -24,9 +24,10 @@ const defaultMaxResponseBodySize = 100 << 20
+ // one app.Test gave up on at its timeout, may still read the bound while the test sets it.
+ var defaultRequestTimeout atomic.Int64
+ 
+-// defaultClient buffers at most defaultMaxResponseBodySize of a response and gives
+-// each request defaultRequestTimeout, see doActionWithPolicy; set other bounds with
+-// WithClient, or on one request with DoTimeout or DoDeadline.
++// defaultClient takes at most defaultMaxResponseBodySize of a response, also one the
++// caller set to stream, and gives each request defaultRequestTimeout, see
++// doActionWithPolicy; set other bounds with WithClient, or on one request with
++// DoTimeout or DoDeadline.
+ var defaultClient = &fasthttp.Client{
+ 	NoDefaultUserAgentHeader: true,
+ 	DisablePathNormalizing:   true,
+diff --git a/middleware/proxy/config.go b/middleware/proxy/config.go
+index 0d9901f64a9..b35b225c7f1 100644
+--- a/middleware/proxy/config.go
++++ b/middleware/proxy/config.go
+@@ -35,7 +35,8 @@ type Config struct {
+ 	// first on a client already in use, which is then left alone.
+ 	// Note that Servers, Timeout, MaxConnsPerHost, ReadBufferSize, WriteBufferSize,
+ 	// MaxResponseBodySize, TLSConfig and DialDualStack will not be used if the client is
+-	// set, and its dialers are yours to guard.
++	// set, and its dialers are yours to guard. The exception is a MaxResponseBodySize you
++	// set, which holds a body the client streams to that size: fasthttp does not bound one.
+ 	Client *fasthttp.LBClient
+ 
+ 	// SecurityPolicy overrides the default SSRF, redirect, and
+@@ -79,6 +80,10 @@ type Config struct {
+ 	// the default; a negative value removes the bound, as fasthttp's
+ 	// unlimited default does.
+ 	//
++	// It bounds a body the proxy streams as well, which fasthttp does not: one
++	// that declares more is refused before any of it is sent, and one that goes
++	// past the bound without declaring its length ends the response early.
++	//
+ 	// Optional. Default: 100 MiB
+ 	MaxResponseBodySize int
+ 
+diff --git a/middleware/proxy/proxy.go b/middleware/proxy/proxy.go
+index 43675fbd050..d30ddb39970 100644
+--- a/middleware/proxy/proxy.go
++++ b/middleware/proxy/proxy.go
+@@ -55,7 +55,9 @@ func forwardWithRealIP(c fiber.Ctx, addr string, policy SecurityPolicy, clients
+ // every request, so keep it installed while the handler serves.
+ //
+ // The default client gives each request 30 seconds for the whole exchange and
+-// buffers at most 100 MiB of a response; WithClient replaces both bounds.
++// takes at most 100 MiB of a response; WithClient replaces both bounds. A client
++// of your own that streams response bodies is held to its MaxResponseBodySize as
++// well, which fasthttp does not do for a stream.
+ func Forward(addr string, clients ...*fasthttp.Client) fiber.Handler {
+ 	return func(c fiber.Ctx) error {
+ 		// See Balancer: a refused request is not forwarded.
+@@ -85,8 +87,8 @@ func Forward(addr string, clients ...*fasthttp.Client) fiber.Handler {
+ // unused client) before first use.
+ //
+ // The request reaches the upstream as HTTP/1.1. As with Forward, the default
+-// client bounds the exchange at 30 seconds and the response at 100 MiB; DoTimeout
+-// and DoDeadline set the bound of their own request.
++// client bounds the exchange at 30 seconds and the response at 100 MiB, buffered
++// or streamed; DoTimeout and DoDeadline set the bound of their own request.
+ func Do(c fiber.Ctx, addr string, clients ...*fasthttp.Client) error {
+ 	return doAction(c, addr, func(cli *fasthttp.Client, req *fasthttp.Request, resp *fasthttp.Response, _ *url.URL) error {
+ 		return cli.Do(req, resp)
+@@ -245,7 +247,7 @@ func doActionWithPolicy(
+ 	// A client that streams response bodies hands the upstream's trailer section to the response after
+ 	// the action returned: such a response is read into one of the proxy's own, see upstreamResponse.
+ 	upstream := upstreamResponse(cli.StreamResponseBody, res)
+-	return adoptUpstreamResponse(res, upstream, action(cli, req, upstream, u), policy)
++	return adoptUpstreamResponse(res, upstream, action(cli, req, upstream, u), policy, cli.MaxResponseBodySize)
+ }
+ 
+ // forwardRouted forwards the routed path to base for DomainForward and BalancerForward. A path
+diff --git a/middleware/proxy/response.go b/middleware/proxy/response.go
+index b5b8be0be7a..6cac42b2984 100644
+--- a/middleware/proxy/response.go
++++ b/middleware/proxy/response.go
+@@ -27,13 +27,21 @@ func upstreamResponse(streams bool, res *fasthttp.Response) *fasthttp.Response {
+ // client's: sanitized and, when upstream is the proxy's own, its header section copied over and its body read
+ // from it through an upstreamBody, which releases it once the body has been sent, or moved over without a copy
+ // when the client buffered the body after all. upstream is released on an error.
+-func adoptUpstreamResponse(res, upstream *fasthttp.Response, err error, policy SecurityPolicy, except ...string) error {
++//
++// A body the client streams is held to limit bytes when that is positive, which fasthttp does not do for one:
++// it ignores a client's MaxResponseBodySize for a body it hands over as a stream. A length the response declares
++// above it is refused before anything is sent, as a body read into memory would be, and a body that passes it
++// without declaring one ends with fasthttp.ErrBodyTooLarge, which aborts the response.
++func adoptUpstreamResponse(res, upstream *fasthttp.Response, err error, policy SecurityPolicy, limit int, except ...string) error { //nolint:revive // argument-limit: the bound is as much the caller's as the policy
+ 	if err == nil {
+ 		err = sanitizeUpstreamResponse(upstream, policy, except...)
+ 	}
+ 	if upstream == res {
+ 		return err
+ 	}
++	if err == nil && limit > 0 && upstream.IsBodyStream() && upstream.Header.ContentLength() > limit {
++		err = fasthttp.ErrBodyTooLarge
++	}
+ 	if err != nil {
+ 		fasthttp.ReleaseResponse(upstream)
+ 		return err
+@@ -46,7 +54,7 @@ func adoptUpstreamResponse(res, upstream *fasthttp.Response, err error, policy S
+ 		fasthttp.ReleaseResponse(upstream)
+ 		return nil
+ 	}
+-	res.SetBodyStream(&upstreamBody{Reader: upstream.BodyStream(), upstream: upstream}, upstream.Header.ContentLength())
++	res.SetBodyStream(&upstreamBody{Reader: upstream.BodyStream(), upstream: upstream, limit: int64(limit)}, upstream.Header.ContentLength())
+ 	return nil
+ }
+ 
+@@ -65,13 +73,56 @@ func moveBody(res, upstream *fasthttp.Response) {
+ }
+ 
+ // upstreamBody is the body of a streamed upstream response, read from the response the client streams into
+-// and released with it once it has been sent, which closes the stream and so releases its connection.
++// and released with it once it has been sent, which closes the stream and so releases its connection. It
++// delivers at most limit bytes when that is positive, and then fails with fasthttp.ErrBodyTooLarge instead of
++// the byte past it.
+ type upstreamBody struct {
+ 	io.Reader
+ 	upstream *fasthttp.Response
++	err      error // the failure a body past its limit keeps returning
++	limit    int64
++	read     int64
++}
++
++func (b *upstreamBody) Read(p []byte) (int, error) {
++	if b.limit <= 0 {
++		return b.Reader.Read(p) //nolint:wrapcheck // fasthttp expects the reader's own io.EOF
++	}
++	if b.err != nil {
++		return 0, b.err
++	}
++	// When p holds more than is left, one byte past it is asked for, to tell a body that ends at the
++	// limit from one that goes on. Written as room < len(p), which cannot overflow, for a limit near
++	// the largest int.
++	if room := b.limit - b.read; room < int64(len(p)) {
++		p = p[:room+1]
++	}
++	n, err := b.Reader.Read(p)
++	b.read += int64(n)
++	if b.read > b.limit {
++		b.err = fasthttp.ErrBodyTooLarge
++		return n - 1, b.err
++	}
++	return n, err //nolint:wrapcheck // fasthttp expects the reader's own io.EOF
+ }
+ 
+ func (b *upstreamBody) Close() error {
+ 	fasthttp.ReleaseResponse(b.upstream)
+ 	return nil
+ }
++
++// failureStands reports whether res still carries the failure of a read of b past its limit instead of a
++// response the caller set after it: the stream itself, which would end the response early once it started, or
++// what fasthttp's Body leaves in its place, the error's text as the body, which would go out as the upstream's
++// response. A stream or a body set since is the caller's own and stays, as when one reads the stream and sends
++// a fallback for the failure it was handed. A body that is exactly the error's text cannot be told from what
++// Body left, so it counts as the failure: a caller that wants a status of its own returns an error.
++func (b *upstreamBody) failureStands(res *fasthttp.Response) bool {
++	if b.err == nil {
++		return false
++	}
++	if res.IsBodyStream() {
++		return res.BodyStream() == io.Reader(b)
++	}
++	return string(res.Body()) == b.err.Error()
++}
+diff --git a/middleware/session/equal.go b/middleware/session/equal.go
+new file mode 100644
+index 00000000000..d79bfec3f6c
+--- /dev/null
++++ b/middleware/session/equal.go
+@@ -0,0 +1,121 @@
++package session
++
++import (
++	"math"
++	"reflect"
++)
++
++// sameData reports whether snapshot, the session data decoded again from the bytes it was loaded
++// from, and data, what the request holds now, are the same data. It is reflect.DeepEqual except
++// that a NaN is the same as a NaN: both carry the NaNs the bytes stored, which DeepEqual tells
++// apart, so a session that held one read as edited and its request overwrote a change another
++// request had stored.
++//
++// DeepEqual answers first, as it does for all data without a NaN, and the walk below only runs
++// when it found a difference. The walk notes the pairs it has compared, as DeepEqual does, so it
++// ends on data that refers to itself: one an edit in place made so, or one a type's decoder
++// rebuilt in the snapshot too.
++func sameData(snapshot, data map[any]any) bool {
++	return reflect.DeepEqual(snapshot, data) || sameValue(reflect.ValueOf(snapshot), reflect.ValueOf(data), make(map[visit]struct{}))
++}
++
++// visit is a pair of references the walk has reached, with what they refer to: a cycle can only
++// pass through a pointer, a map or a slice, so those are all it notes.
++type visit struct {
++	typ  reflect.Type
++	a, b uintptr
++	n    int // the length of a slice
++}
++
++// sameValue is reflect.DeepEqual for two values, except that a NaN is the same as a NaN. A
++// map is the same as another when each of its keys is found in the other, which a NaN key never
++// is, as with DeepEqual. A pair already reached counts as the same, which is what ends a cycle: a
++// difference anywhere in it is found by the first visit.
++func sameValue(a, b reflect.Value, seen map[visit]struct{}) bool {
++	if !a.IsValid() || !b.IsValid() {
++		return a.IsValid() == b.IsValid()
++	}
++	if a.Type() != b.Type() {
++		return false
++	}
++	switch a.Kind() {
++	case reflect.Float32, reflect.Float64:
++		return sameFloat(a.Float(), b.Float())
++	case reflect.Complex64, reflect.Complex128:
++		x, y := a.Complex(), b.Complex()
++		return sameFloat(real(x), real(y)) && sameFloat(imag(x), imag(y))
++	case reflect.Array:
++		return sameElements(a, b, seen)
++	case reflect.Slice:
++		if a.IsNil() != b.IsNil() || a.Len() != b.Len() {
++			return false
++		}
++		if a.Len() == 0 || a.UnsafePointer() == b.UnsafePointer() || reached(seen, a, b, a.Len()) {
++			return true
++		}
++		return sameElements(a, b, seen)
++	case reflect.Interface:
++		if a.IsNil() || b.IsNil() {
++			return a.IsNil() == b.IsNil()
++		}
++		return sameValue(a.Elem(), b.Elem(), seen)
++	case reflect.Pointer:
++		if a.IsNil() || b.IsNil() {
++			return a.IsNil() == b.IsNil()
++		}
++		if a.UnsafePointer() == b.UnsafePointer() || reached(seen, a, b, 0) {
++			return true
++		}
++		return sameValue(a.Elem(), b.Elem(), seen)
++	case reflect.Struct:
++		for i := range a.NumField() {
++			if !sameValue(a.Field(i), b.Field(i), seen) {
++				return false
++			}
++		}
++		return true
++	case reflect.Map:
++		if a.IsNil() != b.IsNil() || a.Len() != b.Len() {
++			return false
++		}
++		if a.UnsafePointer() == b.UnsafePointer() || reached(seen, a, b, 0) {
++			return true
++		}
++		for iter := a.MapRange(); iter.Next(); {
++			if other := b.MapIndex(iter.Key()); !other.IsValid() || !sameValue(iter.Value(), other, seen) {
++				return false
++			}
++		}
++		return true
++	case reflect.Func:
++		return a.IsNil() && b.IsNil()
++	default: // booleans, integers, strings and the like, which == tells
++		return a.Equal(b)
++	}
++}
++
++// reached reports whether the references a and b, of one type, were reached before, and notes
++// them if not. n is the length of a slice, whose pair is told by it as well as by where it starts.
++func reached(seen map[visit]struct{}, a, b reflect.Value, n int) bool {
++	key := visit{typ: a.Type(), a: uintptr(a.UnsafePointer()), b: uintptr(b.UnsafePointer()), n: n}
++	if _, ok := seen[key]; ok {
++		return true
++	}
++	seen[key] = struct{}{}
++	return false
++}
++
++// sameElements reports whether the elements of the arrays or slices a and b, of one length, are the same.
++func sameElements(a, b reflect.Value, seen map[visit]struct{}) bool {
++	for i := range a.Len() {
++		if !sameValue(a.Index(i), b.Index(i), seen) {
++			return false
++		}
++	}
++	return true
++}
++
++// sameFloat is == where a NaN is the same as a NaN.
++func sameFloat(a, b float64) bool {
++	return a == b || (math.IsNaN(a) && math.IsNaN(b))
++}
+diff --git a/middleware/session/session.go b/middleware/session/session.go
+index 2c6caa31d8e..1b2373b7500 100644
+--- a/middleware/session/session.go
++++ b/middleware/session/session.go
+@@ -5,7 +5,6 @@ import (
+ 	"context"
+ 	"encoding/gob"
+ 	"fmt"
+-	"reflect"
+ 	"sync"
+ 	"time"
+ 
+@@ -515,8 +514,8 @@ func (s *Session) overtakenBy(raw []byte) bool {
+ 
+ // editedInPlace reports whether the data differs from the snapshot it was decoded from, as it
+ // does once a value Get returned was changed in place. gob writes a map in no fixed order, so the
+-// snapshot is decoded again and compared as data rather than as bytes; one that no longer decodes
+-// counts as edited, which keeps the request's data.
++// snapshot is decoded again and compared as data rather than as bytes, a NaN being the same as a
++// NaN (see sameData); one that no longer decodes counts as edited, which keeps the request's data.
+ func (s *Session) editedInPlace() bool {
+ 	var snapshot map[any]any
+ 	if err := gob.NewDecoder(bytes.NewReader(s.rawData)).Decode(&snapshot); err != nil {
+@@ -527,7 +526,7 @@ func (s *Session) editedInPlace() bool {
+ 	if len(snapshot) == 0 && len(s.data.Data) == 0 {
+ 		return false
+ 	}
+-	return !reflect.DeepEqual(snapshot, s.data.Data)
++	return !sameData(snapshot, s.data.Data)
+ }
+ 
+ // Keys retrieves all keys in the current session.

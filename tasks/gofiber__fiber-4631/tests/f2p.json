@@ -1,0 +1,6 @@
+[
+  "Test_BasicAuth_WWWAuthenticateHeader_QuotedString",
+  "Test_ChallengeQuotedStringEscaping",
+  "Test_ChallengeQuotedStringEscaping/Bearer_parameters",
+  "Test_ChallengeQuotedStringEscaping/default_ApiKey_challenge"
+]

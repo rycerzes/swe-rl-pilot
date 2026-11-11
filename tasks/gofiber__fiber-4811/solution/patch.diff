@@ -1,0 +1,63 @@
+diff --git a/ctx_interface_gen.go b/ctx_interface_gen.go
+index 8aea0d60b45..21dcb2e6606 100644
+--- a/ctx_interface_gen.go
++++ b/ctx_interface_gen.go
+@@ -400,6 +400,7 @@ type Ctx interface {
+ 	// Freshness only applies to GET and HEAD requests; for any other method false is
+ 	// returned, as RFC 9110 defines 304 Not Modified only for those methods and
+ 	// requires If-Modified-Since to be ignored otherwise.
++	// The response status must be 2xx or 304; redirects and errors are never fresh.
+ 	// When a client sends the Cache-Control: no-cache request header to indicate an end-to-end
+ 	// reload request, this module will return false to make handling these requests transparent.
+ 	// https://github.com/jshttp/fresh/blob/master/index.js#L33
+diff --git a/docs/api/ctx.md b/docs/api/ctx.md
+index 97a80a77a81..75b85cf69e4 100644
+--- a/docs/api/ctx.md
++++ b/docs/api/ctx.md
+@@ -1574,6 +1574,8 @@ When a client sends the Cache-Control: no-cache request header to indicate an en
+ 
+ `Fresh` only applies to GET and HEAD requests and returns false for any other method, since a 304 Not Modified response is only defined for those methods and RFC 9110 requires If-Modified-Since to be ignored otherwise.
+ 
++The response status must be 2xx or 304. Redirects and errors return false even when the request's validators match, so a freshness check cannot replace them with a 304 response.
++
+ The request fields it reads (`If-None-Match`, `If-Modified-Since` and `Cache-Control`) are matched case-insensitively, which matters under [`DisableHeaderNormalizing`](./fiber.md#disableheadernormalizing), where the names are kept as the peer sent them. `If-None-Match` and `Cache-Control` are read across repeated field lines.
+ 
+ Read more on [https://expressjs.com/en/4x/api.html\#req.fresh](https://expressjs.com/en/4x/api.html#req.fresh)
+diff --git a/req.go b/req.go
+index e378486cb11..efeb34bc69e 100644
+--- a/req.go
++++ b/req.go
+@@ -512,6 +512,7 @@ func (r *DefaultReq) FormValue(key string, defaultValue ...string) string {
+ // Freshness only applies to GET and HEAD requests; for any other method false is
+ // returned, as RFC 9110 defines 304 Not Modified only for those methods and
+ // requires If-Modified-Since to be ignored otherwise.
++// The response status must be 2xx or 304; redirects and errors are never fresh.
+ // When a client sends the Cache-Control: no-cache request header to indicate an end-to-end
+ // reload request, this module will return false to make handling these requests transparent.
+ // https://github.com/jshttp/fresh/blob/master/index.js#L33
+@@ -528,6 +529,13 @@ func (r *DefaultReq) Fresh() bool {
+ 		return false
+ 	}
+ 
++	// Redirects and errors take precedence over request preconditions (RFC
++	// 9110 Section 13.2.1). Like Express, an existing 304 can remain fresh.
++	status := r.c.fasthttp.Response.StatusCode()
++	if (status < StatusOK || status >= StatusMultipleChoices) && status != StatusNotModified {
++		return false
++	}
++
+ 	header := &r.c.fasthttp.Request.Header
+ 
+ 	// fields
+diff --git a/req_interface_gen.go b/req_interface_gen.go
+index a9bfad453e1..8ed759a7485 100644
+--- a/req_interface_gen.go
++++ b/req_interface_gen.go
+@@ -157,6 +157,7 @@ type Req interface {
+ 	// Freshness only applies to GET and HEAD requests; for any other method false is
+ 	// returned, as RFC 9110 defines 304 Not Modified only for those methods and
+ 	// requires If-Modified-Since to be ignored otherwise.
++	// The response status must be 2xx or 304; redirects and errors are never fresh.
+ 	// When a client sends the Cache-Control: no-cache request header to indicate an end-to-end
+ 	// reload request, this module will return false to make handling these requests transparent.
+ 	// https://github.com/jshttp/fresh/blob/master/index.js#L33

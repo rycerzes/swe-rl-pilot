@@ -1,0 +1,82 @@
+diff --git a/helpers.go b/helpers.go
+index 9ea5bd3ca70..82343224b00 100644
+--- a/helpers.go
++++ b/helpers.go
+@@ -606,16 +606,22 @@ func (j *joinedHeaderValue) visit(k, v []byte) {
+ }
+ 
+ // peekJoinedRequestHeader returns the combined value of every field line for
+-// key in a single pass over the request headers, plus whether the field
+-// occurred on more than one line. Unlike PeekAll it performs no per-call key
+-// normalization. Concrete (non-generic) so the visitor stays on the stack.
+-func peekJoinedRequestHeader(h *fasthttp.RequestHeader, key string) ([]byte, bool) {
++// key in a single pass over the request headers. Unlike PeekAll it performs no
++// per-call key normalization. Concrete (non-generic) so the visitor stays on
++// the stack.
++func peekJoinedRequestHeader(h *fasthttp.RequestHeader, key string) []byte {
+ 	j := joinedHeaderValue{key: key}
+ 	// VisitAll (not the replacement All) keeps this zero-alloc: All returns
+ 	// an iterator closure that escapes to the heap on every call. The SA1019
+ 	// deprecation is suppressed for helpers.go in .golangci.yml.
++	//
++	// VisitAllInOrder is deliberately not used: it reparses rawHeaders, which
++	// only holds headers read off the wire, so headers set programmatically
++	// (e.g. by net/http adaptors) would be missed entirely. VisitAll already
++	// preserves the relative order of repeated field lines sharing a key,
++	// which is all this helper needs; it only reorders across distinct keys.
+ 	h.VisitAll(j.visit)
+-	return j.combined, j.multi
++	return j.combined
+ }
+ 
+ // peekJoinedResponseHeader is peekJoinedRequestHeader for response headers.
+diff --git a/req.go b/req.go
+index a4ab1826bd3..98f22f88ca7 100644
+--- a/req.go
++++ b/req.go
+@@ -166,7 +166,7 @@ func (r *DefaultReq) Body() []byte {
+ 
+ 	// Get Content-Encoding header. Multiple field lines form one combined
+ 	// list (RFC 9110 Section 5.2), so join them before splitting.
+-	encodedBytes, _ := peekJoinedRequestHeader(&request.Header, HeaderContentEncoding)
++	encodedBytes := peekJoinedRequestHeader(&request.Header, HeaderContentEncoding)
+ 	headerEncoding = utils.UnsafeString(utilsbytes.UnsafeToLower(encodedBytes))
+ 
+ 	// Split and get the encodings list, in order to attend the
+@@ -649,7 +649,7 @@ func (r *DefaultReq) IP() string {
+ func (r *DefaultReq) extractIPsFromHeader(header string) []string {
+ 	// TODO: Reuse the c.extractIPFromHeader func somehow in here
+ 
+-	headerValue := r.Get(header)
++	headerValue := proxyHeaderValue(r, header)
+ 
+ 	// We can't know how many IPs we will return, but we will try to guess with this constant division.
+ 	// Counting ',' makes function slower for about 50ns in general case.
+@@ -713,10 +713,10 @@ func (r *DefaultReq) extractIPFromHeader(header string) string {
+ 	app := r.c.app
+ 
+ 	if !app.config.EnableIPValidation {
+-		return r.Get(header)
++		return proxyHeaderValue(r, header)
+ 	}
+ 
+-	headerValue := r.Get(header)
++	headerValue := proxyHeaderValue(r, header)
+ 	hasTrustedProxyConfig := r.hasTrustedProxyConfig()
+ 	if !hasTrustedProxyConfig {
+ 		start := 0
+@@ -768,6 +768,14 @@ func (r *DefaultReq) extractIPFromHeader(header string) string {
+ 	return ""
+ }
+ 
++// proxyHeaderValue combines repeated proxy header field lines as required by
++// RFC 9110 Section 5.2. This ensures security-sensitive IP extraction sees the
++// complete chain when an adapter or proxy preserves separate field lines.
++func proxyHeaderValue(r *DefaultReq, header string) string {
++	value := peekJoinedRequestHeader(&r.c.fasthttp.Request.Header, header)
++	return r.c.app.toString(value)
++}
++
+ func isValidProxyIP(ipStr string) bool {
+ 	hasIPv4Separator := strings.IndexByte(ipStr, '.') >= 0
+ 	hasIPv6Separator := strings.IndexByte(ipStr, ':') >= 0

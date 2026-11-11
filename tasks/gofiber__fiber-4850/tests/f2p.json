@@ -1,0 +1,4 @@
+[
+  "Test_CSRF_SessionModeCookieExpiresWithTheToken",
+  "Test_CSRF_SessionModeKeepsConcurrentSessionChange"
+]

@@ -1,0 +1,35 @@
+diff --git a/mount.go b/mount.go
+index 006688c5a5a..76ed8758880 100644
+--- a/mount.go
++++ b/mount.go
+@@ -286,7 +286,7 @@ func domainMountRender(owner domainOwner) (*App, string) { //nolint:gocritic //
+ 	}
+ 
+ 	layout := owner.app.config.ViewsLayout
+-	if owner.app.config.Views != nil {
++	if !isNilViews(owner.app.config.Views) {
+ 		return owner.app, layout
+ 	}
+ 
+@@ -295,7 +295,7 @@ func domainMountRender(owner domainOwner) (*App, string) { //nolint:gocritic //
+ 			layout = ancestor.config.ViewsLayout
+ 		}
+ 
+-		if ancestor.config.Views != nil {
++		if !isNilViews(ancestor.config.Views) {
+ 			return ancestor, layout
+ 		}
+ 	}
+diff --git a/res.go b/res.go
+index 977fe7b8e1e..b6812e9ebb6 100644
+--- a/res.go
++++ b/res.go
+@@ -1057,7 +1057,7 @@ func (r *DefaultRes) Render(name string, bind any, layouts ...string) error {
+ 			}
+ 
+ 			// Render template from Views
+-			if app.config.Views != nil {
++			if !isNilViews(app.config.Views) {
+ 				if err := func() error {
+ 					viewsLock := getViewsLock(app.config.Views)
+ 					viewsLock.RLock()

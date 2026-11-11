@@ -1,0 +1,2020 @@
+diff --git a/client/cancel.go b/client/cancel.go
+new file mode 100644
+index 00000000000..7f97c000b7d
+--- /dev/null
++++ b/client/cancel.go
+@@ -0,0 +1,189 @@
++package client
++
++import (
++	"errors"
++	"net"
++	"sync"
++	"time"
++
++	"github.com/valyala/fasthttp"
++)
++
++// errExchangeCanceled ends an exchange whose caller's context is done, canceled or
++// past its deadline: the connection is closed under fasthttp, whose read or write
++// then fails.
++var errExchangeCanceled = errors.New("client: exchange canceled")
++
++// cancelKey is the user value under which a request in flight carries the watch
++// that can end its exchange: fasthttp hands its transport the request, not the
++// context. Request.Reset clears it before the request goes back to the pool, and
++// CopyTo does not carry it, so it is set per attempt (applyDeadline).
++type cancelKey struct{}
++
++// cancelContext is the watch a call holds for its exchanges: the connection in use
++// is attached while the exchange runs, and end, called once the caller's context is
++// done, closes it so the exchange ends at the transport and not only at the caller.
++// The mutex orders end against attach and detach, so a connection whose close has
++// started is never put back in the pool.
++type cancelContext struct {
++	conn  net.Conn
++	mu    sync.Mutex
++	ended bool
++}
++
++// attach starts watching conn and reports whether the watch is still on.
++func (w *cancelContext) attach(conn net.Conn) bool {
++	w.mu.Lock()
++	defer w.mu.Unlock()
++	if w.ended {
++		return false
++	}
++	w.conn = conn
++	return true
++}
++
++// detach stops watching the connection and reports whether end closed it.
++func (w *cancelContext) detach() bool {
++	w.mu.Lock()
++	defer w.mu.Unlock()
++	w.conn = nil
++	return w.ended
++}
++
++// end closes the connection in use, if any, and refuses the ones to come.
++func (w *cancelContext) end() {
++	w.mu.Lock()
++	defer w.mu.Unlock()
++	w.ended = true
++	if w.conn != nil {
++		_ = w.conn.Close() //nolint:errcheck // the close is the cancellation; fasthttp reports what it does to the exchange
++	}
++}
++
++// cancelTransport is the RoundTripper of the host clients of a transport made by
++// client.New. A request under a context that can end has its connection closed
++// when the context is done, so the exchange ends at the transport and not only at
++// the caller; every other request, and one whose response is streamed, goes
++// through fasthttp's own transport unchanged.
++type cancelTransport struct{}
++
++// RoundTrip implements fasthttp.RoundTripper.
++func (cancelTransport) RoundTrip(hc *fasthttp.HostClient, req *fasthttp.Request, resp *fasthttp.Response) (bool, error) {
++	watch, ok := req.UserValue(cancelKey{}).(*cancelContext)
++	if !ok || resp.StreamBody {
++		return fasthttp.DefaultTransport.RoundTrip(hc, req, resp)
++	}
++	return roundTripCancelable(watch, hc, req, resp)
++}
++
++// roundTripCancelable is fasthttp's round trip for a buffered response, with the
++// connection closed when the caller's context is done. It reports no retry for an
++// exchange the context ended: nobody waits for it.
++func roundTripCancelable(watch *cancelContext, hc *fasthttp.HostClient, req *fasthttp.Request, resp *fasthttp.Response) (bool, error) {
++	// The request's timeout, what is left of the caller's deadline (applyDeadline),
++	// bounds the dial, the wait for a free connection and the reads and writes, as
++	// under fasthttp's own transport.
++	timeout := req.GetTimeOut()
++	var deadline time.Time
++	if timeout > 0 {
++		deadline = time.Now().Add(timeout)
++	}
++	cc, err := hc.AcquireConn(timeout, req.ConnectionClose())
++	if err != nil {
++		return false, err
++	}
++	conn := cc.Conn()
++	if !watch.attach(conn) {
++		hc.CloseConn(cc)
++		return false, errExchangeCanceled
++	}
++	fail := func(err error, retry bool) (bool, error) {
++		canceled := watch.detach()
++		hc.CloseConn(cc)
++		if canceled {
++			return false, errExchangeCanceled
++		}
++		return retry, err
++	}
++
++	resp.ParseNetConn(conn)
++
++	// Set also when zero: the pooled connection may carry one from an earlier request.
++	// The deadline is the exchange's for the write and the read alike unless the host
++	// client times either by itself, which fasthttp counts from the write's end.
++	timed := hc.WriteTimeout > 0 || hc.ReadTimeout > 0
++	writeDeadline := deadline
++	if hc.WriteTimeout > 0 {
++		if t := time.Now().Add(hc.WriteTimeout); writeDeadline.IsZero() || t.Before(writeDeadline) {
++			writeDeadline = t
++		}
++	}
++	if timed {
++		err = conn.SetWriteDeadline(writeDeadline)
++	} else {
++		err = conn.SetDeadline(deadline)
++	}
++	if err != nil {
++		return fail(err, true)
++	}
++
++	resetConnection := false
++	if hc.MaxConnDuration > 0 && time.Since(cc.CreatedTime()) > hc.MaxConnDuration && !req.ConnectionClose() {
++		req.SetConnectionClose()
++		resetConnection = true
++	}
++
++	bw := hc.AcquireWriter(conn)
++	err = req.Write(bw)
++	if resetConnection {
++		req.Header.ResetConnectionClose()
++	}
++	if err == nil {
++		err = bw.Flush()
++	}
++	hc.ReleaseWriter(bw)
++	if err != nil {
++		if x, ok := err.(interface{ Timeout() bool }); ok && x.Timeout() {
++			err = fasthttp.ErrTimeout
++		}
++		return fail(err, true)
++	}
++
++	if timed {
++		readDeadline := deadline
++		if hc.ReadTimeout > 0 {
++			if t := time.Now().Add(hc.ReadTimeout); readDeadline.IsZero() || t.Before(readDeadline) {
++				readDeadline = t
++			}
++		}
++		if err = conn.SetReadDeadline(readDeadline); err != nil {
++			return fail(err, true)
++		}
++	}
++
++	if req.Header.IsHead() {
++		resp.SkipBody = true
++	}
++	if hc.DisableHeaderNamesNormalizing {
++		resp.Header.DisableNormalizing()
++	}
++
++	br := hc.AcquireReader(conn)
++	err = resp.ReadLimitBody(br, hc.MaxResponseBodySize)
++	hc.ReleaseReader(br)
++	if err != nil {
++		// Not retried for ErrBodyTooLarge, which the same body would answer again.
++		return fail(err, !errors.Is(err, fasthttp.ErrBodyTooLarge))
++	}
++
++	// A context done once the response was read in full has closed the connection
++	// as well: it is not pooled, or the next request on it would fail.
++	if watch.detach() || resetConnection || req.ConnectionClose() || resp.ConnectionClose() {
++		hc.CloseConn(cc)
++	} else {
++		// ReleaseConn records that the deadlines were touched, so fasthttp's own
++		// transport resets them before the next request on this connection.
++		hc.ReleaseConn(cc)
++	}
++	return false, nil
++}
+diff --git a/client/client.go b/client/client.go
+index bcc482fd0ea..2abb8d327a7 100644
+--- a/client/client.go
++++ b/client/client.go
+@@ -121,6 +121,10 @@ func (c *Client) applyDial(dial fasthttp.DialFunc) {
+ }
+ 
+ // FasthttpClient returns the underlying *fasthttp.Client if the client was created with one.
++//
++// A client created by New bounds TLS handshakes through this client's ConfigureClient
++// hook, which has one slot: a hook of your own, set before the first request, applies
++// its settings and then calls the hook that was there.
+ func (c *Client) FasthttpClient() *fasthttp.Client {
+ 	if client, ok := c.transport.(*standardClientTransport); ok {
+ 		return client.client
+diff --git a/client/core.go b/client/core.go
+index 22a9e2b9195..263f288c110 100644
+--- a/client/core.go
++++ b/client/core.go
+@@ -39,6 +39,11 @@ type core struct {
+ 	client *Client
+ 	req    *Request
+ 	ctx    context.Context //nolint:containedctx // Context is needed here.
++	// cancel is the watch the transport ends the exchange through, carried on the
++	// request while cancelable: the caller's own context can end before its
++	// deadline, which is all a deadline reaches fasthttp as (applyDeadline).
++	cancel     cancelContext
++	cancelable bool
+ }
+ 
+ // getRetryConfig returns a copy of the client's retry configuration.
+@@ -177,6 +182,8 @@ func (c *core) execFunc() (*Response, error) {
+ 	case resp := <-respChan:
+ 		return resp, nil
+ 	case <-c.ctx.Done():
++		// The exchange in flight ends with the call: its connection is closed.
++		c.cancel.end()
+ 		go func() { // drain the channels and release the response
+ 			select {
+ 			case resp := <-respChan:
+@@ -190,10 +197,15 @@ func (c *core) execFunc() (*Response, error) {
+ 
+ // applyDeadline gives an attempt what is left of the caller's deadline, which fasthttp
+ // turns into connection deadlines, so a call that timed out does not wait on the server.
++// A cancellation has no such path, so the watch rides on the request for the transport
++// to end the exchange through; per attempt, as a retried chain copies over req.
+ func (c *core) applyDeadline(req *fasthttp.Request, redirects *redirectOptions) error {
+ 	if c.ctx.Err() != nil {
+ 		return ErrTimeoutOrCancel
+ 	}
++	if c.cancelable {
++		req.SetUserValue(cancelKey{}, &c.cancel)
++	}
+ 	deadline, ok := c.ctx.Deadline()
+ 	if !ok {
+ 		return nil
+@@ -307,6 +319,9 @@ func (c *core) execute(ctx context.Context, client *Client, req *Request) (*Resp
+ 	c.ctx = ctx
+ 	c.client = client
+ 	c.req = req
++	// Decided before timeout() derives a deadline from it: only the caller's own
++	// context can end before its deadline would.
++	c.cancelable = ctx.Done() != nil
+ 
+ 	// Execute pre request hooks (user-defined and built-in).
+ 	if err := c.preHooks(); err != nil {
+diff --git a/client/errors.go b/client/errors.go
+index 45a5d36eca3..e5102d43330 100644
+--- a/client/errors.go
++++ b/client/errors.go
+@@ -16,4 +16,9 @@ var (
+ 	// to plaintext HTTP, on every transport. Set MaxRedirects to 0 to take such a
+ 	// hop yourself instead.
+ 	ErrRedirectDowngrade = errors.New("client: HTTPS to HTTP redirect blocked")
++
++	// ErrRedirectTrailers is returned when a redirect that drops the request body finds
++	// its trailer section announcing more than fieldname.MaxTrailers names, which the
++	// section goes with. Set MaxRedirects to 0 to take such a hop yourself instead.
++	ErrRedirectTrailers = errors.New("client: too many trailer names to follow a redirect")
+ )
+diff --git a/client/request.go b/client/request.go
+index 94de69917ed..98dd662610e 100644
+--- a/client/request.go
++++ b/client/request.go
+@@ -122,8 +122,13 @@ func (r *Request) Context() context.Context {
+ 	return r.ctx
+ }
+ 
+-// SetContext sets the context for the Request, allowing request cancellation if ctx is done.
+-// See https://blog.golang.org/context article and the "context" package documentation.
++// SetContext sets the context for the Request. Its deadline bounds the exchange at the
++// transport, and its cancellation ends the exchange of a client made by New as well, which
++// closes the connection it was using once the connection is open; a dial still in progress
++// runs to its end first, and a response read with SetStreamResponseBody is not reached. A
++// wrapped fasthttp client returns the caller at once while its exchange ends on its own, when
++// the server answers or its timeouts pass. See https://blog.golang.org/context article and
++// the "context" package documentation.
+ func (r *Request) SetContext(ctx context.Context) *Request {
+ 	r.ctx = ctx
+ 	return r
+diff --git a/client/transport.go b/client/transport.go
+index ab5ab92ef6a..98010170384 100644
+--- a/client/transport.go
++++ b/client/transport.go
+@@ -13,6 +13,7 @@ import (
+ 	"time"
+ 
+ 	"github.com/gofiber/fiber/v3/internal/crosshost"
++	"github.com/gofiber/fiber/v3/internal/redirectbody"
+ 	"github.com/gofiber/utils/v2"
+ 	"github.com/valyala/fasthttp"
+ )
+@@ -109,12 +110,16 @@ func newStandardClientTransport(client *fasthttp.Client) *standardClientTranspor
+ }
+ 
+ // newOwnedStandardClientTransport wraps a new fasthttp.Client that nothing else
+-// holds yet.
++// holds yet: its exchanges end when a cancel-only context is canceled, and its TLS
++// handshakes are bounded.
+ func newOwnedStandardClientTransport() *standardClientTransport {
+ 	return &standardClientTransport{
+ 		client: &fasthttp.Client{
+ 			MaxResponseBodySize: defaultMaxResponseBodySize,
+-			ConfigureClient:     boundTLSHandshake,
++			// On the client, which fasthttp gives every host client before the hook
++			// runs, so a hook of the caller's own in place of this one does not lose it.
++			Transport:       cancelTransport{},
++			ConfigureClient: boundTLSHandshake,
+ 		},
+ 		settingKnown: true,
+ 	}
+@@ -611,7 +616,9 @@ func doRedirectsWithClient(req *fasthttp.Request, resp *fasthttp.Response, opts
+ 			if !req.Header.IsGet() && !req.Header.IsHead() {
+ 				req.Header.SetMethod(fasthttp.MethodGet)
+ 			}
+-			dropRequestBody(req)
++			if !redirectbody.Drop(req) {
++				return ErrRedirectTrailers
++			}
+ 		}
+ 
+ 		// Credentials are scoped to the origin that issued them, so drop them once
+@@ -624,36 +631,6 @@ func doRedirectsWithClient(req *fasthttp.Request, resp *fasthttp.Response, opts
+ 	}
+ }
+ 
+-// dropRequestBody removes a request's body and everything framing or describing
+-// it: Content-Length, Transfer-Encoding and Trailer signal one (RFC 9112),
+-// Content-Type and Content-Encoding describe one no longer there.
+-func dropRequestBody(req *fasthttp.Request) {
+-	req.Header.Del(fasthttp.HeaderContentLength)
+-	req.Header.Del(fasthttp.HeaderContentType)
+-	req.Header.Del(fasthttp.HeaderContentEncoding)
+-	req.Header.Del(fasthttp.HeaderTransferEncoding)
+-	req.Header.Del(fasthttp.HeaderTrailer)
+-	// A 100-continue expectation may not be generated without content
+-	// (RFC 9110 Section 10.1.1), and a strict target answers the bodyless
+-	// follow-up with 417 rather than the redirect the caller was following.
+-	req.Header.Del(fasthttp.HeaderExpect)
+-	req.ResetBody()
+-	// Load-bearing, not bookkeeping: Request.Write falls back to the parsed form
+-	// when the body is empty, so a caller that had read PostArgs would have sent
+-	// the old "a=1" as the body of the redirected GET.
+-	//
+-	// fasthttp's own loop clears the parsed flag beside this, which leaves a
+-	// reused request re-parsing whatever body it is given next. That half is not
+-	// reachable from here: parsedPostArgs is unexported and only Request.Reset
+-	// and ReadLimitBody clear it, and Reset would take the URI, headers and TLS
+-	// flag this loop is still using. What differs is confined to a caller that
+-	// reuses the request without resetting it: its PostArgs reads empty rather
+-	// than re-parsing. The body it sends is the new one either way, and an
+-	// untouched fasthttp request is worse off there — it hands back the previous
+-	// body's values, since SetBody does not invalidate the form either.
+-	req.PostArgs().Reset()
+-}
+-
+ // hostnameWithoutPort strips the port from a host[:port] value, leaving a
+ // bracketed IPv6 literal's own colons alone.
+ func hostnameWithoutPort(host string) string {
+diff --git a/docs/client/request.md b/docs/client/request.md
+index 10819c71ab4..b00a0f8d789 100644
+--- a/docs/client/request.md
++++ b/docs/client/request.md
+@@ -204,6 +204,8 @@ func (r *Request) Context() context.Context
+ 
+ **SetContext** sets the `context.Context` for the request, allowing you to cancel or time out the request. See the [Go blog](https://blog.golang.org/context) and [context](https://pkg.go.dev/context) docs for more details.
+ 
++A deadline bounds the exchange at the transport. A cancellation ends it on a client from `client.New` as well: the connection the request was using is closed, so neither the goroutine nor the connection outlives the call once the connection is open. A cancellation while the client is still dialing, or waiting for a free connection, takes effect when the dial or the wait ends, and the connection it produced is then closed unused: the built-in dialer gives up after 3 seconds, a dialer set with `SetDial` or `SetProxyURL` bounds itself. With `SetStreamResponseBody(true)` a cancellation does not reach the transport: the caller returns at once, the exchange waits for the server or the client's timeouts, and a body already being streamed ends when it is closed. A wrapped `fasthttp` client (`NewWithClient`, `NewWithHostClient`, `NewWithLBClient`) returns the caller at once while its exchange ends on its own, when the server answers or the client's own timeouts pass, so give such a client `ReadTimeout` and `WriteTimeout`.
++
+ ```go title="Signature"
+ func (r *Request) SetContext(ctx context.Context) *Request
+ ```
+@@ -1093,7 +1095,7 @@ Redirects are followed only for `GET`, `HEAD` and `QUERY` requests. Other method
+ 
+ While redirects are followed:
+ 
+-- After a `301`, `302` or `303` the request is repeated as a `GET` without its body; a `HEAD` stays a `HEAD`. A `307` or `308` keeps the method and the body.
++- After a `301`, `302` or `303` the request is repeated as a `GET` without its body; a `HEAD` stays a `HEAD`. A `307` or `308` keeps the method and the body. The trailer section goes with the body, instead of reaching the target as header lines; a request whose section announces more than 16 names fails the redirect with `ErrRedirectTrailers`.
+ - When the target is on another host, the `Authorization`, `Proxy-Authorization`, `Proxy-Authenticate`, `WWW-Authenticate`, `Cookie` and `Cookie2` headers are dropped. They are removed whatever case they are stored under. The names set with [SetRedirectSensitiveHeaders](#setredirectsensitiveheaders) on the request or the client are dropped with them. The same host on any port, and its subdomains, keep them.
+ - A redirect from `https` to `http` fails with `ErrRedirectDowngrade`. Leave the limit at `0` to take such a hop yourself.
+ - A redirect without a `Location` fails with `fasthttp.ErrMissingLocation`. A `Location` that cannot be parsed or names a `scheme://` other than `http` or `https` fails with `fasthttp.ErrorInvalidURI` without being requested, as does a request URL that cannot be parsed. A chain longer than the limit fails with `fasthttp.ErrTooManyRedirects`.
+diff --git a/docs/client/rest.md b/docs/client/rest.md
+index 228d646a042..7fa5b2c2011 100644
+--- a/docs/client/rest.md
++++ b/docs/client/rest.md
+@@ -917,7 +917,7 @@ func (c *Client) DelCookies(key ...string) *Client
+ 
+ Sets a default timeout for all requests, which can be overridden per request. A new client has no timeout. When the timeout elapses, or the request's context is canceled, the request fails with `ErrTimeoutOrCancel`.
+ 
+-The timeout, like a deadline on the request's context, bounds the whole call: every retry and redirect hop gets what is left of it, and the transport closes the connection when it passes, so a server that never answers keeps no connection or goroutine after the call has failed. On a client from `New` it also bounds the TLS handshake; a `fasthttp` client passed to `NewWithClient`, `NewWithHostClient` or `NewWithLBClient` bounds the handshake only with its own `WriteTimeout`. A client from `NewWithLBClient` gives the transport `LBClient.Timeout` in place of this timeout, see [NewWithLBClient](#newwithlbclient). With [response streaming](#response-streaming) the deadline stays on the connection after the call returns and ends reads from `Response.BodyStream()`, as `Client.Timeout` does in `net/http`, so leave the timeout unset for a long-lived stream such as server-sent events. A context canceled without a deadline stops further retries but cannot interrupt a request already on the wire.
++The timeout, like a deadline on the request's context, bounds the whole call: every retry and redirect hop gets what is left of it, and the transport closes the connection when it passes, so a server that never answers leaves the client no open connection or goroutine once the call has failed. On a client from `New` it also bounds the TLS handshake, through the `ConfigureClient` hook of its `fasthttp` client (see [FasthttpClient](#fasthttpclient)); a `fasthttp` client passed to `NewWithClient`, `NewWithHostClient` or `NewWithLBClient` bounds the handshake only with its own `WriteTimeout`. A client from `NewWithLBClient` gives the transport `LBClient.Timeout` in place of this timeout, see [NewWithLBClient](#newwithlbclient). With [response streaming](#response-streaming) the deadline stays on the connection after the call returns and ends reads from `Response.BodyStream()`, as `Client.Timeout` does in `net/http`, so leave the timeout unset for a long-lived stream such as server-sent events. A context canceled without a deadline stops further retries and, on a client from `New`, closes the connection of a request already on the wire unless the response is streamed; see [SetContext](./request.md#setcontext).
+ 
+ ```go title="Signature"
+ func (c *Client) SetTimeout(t time.Duration) *Client
+@@ -1051,6 +1051,17 @@ A client wraps one fasthttp client: the `fasthttp.Client` that `New` creates, or
+ 
+ Returns the underlying `*fasthttp.Client`, or `nil` if the client was created from a `HostClient` or an `LBClient`.
+ 
++A client created by `New` bounds TLS handshakes through this client's `ConfigureClient` hook, which has one slot. A hook of your own, set before the first request, applies its settings first and then calls the hook that was there:
++
++```go
++fc := client.FasthttpClient()
++installed := fc.ConfigureClient
++fc.ConfigureClient = func(hc *fasthttp.HostClient) error {
++    hc.MaxConns = 8
++    return installed(hc)
++}
++```
++
+ ```go title="Signature"
+ func (c *Client) FasthttpClient() *fasthttp.Client
+ ```
+diff --git a/docs/guide/routing.md b/docs/guide/routing.md
+index fc12bc933a8..e3ed3d3526f 100644
+--- a/docs/guide/routing.md
++++ b/docs/guide/routing.md
+@@ -656,7 +656,7 @@ app := fiber.New(fiber.Config{DisableHeadAutoRegister: true})
+ app.Get("/users/:id", handler) // HEAD /users/:id now returns 405 unless you add it manually.
+ ```
+ 
+-Each app decides for its own routes. A mounted sub-app that sets `DisableHeadAutoRegister`, or that leaves `HEAD` out of its `RequestMethods`, gets no automatic `HEAD` routes when it is mounted, so a `HEAD` request for its routes answers **405** even though the app it is mounted in registers them for its own routes. A sub-app that does not serve `HEAD` registers its middleware only for the methods it serves, so a synthesized `HEAD` route would run its handlers without that middleware. A sub-app mounted on a [`Domain`](../api/app.md#domain) follows the same rule.
++Each app decides for its own routes. A mounted sub-app that sets `DisableHeadAutoRegister`, or that leaves `HEAD` out of its `RequestMethods`, gets no automatic `HEAD` routes when it is mounted, so a `HEAD` request for its routes answers **405** even though the app it is mounted in registers them for its own routes. A sub-app that does not serve `HEAD` registers its middleware only for the methods it serves, so a synthesized `HEAD` route would run its handlers without that middleware. A sub-app mounted on a [`Domain`](../api/app.md#domain) follows the same rule. The app mounted on decides as well: one that sets `DisableHeadAutoRegister` takes no automatic `HEAD` routes from the apps mounted into it, whether or not they would register their own, since a guard it registered with `Get`, such as `app.Get("/admin/*", auth)`, has no `HEAD` companion to run in front of them. Register such a guard with `Use`, or add the `HEAD` routes yourself.
+ 
+ Auto-generated `HEAD` routes participate in every router scope, including `Group` hierarchies, mounted sub-apps, parameterized and wildcard paths, and static file helpers. They also appear in route listings such as `app.Stack()` so tooling sees both the `GET` and `HEAD` entries.
+ 
+diff --git a/docs/middleware/cache.md b/docs/middleware/cache.md
+index 7bfd63307ac..e91a8384653 100644
+--- a/docs/middleware/cache.md
++++ b/docs/middleware/cache.md
+@@ -136,7 +136,7 @@ The middleware **does not include request body/form values in the default cache
+ 
+ Cache lookup/storage is applied only for `GET` and `HEAD` requests by default. Other HTTP methods bypass the cache middleware. You can change this via the `Methods` config field (for example, adding `fiber.MethodQuery`). If you supply a custom `KeyGenerator` and enable a body-bearing method such as `QUERY`, make sure it incorporates `c.Request().Body()` and those two headers, otherwise requests with the same URL but different bodies will collide. With [`StreamRequestBody`](../api/fiber.md#streamrequestbody), a request whose body is chunked or declares more than `BodyLimit` bypasses the cache (`X-Cache: unreachable`) and its body is left unread for the handler, so a key generator never reads more than `BodyLimit`.
+ 
+-If a response sets `Vary`, request lookup/storage is also partitioned by those header values unless `DisableVaryHeaders` is `true`. Each response is stored under the headers its own `Vary` names, while a lookup uses the list of the response stored last for the URL: when the responses of one URL name different lists, a variant stored under another list is a miss until a response names that list again, so send the same `Vary` on every response of a URL to keep all of them reachable. Both use the header values the request carried when it reached the cache, so middleware registered after it that rewrites a request header, as `encryptcookie` does with the cookies it decrypts, does not change the key. With `MaxBytes` set, the URL's record of that list, its Vary manifest, is deleted by the next stored response once no entry stored under it is left, so URLs evicted to stay within the limit leave none behind. Responses with `Vary: *` remain uncacheable, and so does a response whose `Vary` names more than 32 fields or is longer than 2048 bytes. That holds when `DisableVaryHeaders` is `true` as well.
++If a response sets `Vary`, request lookup/storage is also partitioned by those header values unless `DisableVaryHeaders` is `true`. Each response is stored under the headers its own `Vary` names, while a lookup uses the list of the response stored last for the URL: when the responses of one URL name different lists, a variant stored under another list is a miss until a response names that list again, so send the same `Vary` on every response of a URL to keep all of them reachable. Both use the header values the request carried when it reached the cache, so middleware registered after it that rewrites a request header, as `encryptcookie` does with the cookies it decrypts, does not change the key. A header such middleware adds, as one deriving `X-User-Id` from the session cookie does when the client sent none, is a dimension no request's key selects by, and so is a cookie it adds beside the ones the client sent, so a response that varies on it is not stored and is sent with `X-Cache: unreachable`. When such middleware overwrites a header the client sent, the key keeps the client's value, which the cache cannot tell from a rewrite such as the decryption: a response derived from another input, the session cookie here, must vary on that input as well (`Vary: Cookie, X-User-Id`), or the cache must be registered behind the middleware that derives it, or any client sending the header, a placeholder included, is served another client's page. A header it removes, as `encryptcookie` removes a cookie it cannot decrypt, keeps the client's key, and the response stored under it is the one for the header's absence. With `MaxBytes` set, the URL's record of that list, its Vary manifest, is deleted by the next stored response once no entry stored under it is left, so URLs evicted to stay within the limit leave none behind. Responses with `Vary: *` remain uncacheable, and so does a response whose `Vary` names more than 32 fields or is longer than 2048 bytes. That holds when `DisableVaryHeaders` is `true` as well.
+ 
+ With an external `Storage`, an entry is decoded under size limits, and a response past one of them is not stored and reports `unreachable`: 256 bytes for `Content-Type` and `ETag`, 128 for `Content-Encoding` and `Expires`, 2048 for `Cache-Control`, and for the stored header list (`Location`, or every header with `StoreResponseHeaders`) 1024 fields with 512 bytes per name and 16384 per value. The default in-memory store keeps the entry as it is and has no such limits.
+ 
+diff --git a/docs/middleware/csrf.md b/docs/middleware/csrf.md
+index c54c2f2e250..92386abb8ce 100644
+--- a/docs/middleware/csrf.md
++++ b/docs/middleware/csrf.md
+@@ -466,7 +466,7 @@ func (h *csrf.Handler) DeleteToken(c fiber.Ctx) error
+ | CookieHTTPOnly    | `bool`                             | Prevent JavaScript access (**use `false` for SPAs**)                                                                          | `false`                      |
+ | CookieSameSite    | `string`                           | SameSite attribute (**use "Lax" or "Strict"**)                                                                                | `"Lax"`                      |
+ | CookieSessionOnly | `bool`                             | Session-only cookie (expires on browser close)                                                                                | `false`                      |
+-| IdleTimeout       | `time.Duration`                    | Token expiration time                                                                                                         | `30 * time.Minute`           |
++| IdleTimeout       | `time.Duration`                    | Token expiration time, counted from its last use. In session mode behind the session middleware, a token is renewed only once less than half of it is left, so there it stays valid for at least half of `IdleTimeout` and at most `IdleTimeout` after its last use (set twice the idle window you want), and the cookie expires with it; a request that finds its token fresh does not count as a change of the session, so its save cannot override a change another request stored meanwhile, while the session middleware still writes the session back on every request to slide its idle timeout. Without the session middleware in front, the token is renewed and the session saved on every request. | `30 * time.Minute`           |
+ | KeyGenerator      | `func() string`                    | Token generation function                                                                                                     | `utils.SecureToken`               |
+ | ErrorHandler      | `fiber.ErrorHandler`               | Custom error handler                                                                                                          | `defaultErrorHandler`        |
+ | Extractor         | `extractors.Extractor`             | Token extraction method with metadata                                                                                         | `extractors.FromHeader("X-Csrf-Token")` |
+diff --git a/docs/middleware/proxy.md b/docs/middleware/proxy.md
+index 7f29aa241e7..51a59d65bad 100644
+--- a/docs/middleware/proxy.md
++++ b/docs/middleware/proxy.md
+@@ -43,7 +43,7 @@ Upstream addresses that resolve to loopback, RFC 1918 private, link-local (inclu
+ 
+ An IPv6 literal cannot carry a blocked IPv4 address past the list. The IPv4 address embedded in an IPv4-mapped (`::ffff:a.b.c.d`), IPv4-compatible, IPv4-translated (`::ffff:0:a.b.c.d`), NAT64 well-known (`64:ff9b::/96`) or intra-site tunnel (RFC 5214) address is checked against the same ranges. The 6to4 (`2002::/16`), Teredo (`2001::/32`) and NAT64 local-use (`64:ff9b:1::/48`) ranges are rejected as a whole, because unwrapping one position would leave a bypass: Teredo can hide an IPv4 address in either of two fields, the NAT64 local-use prefix lets the operator choose where it sits, and 6to4 is deprecated ([RFC 7526](https://www.rfc-editor.org/rfc/rfc7526)).
+ 
+-For `Balancer`, the resolved IP is re-validated at **dial time** (via a guarded `Dial` and `DialTimeout` on each upstream `fasthttp.HostClient`), which both defeats DNS-rebinding and avoids resolving hostnames at startup — a transient DNS failure won't panic your application. DNS lookups are bounded by a 5-second timeout, or by the time the request has left when that is shorter: a dial that a `DoTimeout`, a `DoDeadline` or `Config.Timeout` bounds gives its lookup and its connects that time between them, and a connect that nothing bounds has five seconds.
++For `Balancer`, the resolved IP is re-validated at **dial time** (via a guarded `Dial` and `DialTimeout` on each upstream `fasthttp.HostClient`), which both defeats DNS-rebinding and avoids resolving hostnames at startup — a transient DNS failure won't panic your application. DNS lookups are bounded by a 5-second timeout, or by the time the request has left when that is shorter: a dial that a `DoTimeout`, a `DoDeadline`, `Config.Timeout` or the default client's own 30-second bound covers gives its lookup and its connects that time between them, and a connect that nothing bounds, through a client of your own without timeouts, has five seconds.
+ 
+ A host that passes the blocklist and has only IPv6 addresses is dialed when `DialDualStack` is set. Otherwise the request fails with an error that says so; it matches neither `ErrUpstreamHostBlocked` nor `ErrUpstreamHostUnresolvable`, because the lookup succeeded and no address was refused.
+ 
+@@ -101,7 +101,7 @@ When following the chain fails, `fasthttp.ErrTooManyRedirects` included, `DoRedi
+ 
+ `Connection`, `Keep-Alive`, `Proxy-Authenticate`, `Proxy-Authorization`, `TE`, `Trailer`, `Transfer-Encoding`, and `Upgrade` are stripped from both the outbound request and the inbound response, along with every header listed in the `Connection` field per RFC 9110 §7.6.1. This prevents request smuggling (`TE`/`Transfer-Encoding`), proxy-credential forwarding, and protocol-upgrade leaks. A request whose `Connection` fields list more than 32 names is refused with `431 Request Header Fields Too Large` before it is forwarded, and an upstream response that does is answered with `502 Bad Gateway`, since each name costs a pass over every header line. Where header names are kept as sent (`DisableHeaderNormalizing` for the request, a client with `DisableHeaderNamesNormalizing` for the response), further spellings of a removed name count toward the same 32: every spelling besides the one listed in `Connection` or the standard one, except that on the response the standard names share one free spelling each, whichever name uses it. `Balancer`, `Forward`, `DomainForward`, and `BalancerForward` likewise answer `431` to a request that spells `X-Real-IP` in more than 32 ways besides `X-Real-IP`, since they replace every one of them. The legacy `KeepConnectionHeader` option preserves only the literal `Connection` header for backwards compatibility; the other hop-by-hop headers are still stripped. To preserve every hop-by-hop header (not recommended), set `SecurityPolicy.KeepHopByHopHeaders = true`.
+ 
+-The fields a client sends in the trailer section of a chunked request are dropped together with `Trailer`, as [RFC 9112 §7.1.2](https://www.rfc-editor.org/rfc/rfc9112#section-7.1.2) lets a recipient that removes the chunked coding do, instead of reaching the upstream as header lines: whatever screened the header section in front of this hop never saw them. Fiber drops them as the request arrives or, for a body streamed with `StreamRequestBody`, once that body has been read, including while the proxy forwards it. A header line sharing a name with a trailer field is kept. A streamed body whose trailer section names more than 16 fields also fails to read, which answers a request whose body the proxy reads with `431 Request Header Fields Too Large`. Both hold with `KeepHopByHopHeaders` set.
++The fields a client sends in the trailer section of a chunked request are dropped together with `Trailer`, as [RFC 9112 §7.1.2](https://www.rfc-editor.org/rfc/rfc9112#section-7.1.2) lets a recipient that removes the chunked coding do, instead of reaching the upstream as header lines: whatever screened the header section in front of this hop never saw them. Fiber drops them as the request arrives or, for a body streamed with `StreamRequestBody`, once that body has been read, including while the proxy forwards it. A header line sharing a name with a trailer field is kept. A streamed body whose trailer section names more than 16 fields also fails to read, which answers a request whose body the proxy reads with `431 Request Header Fields Too Large`. The trailer section of an upstream's chunked response is dropped the same way, whether its fields were announced in `Trailer` or not: the proxy answers with a sized body, which carries no trailer section, and a recipient must not merge trailer fields into the header section ([RFC 9110 §6.5.1](https://www.rfc-editor.org/rfc/rfc9110#section-6.5.1)); a response whose trailer section names more than 16 fields is answered with `502 Bad Gateway`. The section is gone before `ModifyResponse` runs and before `Do` or `Forward` return, so neither a hook nor a handler reads a trailer field of the upstream's response. A client that streams response bodies (`StreamResponseBody`, or a response whose `StreamBody` is set) receives the section only once the body has been read, after that point; the proxy reads such a body from a response of its own, which keeps the section, so it reaches neither the hook nor the client. It is discarded whatever its size: the limit of 16 fields applies to the names announced in the header section, which the proxy sees before it answers, not to fields that only arrive with the body. All of this holds with `KeepHopByHopHeaders` set.
+ 
+ The names a client lists in `Connection` are removed from the request as it was received, with one intentional exception to RFC 9110 §7.6.1: the forwarding headers `X-Real-IP`, `Forwarded`, and every `X-Forwarded-*` header stay. They tell the upstream about the client as this hop saw it, and an upstream that trusts the gateway acts on them, so they are the gateway's to write and not the client's to have removed. `Balancer`, `Forward`, `DomainForward`, and `BalancerForward` write `X-Real-IP` only after the listing has been applied, and the exception also covers a forwarding header your application sets before the proxy runs, including `X-Real-IP` set by hand before `Do`. A client loses nothing by it: a forwarding header it sends is forwarded whenever `Connection` does not name it.
+ 
+@@ -139,9 +139,9 @@ The request reaches the upstream as HTTP/1.1, whatever protocol the inbound requ
+ 
+ ### Response body size, timeouts and connection caps
+ 
+-`Config.MaxResponseBodySize` bounds upstream response bodies to protect against memory exhaustion. `Config.MaxConnsPerHost` (default `1024`) caps concurrent connections per upstream to limit fan-out from a single hot host. `Balancer` also bounds each request with `Config.Timeout` (default one second).
++`Config.MaxResponseBodySize` (default 100 MiB, a negative value for none) bounds upstream response bodies to protect against memory exhaustion. `Config.MaxConnsPerHost` (default `1024`) caps concurrent connections per upstream to limit fan-out from a single hot host. `Balancer` also bounds each request with `Config.Timeout` (default one second).
+ 
+-The runtime helpers (`Do`, `DoRedirects`, `Forward`, `DomainForward` and `BalancerForward`) dispatch through a client with fasthttp's defaults: no read or write timeout and no response size cap. `DoTimeout` and `DoDeadline` bound a single request, and the time they allow, like `Config.Timeout`, covers the connect as well. To bound every request, hand the proxy a client with `ReadTimeout`, `WriteTimeout` and `MaxResponseBodySize` set, registered with `proxy.WithClient` or passed per call:
++The runtime helpers (`Do`, `DoRedirects`, `Forward`, `DomainForward` and `BalancerForward`) dispatch through a client that bounds every request: each request, and each hop `DoRedirects` follows, has 30 seconds for the whole exchange, the connect, the write and the read of the response included, in one attempt, and a response body of at most 100 MiB, which the proxy buffers whole, so an upstream that stalls or streams without end holds neither the handler nor the memory; a transfer that takes longer than the bound fails with it too. `DoTimeout` and `DoDeadline` set the bound of their own request, longer or shorter, and the time they allow, like `Config.Timeout`, covers the connect as well. For other bounds, hand the proxy a client with `ReadTimeout`, `WriteTimeout` and `MaxResponseBodySize` set, registered with `proxy.WithClient` or passed per call; it replaces the default client with its bounds, and fasthttp applies a client's read and write timeouts to each attempt it makes:
+ 
+ ```go
+ proxy.WithClient(&fasthttp.Client{
+@@ -410,7 +410,7 @@ app.Use(proxy.Balancer(proxy.Config{
+ | Next            | `func(fiber.Ctx) bool`                        | Next defines a function to skip this middleware when it returns true.                                                                                                                                                                | `nil`           |
+ | Servers         | `[]string`                                     | Servers defines a list of `<scheme>://<host>` HTTP servers, which are used in a round-robin manner. Each entry is a scheme and host only; one with a path, userinfo, query or fragment panics at startup with `ErrUpstreamNotOrigin`. An entry without a scheme (`host:port`) is read as `http://host:port`, and a lone trailing slash is ignored. i.e.: "[https://foobar.com](https://foobar.com), [http://www.foobar.com](http://www.foobar.com)"                                                        | (Required unless `Client` is set) |
+ | ModifyRequest   | `fiber.Handler`                                | ModifyRequest allows you to alter the request.                                                                                                                                                                                     | `nil`           |
+-| ModifyResponse  | `fiber.Handler`                                | ModifyResponse allows you to alter the response.                                                                                                                                                                                   | `nil`           |
++| ModifyResponse  | `fiber.Handler`                                | ModifyResponse allows you to alter the response. It runs on the upstream's response with its trailer section already dropped and, unless the policy keeps them, its hop-by-hop fields stripped.                                   | `nil`           |
+ | Timeout         | `time.Duration`                                | Timeout is the request timeout used when calling the proxy client.                                                                                                                                                                 | 1 second        |
+ | MaxConnsPerHost | `int`                                          | Maximum number of connections per upstream host. The default proxy client and balancer host clients use this limit unless you override it with `WithClient`, a per-handler client, or `proxy.Config`.                         | `1024`          |
+ | ReadBufferSize  | `int`                                          | Per-connection buffer size for reading upstream responses. This also limits the maximum response header size: raise it if an upstream sends multi-KB headers. The headers of client requests are limited by [`ReadBufferSize`](../api/fiber.md#readbuffersize) in the app's config instead. | (Not specified) |
+@@ -420,7 +420,7 @@ app.Use(proxy.Balancer(proxy.Config{
+ | DialDualStack   | `bool`                                         | Client will attempt to connect to both IPv4 and IPv6 host addresses if set to true.                                                                                                                                                | `false`         |
+ | Client          | `*fasthttp.LBClient`                           | Client is a custom client when client config is complex. Each `*fasthttp.HostClient` among its `Clients` gets `DisablePathNormalizing` set when the balancer is built, unless it has it set already, in which case it is left alone; see [Request target](#request-target). When it is set, `Servers`, `Timeout`, `MaxConnsPerHost`, `ReadBufferSize`, `WriteBufferSize`, `MaxResponseBodySize`, `TLSConfig` and `DialDualStack` are not used, and its dialers are yours to guard (see [SSRF protection](#ssrf-protection)).                                                                                                                                                                           | `nil`           |
+ | SecurityPolicy  | `*SecurityPolicy`                              | Overrides the default SSRF, redirect, and hop-by-hop header rules for this balancer. When `nil`, the package-level policy set via `WithSecurityPolicy` is used. Either way it is settled once, when the balancer is built. See [Security](#security).                                          | `nil`           |
+-| MaxResponseBodySize | `int`                                       | Maximum upstream response body size in bytes. `0` keeps fasthttp's unlimited default, so set it when an upstream is not trusted to answer with a small body.                                                                                                                                              | `0`             |
++| MaxResponseBodySize | `int`                                       | Maximum upstream response body size in bytes. `0` takes the default of 100 MiB; a negative value removes the bound, as fasthttp's unlimited default does.                                                                                                                                                | `100 << 20`     |
+ 
+ ## Default Config
+ 
+@@ -430,6 +430,7 @@ var ConfigDefault = Config{
+     ModifyRequest:        nil,
+     ModifyResponse:       nil,
+     MaxConnsPerHost:      1024,
++    MaxResponseBodySize:  100 << 20,
+     Timeout:              fasthttp.DefaultLBClientTimeout,
+     KeepConnectionHeader: false,
+ }
+diff --git a/docs/middleware/session.md b/docs/middleware/session.md
+index 5e8d51e0236..f9729b42d47 100644
+--- a/docs/middleware/session.md
++++ b/docs/middleware/session.md
+@@ -225,7 +225,7 @@ app.Post("/login", func(c fiber.Ctx) error {
+ | `Reset()` | ✅ Changes | ❌ Cleared | Logout, security breach |
+ | `Destroy()` | ⚪ Unchanged, cookie expired | ❌ Cleared | End the session without issuing a new ID |
+ 
+-These methods, `store.Delete` and `store.Reset` also hold against other requests of the same session that are still running: a request that loaded the session before its ID was deleted neither stores it again nor sends its cookie when it finishes, and its changes to the session are dropped. This holds when that request calls `Regenerate()` as well: the ID still changes, so the old one is never written again, but the new one is neither stored nor sent. Of two requests that rotate one session at the same time, only the first stores and sends a new ID, and a login that rotates a session a parallel logout just ended is dropped too. A request that left the session unchanged does not write it back over a change another request stored meanwhile, so a role taken away while it ran stays taken away; of two requests that both change the session, the one that saves last stores its whole session. This is guaranteed within one process. Processes that share an external `Storage` are not coordinated, because `fiber.Storage` has no conditional write, so a request still running on another instance can store a session it loaded before the delete. Where a logout must hold across instances, also keep a server-side revocation marker (for example, a per-user "sessions valid after" timestamp) that every request checks.
++These methods, `store.Delete` and `store.Reset` also hold against other requests of the same session that are still running: a request that loaded the session before its ID was deleted neither stores it again nor sends its cookie when it finishes, and its changes to the session are dropped. This holds when that request calls `Regenerate()` as well: the ID still changes, so the old one is never written again, but the new one is neither stored nor sent. Of two requests that rotate one session at the same time, only the first stores and sends a new ID, and a login that rotates a session a parallel logout just ended is dropped too. A request that left the session unchanged does not write it back over a change another request stored meanwhile, so a role taken away while it ran stays taken away; reading a value, also one it could change in place such as a slice or a map, does not count as a change, and neither does the CSRF middleware behind the session middleware finding its token still fresh. That holds when such a request calls `Regenerate()` too: the rotated session carries the change the other request stored, not the snapshot this one loaded. Of two requests that both change the session with `Set`, `Delete` or `Reset`, the one that saves last stores its whole session. This is guaranteed within one process. Processes that share an external `Storage` are not coordinated, because `fiber.Storage` has no conditional write, so a request still running on another instance can store a session it loaded before the delete. Where a logout must hold across instances, also keep a server-side revocation marker (for example, a per-user "sessions valid after" timestamp) that every request checks.
+ 
+ ### Common Security Mistakes
+ 
+@@ -677,7 +677,7 @@ The returned `*session.Middleware` is only valid while the request is being hand
+ 
+ A handler the [Timeout](./timeout.md) middleware gave up on keeps its `*session.Middleware` and its session until it returns, and no other request is handed them. The session of such a request is not saved: the timeout response is already fixed and cannot carry a cookie, and the handler may still be changing the data.
+ 
+-A session that was only read is written back to storage without being re-encoded. `Get` and `Keys` give that up when the value or key they return could share memory with the session (a map, slice, array, pointer or struct; scalars and `time.Time` are safe), because the caller could then change it in place without calling `Set`.
++A session that was only read is written back to storage without being re-encoded. `Get` and `Keys` give that up when the value or key they return could share memory with the session (a map, slice, array, pointer or struct; scalars and `time.Time` are safe), because the caller could then change it in place without calling `Set`. Such an edit counts as the request's own change, as a `Set` does: its whole session then wins as described under [Session Security](#session-security), while a request that only read yields to a change another request stored meanwhile. Calling `Set` with the edited value says so outright and spares the save a decode of the snapshot.
+ 
+ ### Store Methods
+ 
+diff --git a/docs/middleware/static.md b/docs/middleware/static.md
+index a4d0be29c72..bac4b328203 100644
+--- a/docs/middleware/static.md
++++ b/docs/middleware/static.md
+@@ -205,7 +205,7 @@ When **Download** is enabled, the response of a served file includes a `Content-
+ 
+ **MaxAge** only applies to successful responses; an error such as `416 Range Not Satisfiable` carries no `Cache-Control`. A handler registered on several routes serves each under that route's own prefix.
+ 
+-A root on disk is confined: a relative symbolic link that stays inside it is followed, while one that leaves it, and an absolute link even when it points inside, is handled like a missing file. Set **AllowSymlinksOutsideRoot** when such links are intended, for example a shared asset directory or a build tool that writes absolute links. With `Compress`, the compressed copy of a file reached through a linked directory is written into that directory. A file root, and a root given through `FS`, are not confined this way.
++A root on disk must be named: `New` panics on an empty root, which would be the filesystem root, so an unset variable cannot expose every file the process can read; use `"."` for the working directory. With `FS`, an empty root is the root of that file system. A root on disk is confined: a relative symbolic link that stays inside it is followed, while one that leaves it, and an absolute link even when it points inside, is handled like a missing file. Set **AllowSymlinksOutsideRoot** when such links are intended, for example a shared asset directory or a build tool that writes absolute links. With `Compress`, the compressed copy of a file reached through a linked directory is written into that directory. A file root, and a root given through `FS`, are not confined this way.
+ 
+ :::info
+ You can set `CacheDuration` config property to `-1` to disable caching.
+diff --git a/docs/middleware/timeout.md b/docs/middleware/timeout.md
+index fdc52b781e9..26dfdcc7f10 100644
+--- a/docs/middleware/timeout.md
++++ b/docs/middleware/timeout.md
+@@ -21,6 +21,8 @@ handler to finish. This is achieved through Fiber's **Abandon mechanism**:
+ Handlers can detect the timeout by listening on `c.Context().Done()` and return early.
+ This is the recommended pattern for cooperative cancellation.
+ 
++The timeout response to a `HEAD` request carries no body, on the default path and the `OnTimeout` path alike.
++
+ If a handler panics, the middleware catches it and returns `500 Internal Server Error`. So does a panic in `OnTimeout` once the deadline has passed.
+ 
+ When an enclosing timeout middleware already guards the request with a deadline that comes no later than the configured one, such as a shorter timeout registered with `app.Use`, the middleware runs the handler on the calling goroutine and leaves the timeout to the enclosing one. Its `OnTimeout` then runs only for a timeout error the handler returns before the enclosing deadline passes; after that, the enclosing middleware answers the request. When nested timeouts fire at the same time, only the first to answer writes the timeout response. A shorter deadline set any other way, such as with `c.SetContext`, does not count: the middleware times the request out when it passes.
+diff --git a/docs/whats_new.md b/docs/whats_new.md
+index 3811149bf0e..295c6f0a697 100644
+--- a/docs/whats_new.md
++++ b/docs/whats_new.md
+@@ -580,7 +580,7 @@ app.Get("/health", handler) // HEAD /health now returns 405 unless you add it ma
+ 
+ Auto-generated `HEAD` routes appear in tooling such as `app.Stack()` and cover the same routing scenarios as their `GET` counterparts, including groups, mounted apps, dynamic parameters, and static file handlers.
+ 
+-Each automatic `HEAD` route runs where its `GET` route does, and every `GET` route gets its own, also when a path has several. Before, they ran after every `Use` handler, mounted app and explicit `HEAD` route, so a guard registered with `Get`, such as `app.Get("/admin/*", auth)` followed by `app.Use("/admin", adminApp)` or `app.Use(static.New(dir))`, did not run for `HEAD`, and a `GET` route followed by a catch-all `Use` answered `HEAD` with that handler. A route registered for `HEAD` alone still replaces the automatic ones of its path in the same app and `Domain` pattern. One on another `Domain` pattern or in a mounted app now keeps its place in the route order, behind the automatic route of a `GET` route registered before it. One registered for `GET` and `HEAD` together, with `All` or `Add`, answers only for itself. Two apps mounted on one prefix now both get their `HEAD` routes, and a sub-app that leaves `HEAD` out of its `RequestMethods` answers `HEAD` with `405` behind nested `Domain` mounts as well.
++Each automatic `HEAD` route runs where its `GET` route does, and every `GET` route gets its own, also when a path has several. An app that sets `DisableHeadAutoRegister` takes no automatic `HEAD` routes from the apps mounted into it either, plain, `Group` or `Domain` mounts alike, since a guard it registered with `Get` has no `HEAD` companion to run in front of them. Before, they ran after every `Use` handler, mounted app and explicit `HEAD` route, so a guard registered with `Get`, such as `app.Get("/admin/*", auth)` followed by `app.Use("/admin", adminApp)` or `app.Use(static.New(dir))`, did not run for `HEAD`, and a `GET` route followed by a catch-all `Use` answered `HEAD` with that handler. A route registered for `HEAD` alone still replaces the automatic ones of its path in the same app and `Domain` pattern. One on another `Domain` pattern or in a mounted app now keeps its place in the route order, behind the automatic route of a `GET` route registered before it. One registered for `GET` and `HEAD` together, with `All` or `Add`, answers only for itself. Two apps mounted on one prefix now both get their `HEAD` routes, and a sub-app that leaves `HEAD` out of its `RequestMethods` answers `HEAD` with `405` behind nested `Domain` mounts as well.
+ 
+ ### QUERY method (RFC 10008)
+ 
+@@ -1232,9 +1232,10 @@ it used to carry an empty one.
+ - `client.NewWithHostClient` and `client.NewWithLBClient` allow you to plug existing `fasthttp` clients directly into Fiber while keeping retries, redirects, and hook logic consistent.
+ - Dialer, TLS, and proxy helpers now update every host client inside a load balancer, so complex pools inherit the same configuration.
+ - The Fiber client exposes `Do`, `DoTimeout`, `DoDeadline`, `DoRedirects`, and `CloseIdleConnections`, matching the surface area of the wrapped fasthttp transports.
+-- Redirects are off by default (`MaxRedirects` is `0`). The `Request` methods follow them for `GET`, `HEAD` and `QUERY` requests only, while `Client.DoRedirects` follows any method. A redirect to a host that is neither the original hostname (on any port) nor one of its subdomains drops the credentials of the original request (`Authorization`, `Proxy-Authorization`, `Cookie` and related headers), and a redirect from HTTPS to HTTP fails with `client.ErrRedirectDowngrade`. Headers named with `Client.SetRedirectSensitiveHeaders`, `Request.SetRedirectSensitiveHeaders` or `Config.RedirectSensitiveHeaders` are dropped with them, and all of them are removed whatever case they are stored under; every other header is forwarded. With a retry configuration, a chain that fails is retried from the original request.
++- Redirects are off by default (`MaxRedirects` is `0`). The `Request` methods follow them for `GET`, `HEAD` and `QUERY` requests only, while `Client.DoRedirects` follows any method. A redirect to a host that is neither the original hostname (on any port) nor one of its subdomains drops the credentials of the original request (`Authorization`, `Proxy-Authorization`, `Cookie` and related headers), and a redirect from HTTPS to HTTP fails with `client.ErrRedirectDowngrade`. Headers named with `Client.SetRedirectSensitiveHeaders`, `Request.SetRedirectSensitiveHeaders` or `Config.RedirectSensitiveHeaders` are dropped with them, and all of them are removed whatever case they are stored under; every other header is forwarded. A redirect that drops the body drops the request's trailer section with it, instead of sending its fields to the target as header lines, and fails with `client.ErrRedirectTrailers` when that section announces more than 16 names. With a retry configuration, a chain that fails is retried from the original request.
+ - A client from `client.New`, the default client behind `client.Get` and the other package-level helpers included, buffers a response body of at most 100 MiB and fails a larger one with `fasthttp.ErrBodyTooLarge`. `SetMaxResponseBodySize` changes the limit, and `SetStreamResponseBody(true)` reads a body without buffering it. A wrapped `fasthttp` client keeps its own `MaxResponseBodySize`.
+ - A timeout, set with `SetTimeout`, `Config.Timeout` or a context deadline, now bounds the transport as well as the caller: every attempt, retry and redirect hop gets what is left of it, the connection is closed when it passes, and retries stop once the call is over. On a client from `client.New` it also bounds the TLS handshake. With response streaming the deadline also ends reads from `Response.BodyStream()`, so leave it unset for a long-lived stream.
++- A canceled context, with or without a deadline, ends the exchange of a client from `client.New` at the transport too, unless the response is streamed: the connection the request was using is closed, so the goroutine and the connection no longer wait for a server that never answers once the connection is open; a dial still in progress runs to its end (3 seconds for the built-in dialer) and its connection is then closed. With `SetStreamResponseBody(true)`, and on a wrapped `fasthttp` client, the caller returns at once while the exchange ends on its own, as before.
+ - A `Request` sent again picks its cookies anew: it no longer carries the cookie jar's cookies for its previous URL or a cookie deleted or expired since, and a cookie written straight to `RawRequest` before the send is dropped. The cookie jar drops a cookie without a name and trims whitespace around a name, and only a host name matches a cookie `Domain` by suffix: an IP address, with or without an IPv6 zone, matches only itself.
+ - `SetParam`, `SetParams`, `SetFormData` and `SetFormDataWithMap` on a `Request`, `SetParam`, `SetParams` and `SetHeader` on the `Client`, and `QueryParam.Set` and `FormData.Set` replace every value stored under the key, not only the first, so a value added before with `AddParam`, `AddFormData` or `AddHeader` is no longer sent next to the new one. The key moves to the end of the query string or form body.
+ 
+@@ -1649,7 +1650,7 @@ The middleware also caches `308 Permanent Redirect` responses and honors the req
+ 
+ Cache hits replay the stored `Vary` header even when `StoreResponseHeaders` is off, and a hit on an entry keyed by a cookie or credential (`Vary: Cookie`, `KeyCookies`, `KeyCredentialHeaders`, or `KeyHeaders` naming `Cookie`, `Authorization` or another header that carries a credential) is sent with `Cache-Control: private` rather than `public`, so a shared cache in front of the app does not store one user's response for the next.
+ 
+-A response is stored under the request headers its own `Vary` names, also when other responses of the same URL name a different list, so a page sent with `Vary: Cookie` is served only to requests with the same `Cookie`. The values are the ones the request carried when it reached the cache: middleware registered after it that rewrites a request header, as `encryptcookie` does with the cookies it decrypts, no longer changes the key a response is stored under.
++A response is stored under the request headers its own `Vary` names, also when other responses of the same URL name a different list, so a page sent with `Vary: Cookie` is served only to requests with the same `Cookie`. The values are the ones the request carried when it reached the cache: middleware registered after it that rewrites a request header, as `encryptcookie` does with the cookies it decrypts, no longer changes the key a response is stored under. A response that varies on a header such middleware added, to a request that sent none, is not stored, since no request's key selects by it; a header the client sent and the middleware overwrote keeps the client's value in the key, so a response derived from another input must vary on that input too.
+ 
+ A request the server refused while reading it, such as one over `BodyLimit`, is neither served from the cache nor stored: its route never ran. With `QUERY` in `Methods`, the default key includes `Content-Type` and `Content-Encoding` besides the body. With an external `Storage`, a response past the size limits an entry is decoded under is not stored (`X-Cache: unreachable`) instead of making every later lookup of its key fail with `500`.
+ 
+@@ -2011,7 +2012,7 @@ The headers a request lists in `Connection` are removed before it is forwarded,
+ 
+ `proxy.Balancer` takes its `proxy.Config` as an optional variadic argument, like the other middleware constructors. `Servers` (or a custom `Client` with `Clients`) is required, so `proxy.Balancer()` without a config panics at startup, as `proxy.Balancer(proxy.Config{})` does, and so does a `Client` without `Clients`. A server without a port is dialed on the port of its scheme, and each server is reached with its own scheme, so an `https` upstream works behind a plain-HTTP listener.
+ 
+-The proxy is secure by default. Upstreams that resolve to loopback, private, link-local, multicast, unspecified, CGNAT or other special-use addresses (IPv6 transition forms included) are refused, and so are schemes other than `http` and `https` and HTTPS-to-HTTP redirects. Hop-by-hop headers are stripped, and `Balancer`, `Forward`, `DomainForward` and `BalancerForward` overwrite `X-Real-IP` with `c.IP()`; with `Do`, `DoTimeout`, `DoDeadline` and `DoRedirects` you set it yourself. The trailer section of a chunked request is dropped instead of reaching the upstream as header lines, and a forwarding header sent on several lines keeps them in the order they were received; a request carrying more than 64 forwarding lines, the `X-Real-IP` line the proxy writes included, is refused with `431 Request Header Fields Too Large`. To proxy to an internal host, relax the policy with `proxy.WithSecurityPolicy` (or `Config.SecurityPolicy` for `Balancer`), for example `proxy.SecurityPolicy{AllowPrivateIPs: true}`, before you build `DomainForward` or `BalancerForward`: they check their upstreams when the handler is built and panic on a rejected one. Keep the policy installed while they serve: `Forward`, `DomainForward` and `BalancerForward` read it on every request, whereas `Balancer` reads it once, when it is built. See [Security](./middleware/proxy.md#security).
++The proxy is secure by default. Upstreams that resolve to loopback, private, link-local, multicast, unspecified, CGNAT or other special-use addresses (IPv6 transition forms included) are refused, and so are schemes other than `http` and `https` and HTTPS-to-HTTP redirects. Every request is bounded: `Balancer` buffers at most `MaxResponseBodySize` of an upstream response, 100 MiB unless set (a negative value lifts the bound; a `Config.Client` keeps the bounds of its own clients), and the client behind `Do`, `DoRedirects`, `Forward`, `DomainForward` and `BalancerForward` gives each request, and each redirect hop, 30 seconds for the whole exchange, connect and body included, unless `DoTimeout` or `DoDeadline` set the request's own bound, and buffers at most 100 MiB of a response, until `proxy.WithClient` replaces it. Hop-by-hop headers are stripped, and `Balancer`, `Forward`, `DomainForward` and `BalancerForward` overwrite `X-Real-IP` with `c.IP()`; with `Do`, `DoTimeout`, `DoDeadline` and `DoRedirects` you set it yourself. The trailer section of a chunked request is dropped instead of reaching the upstream as header lines, the trailer section of an upstream's chunked response is dropped instead of reaching the client as header lines, whether the client buffers the response or streams it, and a forwarding header sent on several lines keeps them in the order they were received; a request carrying more than 64 forwarding lines, the `X-Real-IP` line the proxy writes included, is refused with `431 Request Header Fields Too Large`. To proxy to an internal host, relax the policy with `proxy.WithSecurityPolicy` (or `Config.SecurityPolicy` for `Balancer`), for example `proxy.SecurityPolicy{AllowPrivateIPs: true}`, before you build `DomainForward` or `BalancerForward`: they check their upstreams when the handler is built and panic on a rejected one. Keep the policy installed while they serve: `Forward`, `DomainForward` and `BalancerForward` read it on every request, whereas `Balancer` reads it once, when it is built. See [Security](./middleware/proxy.md#security).
+ 
+ `ErrUpstreamHostUnresolvable` is new: a name that cannot be resolved, or that resolves to no address, is rejected with an error that matches it and `ErrUpstreamHostBlocked` both, and `errors.As` finds the `*net.DNSError` of the lookup. A host with only IPv6 addresses and `DialDualStack` off fails with an error that matches neither, where it matched `ErrUpstreamHostBlocked` before. An address `net/url` cannot parse is rejected with `ErrUpstreamHostInvalid` and the `*url.Error` wrapped beside it, so the message of that error carries the parse error. The time `DoTimeout`, `DoDeadline` or `Config.Timeout` allows bounds the lookup and the connects of the request as well; a connect that nothing bounds has five seconds, as before.
+ 
+@@ -2053,7 +2054,7 @@ The session middleware has undergone significant improvements in v3, focusing on
+ 
+ - **Storage Key Prefix**: Sessions are stored under `session:<session ID>` instead of the bare ID, so a session ID from a request cannot name an entry another middleware keeps in the same `Storage`. `store.GetByID` and `store.Delete` still take the bare ID. Sessions an earlier version stored are not found after the upgrade, so users sign in once more.
+ 
+-- **Logout Holds Against Running Requests**: A request that loaded a session before another request ended it with `Reset()`, `Destroy()` or `Regenerate()`, or before `store.Delete` or `store.Reset`, no longer stores it again or sends its cookie when it finishes, even after a `Regenerate()` of its own, which still changes the ID but neither stores nor sends the new one, so a logout is not undone by a request that was still running. A request that left the session unchanged no longer writes it back over a change another request stored meanwhile either. Within one process, saves and deletes of the same session ID are serialized; processes that share one `Storage` are not coordinated, as `fiber.Storage` has no conditional write.
++- **Logout Holds Against Running Requests**: A request that loaded a session before another request ended it with `Reset()`, `Destroy()` or `Regenerate()`, or before `store.Delete` or `store.Reset`, no longer stores it again or sends its cookie when it finishes, even after a `Regenerate()` of its own, which still changes the ID but neither stores nor sends the new one, so a logout is not undone by a request that was still running. A request that left the session unchanged no longer writes it back over a change another request stored meanwhile either, reads of values it could change in place included, and a `Regenerate()` by such a request carries that change over to the new ID instead of its snapshot; `Set`, `Delete`, `Reset` and a value changed in place through `Get` make a request a writer, and the CSRF middleware behind the session middleware leaves a token with more than half its lifetime left as it is, so its requests are not writers either; there a token stays valid for at least half of `IdleTimeout` after its last use rather than the whole of it, and its cookie expires with it. Within one process, saves and deletes of the same session ID are serialized; processes that share one `Storage` are not coordinated, as `fiber.Storage` has no conditional write.
+ 
+ - **Timed-out Requests**: The session of a request the timeout middleware gave up on is neither saved nor handed to another request while its handler may still run.
+ 
+@@ -2080,7 +2081,8 @@ The timeout middleware is now configurable. A new `Config` struct allows customi
+ - **Immediate return on timeout**: The middleware now returns immediately when a timeout occurs, without waiting for the handler to finish. This is achieved through the new **Abandon mechanism** which marks the context as abandoned so it won't be returned to the pool while the handler is still running.
+ - **Context propagation**: The timeout context is properly propagated to the handler. Handlers can detect timeouts by listening on `c.Context().Done()` and return early.
+ - **Panic handling**: Panics in the handler are caught and converted to `500 Internal Server Error` responses.
+-- **Race-free design**: The implementation uses fasthttp's `TimeoutErrorWithCode` combined with Fiber's Abandon mechanism to ensure complete race-freedom between the middleware, handler goroutine, and context pooling.
++- **Race-free design**: The implementation uses fasthttp's `TimeoutErrorWithResponse` combined with Fiber's Abandon mechanism to ensure complete race-freedom between the middleware, handler goroutine, and context pooling.
++- **HEAD**: The timeout response to a `HEAD` request carries no body, on the default path and the `OnTimeout` path alike, so a client reading the connection does not take a body for the start of the next response.
+ - **Nesting**: Under an enclosing timeout middleware whose deadline comes no later than its own, such as a shorter timeout on `app.Use`, the middleware runs the handler on the calling goroutine and leaves the timeout to the enclosing one. A shorter deadline set any other way, such as with `c.SetContext`, still times the request out with this middleware's response. Nested timeouts that fire together write one timeout response, from the first to answer. `ScheduleReclaim` may be armed more than once per request; the context is reclaimed once every abandoned goroutine has finished.
+ - **OnTimeout context**: When the deadline passes while the handler still runs, `OnTimeout` runs on a context of its own that carries the request, its locals, `c.Context()` and the response headers as they were when the handler started, so the timed-out handler can no longer change the response it writes. The request body, the matched route's parameters and `c.Next()` are not available there, and a panic in `OnTimeout` answers `500` as one in the handler does.
+ - **Returned error**: When `OnTimeout` writes the response and returns `nil` while the handler still runs, the middleware returns `fiber.ErrServiceUnavailable`, so middleware before it, such as `compress`, `etag`, `cache` or `idempotency`, leaves the response to the timed-out handler. The client still receives the response `OnTimeout` wrote.
+@@ -2223,7 +2225,7 @@ You have to put `*` to the end of the route if you don't define static route wit
+ 
+ The static middleware opens the name the router matched and does not percent-decode it a second time. Escapes the router keeps encoded, such as `%20`, stay encoded in the file name unless `UnescapePath` is enabled, and an escape of an unreserved character left in the routed path, which only a stray `%` can forge, is answered with `404` rather than decoded into a different file, so `/static/%%370rivate/secret.txt` never opens `private/secret.txt`. A path with an empty first segment, such as `//private/secret.txt` on a root mount, is `404` too, since the router keeps it apart from `/private/secret.txt`; [Static](./middleware/static.md) shows how to collapse a doubled slash for clients that send one. On Windows a path segment ending in a dot or a space is `404` as well, since the OS strips both when it opens a file. With `StrictRouting`, which keeps `/x` and `/x/` apart, a directory requested without its trailing slash is redirected to it with `302 Found` and a file requested with one is `404`. With `Browse`, a directory listing links below the routed path rather than the request target; on a route whose prefix holds a parameter, such as `/:lang/*`, the file cache is then off for files and listings alike, and a prefix that holds `%`, `\`, `?`, `#` or a control character is `404`. See [Static](./middleware/static.md).
+ 
+-A directory root on disk is confined: a symbolic link that leaves it, and an absolute link even when it points inside, is handled like a missing file. Set `AllowSymlinksOutsideRoot` to follow such links. A file root, and a root given through `FS`, are not confined.
++An empty root on disk is refused: `New` panics instead of serving the filesystem root, so an unset variable cannot expose every file the process can read; use `"."` for the working directory, and `FS` for an empty root that means the root of that file system. A directory root on disk is confined: a symbolic link that leaves it, and an absolute link even when it points inside, is handled like a missing file. Set `AllowSymlinksOutsideRoot` to follow such links. A file root, and a root given through `FS`, are not confined.
+ 
+ #### Trusted Proxies
+ 
+diff --git a/domain.go b/domain.go
+index e7e169be3b7..9e96419621d 100644
+--- a/domain.go
++++ b/domain.go
+@@ -528,7 +528,9 @@ func (d *domainRouter) mount(prefix string, subApp *App) Router {
+ // as such on the wrapper, so synthesizing them stays off for those and stays on
+ // for the rest.
+ func (d *domainRouter) cloneRoutesForDomain(dst, src *App) {
+-	for m, routes := range d.domainRoutes(dst, src, domainClone{}) {
++	// The app the routes are mounted on has the last word, as in processSubAppsRoutes:
++	// its opt-out covers everything flattened into it, so it seeds the whole walk.
++	for m, routes := range d.domainRoutes(dst, src, domainClone{skipAutoHead: d.app.config.DisableHeadAutoRegister}) {
+ 		dst.stack[m] = routes
+ 	}
+ }
+@@ -563,8 +565,8 @@ func (d *domainRouter) domainRoutes(dst, src *App, walk domainClone) [][]*Route
+ 	// HEAD route synthesized from one of its GET routes would run the handler
+ 	// with nothing in front of it. That holds for the apps it has mounted too,
+ 	// whose routes it stands in front of, and for no one else: the mount is a
+-	// tree, and an app opting out says nothing about its siblings or the apps
+-	// it is mounted inside.
++	// tree, and an app opting out says nothing about its siblings. The walk is
++	// seeded with the opt-out of the app the routes are mounted on.
+ 	skipAutoHead := walk.skipAutoHead || src.config.DisableHeadAutoRegister || src.methodInt(MethodHead) < 0
+ 
+ 	// Take a snapshot rather than holding the lock for the whole walk: it keeps
+@@ -649,6 +651,11 @@ func (d *domainRouter) domainRoutes(dst, src *App, walk domainClone) [][]*Route
+ 				continue
+ 			}
+ 
++			// An app started before the walk carries its automatic HEAD routes already.
++			if skipAutoHead && source.route.autoHead {
++				continue
++			}
++
+ 			clonedRoute := source.route
+ 			// An empty prefix cannot change the path, and re-parsing the route
+ 			// to reach the same result is the most expensive thing here.
+diff --git a/internal/apptest/serve.go b/internal/apptest/serve.go
+new file mode 100644
+index 00000000000..54962f2e33f
+--- /dev/null
++++ b/internal/apptest/serve.go
+@@ -0,0 +1,86 @@
++package apptest
++
++import (
++	"errors"
++	"fmt"
++	"net"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/stretchr/testify/require"
++	"github.com/valyala/fasthttp/fasthttputil"
++)
++
++// Server is the part of an app that serves a listener and shuts down, as *fiber.App does.
++type Server[C any] interface {
++	Listener(ln net.Listener, config ...C) error
++	Shutdown() error
++}
++
++// Serve serves app on an in-memory listener until tb ends, when the app is shut down and the
++// error Listener returned is checked, and returns the listener, ready to dial: a server that
++// stops before it serves, as one whose BeforeServeFunc fails does, fails the test with its error
++// instead of leaving a dial waiting for an accept that never comes.
++func Serve[C any](tb testing.TB, app Server[C], config ...C) *fasthttputil.InmemoryListener {
++	tb.Helper()
++
++	ln := fasthttputil.NewInmemoryListener()
++	var listenErr error
++	stopped := make(chan struct{})
++	go func() {
++		defer close(stopped)
++		listenErr = app.Listener(ln, config...)
++		// A dial the server will never accept fails at once; a server that served closed ln already.
++		_ = ln.Close() //nolint:errcheck // closed already when the server served
++	}()
++	tb.Cleanup(func() {
++		select {
++		case <-stopped: // nothing left to shut down
++		default:
++			require.NoError(tb, app.Shutdown())
++			<-stopped
++		}
++		if listenErr != nil && !errors.Is(listenErr, net.ErrClosed) {
++			require.NoError(tb, listenErr)
++		}
++	})
++	require.Eventually(tb, func() bool {
++		select {
++		case <-stopped:
++			return true // reported below
++		default:
++			conn, err := ln.Dial()
++			return err == nil && conn.Close() == nil
++		}
++	}, time.Second, 5*time.Millisecond, "the server did not start serving")
++	select {
++	case <-stopped:
++		require.NoError(tb, listenErr, "the server stopped before it served")
++		require.FailNow(tb, "the server stopped before it served")
++	default:
++	}
++	return ln
++}
++
++// Dial opens a connection to ln with a five-second deadline, closed when tb ends, for a test
++// that writes raw requests and reads what comes back.
++func Dial(tb testing.TB, ln *fasthttputil.InmemoryListener) net.Conn {
++	tb.Helper()
++
++	conn, err := ln.Dial()
++	require.NoError(tb, err)
++	tb.Cleanup(func() { _ = conn.Close() }) //nolint:errcheck // usually closed by the server already
++	require.NoError(tb, conn.SetDeadline(time.Now().Add(5*time.Second)))
++	return conn
++}
++
++// FieldLines returns n header lines named prefix followed by the line's index, each holding
++// value, for a raw request or response with more lines than a limit allows.
++func FieldLines(prefix, value string, n int) string {
++	var lines strings.Builder
++	for i := range n {
++		fmt.Fprintf(&lines, "%s%d: %s\r\n", prefix, i, value)
++	}
++	return lines.String()
++}
+diff --git a/internal/fieldname/fieldname.go b/internal/fieldname/fieldname.go
+index 3a7667ab029..61f56c5c48b 100644
+--- a/internal/fieldname/fieldname.go
++++ b/internal/fieldname/fieldname.go
+@@ -72,26 +72,68 @@ func DropTrailers(h *fasthttp.RequestHeader) bool {
+ 	if len(keys) > MaxTrailers {
+ 		return false
+ 	}
+-	names := make([]string, len(keys))
+-	for i, key := range keys {
+-		names[i] = string(key)
++	// Del takes a name's header lines along with its trailer fields, so they are put back after.
++	var kept []string
++	for k, v := range h.All() {
++		if hasKey(keys, k) {
++			kept = append(kept, string(k), string(v))
++		}
++	}
++	dropTrailerKeys(h, keys, kept)
++	return true
++}
++
++// DropResponseTrailers is DropTrailers for a response: an upstream's trailer section, announced names and received
++// fields alike, is discarded rather than merged into the header section (RFC 9110 §6.5.1), which is where fasthttp
++// returns it when Trailer alone is deleted. It reports false, leaving h as it is, for more than MaxTrailers names.
++func DropResponseTrailers(h *fasthttp.ResponseHeader) bool {
++	keys := h.PeekTrailerKeys()
++	if len(keys) == 0 {
++		return true
++	}
++	if len(keys) > MaxTrailers {
++		return false
+ 	}
+ 	// Del takes a name's header lines along with its trailer fields, so they are put back after.
+ 	var kept []string
+ 	for k, v := range h.All() {
+-		if slices.Contains(names, utils.UnsafeString(k)) {
++		if hasKey(keys, k) {
+ 			kept = append(kept, string(k), string(v))
+ 		}
+ 	}
+-	for _, name := range names {
+-		h.Del(name)
++	dropTrailerKeys(h, keys, kept)
++	return true
++}
++
++// trailerDeleter is the part of a request or response header the tail of a trailer drop uses; the walk over the
++// header lines stays typed, since the iterator allocates when it is reached through an interface.
++type trailerDeleter interface {
++	DelBytes(key []byte)
++	Del(key string)
++	Add(key, value string)
++}
++
++// dropTrailerKeys deletes the announced names, puts the kept lines back and deletes Trailer, in that order: a line
++// added while its name is still announced is filed with the section, which unannouncing returns to the header
++// section whatever the name, where fasthttp would drop a Date added as a header once its name is not announced.
++func dropTrailerKeys(h trailerDeleter, keys [][]byte, kept []string) {
++	for _, key := range keys {
++		h.DelBytes(key)
+ 	}
+-	// With the trailer section empty, this has nothing to move into the header section.
+-	h.Del(fasthttp.HeaderTrailer)
+ 	for i := 0; i < len(kept); i += 2 {
+ 		h.Add(kept[i], kept[i+1])
+ 	}
+-	return true
++	h.Del(fasthttp.HeaderTrailer)
++}
++
++// hasKey reports whether keys holds key.
++func hasKey(keys [][]byte, key []byte) bool {
++	for _, k := range keys {
++		if bytes.Equal(k, key) {
++			return true
++		}
++	}
++	return false
+ }
+ 
+ // ClearTrailers is DropTrailers in one pass for any number of names, putting each line back in the buffer a value
+@@ -430,6 +472,25 @@ func Lines(h Peeker, name string, canonical bool) [][]byte {
+ 	return values
+ }
+ 
++// CountLines is len(Lines(h, name, canonical)) without the lines.
++//
++//nolint:revive // flag-parameter: canonical is a property of the header store, not a mode of operation
++func CountLines(h Peeker, name string, canonical bool) int {
++	if canonical && !HasTrailers(h) {
++		return len(h.PeekAll(name))
++	}
++	if req, ok := h.(*fasthttp.RequestHeader); ok && InTrailer(req, name) {
++		return 0
++	}
++	n := 0
++	h.VisitAll(func(k, _ []byte) {
++		if utils.EqualFold(utils.UnsafeString(k), name) {
++			n++
++		}
++	})
++	return n
++}
++
+ // First returns the first field line stored under name that holds anything, or
+ // nil if there is none. The names fasthttp keeps in a slot of their own are
+ // unaffected either way: every spelling is routed into the slot on the way in.
+diff --git a/internal/redirectbody/redirectbody.go b/internal/redirectbody/redirectbody.go
+new file mode 100644
+index 00000000000..f23baddc813
+--- /dev/null
++++ b/internal/redirectbody/redirectbody.go
+@@ -0,0 +1,47 @@
++// Package redirectbody turns a request into one without a body, for the hop a
++// redirect sends it on as a GET: the client and the proxy follow redirects
++// each with a loop of their own, and what goes with the body is decided here
++// for both.
++package redirectbody
++
++import (
++	"github.com/gofiber/fiber/v3/internal/fieldname"
++	"github.com/valyala/fasthttp"
++)
++
++// Drop removes the body of req and the fields that frame or describe it:
++// Content-Length, Transfer-Encoding and the trailer section signal one (RFC
++// 9112), Content-Type and Content-Encoding describe one no longer there, and
++// Expect asks for one (RFC 9110 §10.1.1), which a strict target answers with
++// 417 instead of serving the bodyless follow-up. It reports false, leaving req
++// as it is, when the trailer section announces more names than
++// fieldname.MaxTrailers.
++func Drop(req *fasthttp.Request) bool {
++	// The trailer section goes with the body. Deleting Trailer alone would have fasthttp
++	// return the fields filed under the announced names to the header section, and the
++	// redirect target, possibly another host, would receive them as header lines.
++	if !fieldname.DropTrailers(&req.Header) {
++		return false
++	}
++	req.Header.Del(fasthttp.HeaderContentLength)
++	req.Header.Del(fasthttp.HeaderContentType)
++	req.Header.Del(fasthttp.HeaderContentEncoding)
++	req.Header.Del(fasthttp.HeaderTransferEncoding)
++	req.Header.Del(fasthttp.HeaderExpect)
++	req.ResetBody()
++	// Load-bearing, not bookkeeping: Request.Write falls back to the parsed form
++	// when the body is empty, so a caller that had read PostArgs would have sent
++	// the old "a=1" as the body of the redirected GET.
++	//
++	// fasthttp's own loop clears the parsed flag beside this, which leaves a
++	// reused request re-parsing whatever body it is given next. That half is not
++	// reachable from here: parsedPostArgs is unexported and only Request.Reset
++	// and ReadLimitBody clear it, and Reset would take the URI, headers and TLS
++	// flag the redirect loops are still using. What differs is confined to a
++	// caller that reuses the request without resetting it: its PostArgs reads
++	// empty rather than re-parsing. The body it sends is the new one either way,
++	// and an untouched fasthttp request is worse off there: it hands back the
++	// previous body's values, since SetBody does not invalidate the form either.
++	req.PostArgs().Reset()
++	return true
++}
+diff --git a/middleware/cache/cache.go b/middleware/cache/cache.go
+index 807e17e93fc..9351f4c5a70 100644
+--- a/middleware/cache/cache.go
++++ b/middleware/cache/cache.go
+@@ -1067,6 +1067,19 @@ func New(config ...Config) fiber.Handler {
+ 		shouldStoreVaryManifest := !cfg.DisableVaryHeaders && len(respVaryNames) > 0
+ 		entryManifest := "" // the manifest the entry is stored under, dropped with the last such entry
+ 		if !cfg.DisableVaryHeaders && len(respVaryNames) > 0 {
++			// The key is built from the request header as the lookup saw it, which is
++			// what a later lookup reproduces. A line an inner middleware added since, as
++			// one deriving X-User-Id from the session cookie does, is a dimension no
++			// client's key selects by, so the first client's page would be served to
++			// every other: stored nowhere instead. A line rewritten in place or removed,
++			// as encryptcookie does with Cookie, keeps the lookup's view; a line the
++			// client sent and such middleware overwrote keeps the client's value too,
++			// which is right only when the response varies on the input it was derived
++			// from as well (cache.md says so).
++			if varyLinesAdded(respVaryNames, lookupHeader, &c.Request().Header, canonical) {
++				markUnreachable()
++				return nil
++			}
+ 			entryManifest = manifestKey
+ 			// Keyed by the response's own Vary, not the manifest the lookup used, or a
+ 			// Vary: Cookie page lands under a key no cookie is part of.
+diff --git a/middleware/cache/utils.go b/middleware/cache/utils.go
+index 7f1577eb9cb..82d620f10c2 100644
+--- a/middleware/cache/utils.go
++++ b/middleware/cache/utils.go
+@@ -126,26 +126,52 @@ func responseSetsCookie(h *fasthttp.ResponseHeader, normalized bool) bool { //no
+ 	return false
+ }
+ 
+-// keyFieldLines returns the field lines of name to key a cache entry on.
++// collectKeyField readies h for reading the lines of name the way the key does, and
++// reports whether name is Cookie, whose lines are then the collected cookies.
+ //
+ // Cookie is answered from fasthttp's store, which reports raw lines before
+-// collection and one merged entry after — so force the collection, the only
++// collection and one merged entry after, so the collection is forced, the only
+ // representation both states agree on. Collecting is idempotent.
+-func keyFieldLines(h *fasthttp.RequestHeader, name string, normalized bool) [][]byte {
++func collectKeyField(h *fasthttp.RequestHeader, name string) bool {
+ 	switch {
+ 	case utils.EqualFold(name, fiber.HeaderCookie):
+ 		h.Cookie("") // collectCookies; the lookup itself is expected to miss
+-
++		return true
+ 	case utils.EqualFold(name, fiber.HeaderContentType) && mediatype.IsForm(h.ContentType()):
+ 		// Fold here rather than read whatever arrived: the key is built once before
+ 		// the handler and once after, and the form accessors lowercase this header
+ 		// in between, so the entry landed under a key no lookup would produce.
+ 		mediatype.NormalizeRequestContentType(h)
+ 	}
++	return false
++}
+ 
++// keyFieldLines returns the field lines of name to key a cache entry on.
++func keyFieldLines(h *fasthttp.RequestHeader, name string, normalized bool) [][]byte { //nolint:revive // flag-parameter: normalized is a property of the header store
++	collectKeyField(h, name)
+ 	return fieldname.Lines(h, name, normalized)
+ }
+ 
++// cookieAdded reports whether live carries more cookies by some name than lookup, the copy taken
++// before the handler ran: the cookies make one field line once collected, so the line count that
++// tells an added header from a rewritten one cannot tell an added cookie. Counted by name, since a
++// cookie added with Add keeps one the client sent by the same name beside it, in one pass over
++// each: a request may carry thousands, which a scan per cookie would square.
++func cookieAdded(lookup, live *fasthttp.RequestHeader) bool {
++	lookup.Cookie("") // collectCookies, as collectKeyField did for live
++	left := make(map[string]int)
++	for name := range lookup.Cookies() {
++		left[string(name)]++
++	}
++	for name := range live.Cookies() {
++		if left[string(name)] == 0 {
++			return true
++		}
++		left[string(name)]--
++	}
++	return false
++}
++
+ // setFieldLine writes value as the field line for name, replacing whichever
+ // spelling the response carries. Set is byte-exact, so it otherwise left a
+ // differently-spelled line and nothing reconciles two Age or two Date lines.
+diff --git a/middleware/cache/vary.go b/middleware/cache/vary.go
+index 8ce5f0a4078..834ff57e92a 100644
+--- a/middleware/cache/vary.go
++++ b/middleware/cache/vary.go
+@@ -11,6 +11,7 @@ import (
+ 	"sync"
+ 	"time"
+ 
++	"github.com/gofiber/fiber/v3/internal/fieldname"
+ 	"github.com/gofiber/fiber/v3/internal/headerlist"
+ 	"github.com/gofiber/utils/v2"
+ 	utilsstrings "github.com/gofiber/utils/v2/strings"
+@@ -127,6 +128,29 @@ func varyKey(base string, names []string, hdr *fasthttp.RequestHeader, normalize
+ 	return key
+ }
+ 
++// varyLinesAdded reports whether the request carries, for a name the response varies on, more
++// field lines than lookup, the copy taken before the handler ran, or a cookie by a name it has
++// none by: a line or cookie an inner middleware added, which no client's key selects by. One it
++// removed, as encryptcookie removes a cookie it cannot decrypt, leaves the key the client's and
++// the response the one for its absence, and one it rewrote, as encryptcookie decrypts a cookie,
++// keeps the client's value in the key: the count tells an added line from a rewritten one, which
++// values could not (see cache.md).
++func varyLinesAdded(names []string, lookup, live *fasthttp.RequestHeader, normalized bool) bool { //nolint:revive // flag-parameter: normalized is a property of the header store
++	for _, name := range names {
++		if collectKeyField(live, name) {
++			if cookieAdded(lookup, live) {
++				return true
++			}
++			continue
++		}
++		collectKeyField(lookup, name)
++		if n := fieldname.CountLines(live, name, normalized); n > 0 && n > fieldname.CountLines(lookup, name, normalized) {
++			return true
++		}
++	}
++	return false
++}
++
+ // lookupHeaders pools the copies of the request headers a miss keeps while the handler runs.
+ var lookupHeaders = sync.Pool{New: func() any { return new(fasthttp.RequestHeader) }}
+ 
+diff --git a/middleware/csrf/config.go b/middleware/csrf/config.go
+index ddbf0ec8d44..9cfa2e25566 100644
+--- a/middleware/csrf/config.go
++++ b/middleware/csrf/config.go
+@@ -90,7 +90,11 @@ type Config struct {
+ 	// CookieName as this defeats CSRF protection entirely.
+ 	Extractor extractors.Extractor
+ 
+-	// IdleTimeout is the duration of time the CSRF token is valid.
++	// IdleTimeout is the duration of time the CSRF token is valid, counted from its
++	// last use. In session mode behind the session middleware, a token is renewed only
++	// when less than half of it is left, so there it stays valid for at least half of
++	// IdleTimeout and at most IdleTimeout after its last use; the cookie expires with
++	// it. Set twice the idle window you want.
+ 	//
+ 	// Optional. Default: 30 * time.Minute
+ 	IdleTimeout time.Duration
+diff --git a/middleware/csrf/csrf.go b/middleware/csrf/csrf.go
+index 0e0cac53232..ffc030bfd83 100644
+--- a/middleware/csrf/csrf.go
++++ b/middleware/csrf/csrf.go
+@@ -210,12 +210,13 @@ func New(config ...Config) fiber.Handler {
+ 		}
+ 
+ 		// Create or extend the token in the storage
+-		if err := createOrExtendTokenInStorage(c, token, &cfg, sessionManager, storageManager); err != nil {
++		expires, err := createOrExtendTokenInStorage(c, token, &cfg, sessionManager, storageManager)
++		if err != nil {
+ 			return cfg.ErrorHandler(c, err)
+ 		}
+ 
+ 		// Update the CSRF cookie
+-		updateCSRFCookie(c, &cfg, token)
++		setCSRFCookie(c, &cfg, token, expires)
+ 
+ 		// Tell the browser that a new header value is generated
+ 		vary(c, varyCookie)
+@@ -272,16 +273,15 @@ func getRawFromStorage(c fiber.Ctx, token string, cfg *Config, sessionManager *s
+ 	return raw, nil
+ }
+ 
+-// createOrExtendTokenInStorage creates or extends the token in the storage
+-func createOrExtendTokenInStorage(c fiber.Ctx, token string, cfg *Config, sessionManager *sessionManager, storageManager *storageManager) error {
++// createOrExtendTokenInStorage creates or extends the token in the storage and returns when it expires.
++func createOrExtendTokenInStorage(c fiber.Ctx, token string, cfg *Config, sessionManager *sessionManager, storageManager *storageManager) (time.Time, error) {
+ 	if cfg.Session != nil {
+-		sessionManager.setRaw(c, token, dummyValue, cfg.IdleTimeout)
+-		return nil
++		return sessionManager.setRaw(c, token, dummyValue, cfg.IdleTimeout), nil
+ 	}
+ 	if err := storageManager.setRaw(c, token, dummyValue, cfg.IdleTimeout); err != nil {
+-		return fmt.Errorf("csrf: failed to store token in storage: %w", err)
++		return time.Time{}, fmt.Errorf("csrf: failed to store token in storage: %w", err)
+ 	}
+-	return nil
++	return time.Now().Add(cfg.IdleTimeout), nil
+ }
+ 
+ func deleteTokenFromStorage(c fiber.Ctx, token string, cfg *Config, sessionManager *sessionManager, storageManager *storageManager) error {
+@@ -295,17 +295,13 @@ func deleteTokenFromStorage(c fiber.Ctx, token string, cfg *Config, sessionManag
+ 	return nil
+ }
+ 
+-// Update CSRF cookie
+-// if expireCookie is true, the cookie will expire immediately
+-func updateCSRFCookie(c fiber.Ctx, cfg *Config, token string) {
+-	setCSRFCookie(c, cfg, token, cfg.IdleTimeout)
+-}
+-
++// expireCSRFCookie has the browser drop the cookie at once.
+ func expireCSRFCookie(c fiber.Ctx, cfg *Config) {
+-	setCSRFCookie(c, cfg, "", -time.Hour)
++	setCSRFCookie(c, cfg, "", time.Now().Add(-time.Hour))
+ }
+ 
+-func setCSRFCookie(c fiber.Ctx, cfg *Config, token string, expiry time.Duration) {
++// setCSRFCookie sends token in the cookie, which expires with the stored token.
++func setCSRFCookie(c fiber.Ctx, cfg *Config, token string, expires time.Time) {
+ 	cookie := &fiber.Cookie{
+ 		Name:        cfg.CookieName,
+ 		Value:       token,
+@@ -315,7 +311,7 @@ func setCSRFCookie(c fiber.Ctx, cfg *Config, token string, expiry time.Duration)
+ 		HTTPOnly:    cfg.CookieHTTPOnly,
+ 		SameSite:    cfg.CookieSameSite,
+ 		SessionOnly: cfg.CookieSessionOnly,
+-		Expires:     time.Now().Add(expiry),
++		Expires:     expires,
+ 	}
+ 
+ 	// Set the CSRF cookie to the response
+diff --git a/middleware/csrf/session_manager.go b/middleware/csrf/session_manager.go
+index e332b61f85c..3971f2d9f12 100644
+--- a/middleware/csrf/session_manager.go
++++ b/middleware/csrf/session_manager.go
+@@ -63,25 +63,35 @@ func (m *sessionManager) getRaw(c fiber.Ctx, key string, raw []byte) []byte {
+ 	return nil
+ }
+ 
+-// set token in session
+-func (m *sessionManager) setRaw(c fiber.Ctx, key string, raw []byte, exp time.Duration) {
++// setRaw stores the token in the session, or renews it, and returns when it expires.
++func (m *sessionManager) setRaw(c fiber.Ctx, key string, raw []byte, exp time.Duration) time.Time {
++	expires := time.Now().Add(exp)
+ 	sess := session.FromContext(c)
+ 	if sess != nil {
++		// A token still stored with more than half its lifetime left is left as it is: a Set
++		// would make this request a writer of the session, whose save then stands in for a
++		// change another request stored while it ran, such as a role taken away. The cookie
++		// expires with the token, so the browser does not keep sending one that is gone.
++		if token, ok := sess.Get(sessionKey).(Token); ok && token.Key == key && compareTokens(raw, token.Raw) &&
++			time.Until(token.Expiration) > exp/2 {
++			return token.Expiration
++		}
+ 		// the key is crucial in crsf and sometimes a reference to another value which can be reused later(pool/unsafe values concept), so a copy is made here
+-		sess.Set(sessionKey, Token{Key: key, Raw: raw, Expiration: time.Now().Add(exp)})
++		sess.Set(sessionKey, Token{Key: key, Raw: raw, Expiration: expires})
+ 	} else {
+ 		// Try to get the session from the store
+ 		storeSess, err := m.session.Get(c)
+ 		if err != nil {
+ 			// Handle error
+-			return
++			return expires
+ 		}
+ 		defer storeSess.Release()
+-		storeSess.Set(sessionKey, Token{Key: key, Raw: raw, Expiration: time.Now().Add(exp)})
++		storeSess.Set(sessionKey, Token{Key: key, Raw: raw, Expiration: expires})
+ 		if err := storeSess.Save(); err != nil {
+ 			log.Warn("csrf: failed to save session: ", err)
+ 		}
+ 	}
++	return expires
+ }
+ 
+ // delete token from session
+diff --git a/middleware/proxy/balancer.go b/middleware/proxy/balancer.go
+index 0efc64673f6..9f979bb6fd0 100644
+--- a/middleware/proxy/balancer.go
++++ b/middleware/proxy/balancer.go
+@@ -71,6 +71,11 @@ func Balancer(config ...Config) fiber.Handler {
+ 	}
+ 
+ 	// Return new handler
++	// A client of the caller's may stream response bodies, now or once a client is added to it, and
++	// the proxy can ask neither: its responses are read into one of the proxy's own either way. The
++	// host clients the proxy builds for Servers never stream.
++	streams := cfg.Client != nil
++
+ 	return func(c fiber.Ctx) error {
+ 		// Don't execute middleware if Next returns true
+ 		if cfg.Next != nil && cfg.Next(c) {
+@@ -161,15 +166,14 @@ func Balancer(config ...Config) fiber.Handler {
+ 		// the net/http adaptor) so the serialized request line stays valid.
+ 		req.Header.SetProtocol("HTTP/1.1")
+ 
+-		// Forward request
+-		if err := lbc.Do(req, res); err != nil {
++		// Forward request. A client that streams response bodies hands the upstream's trailer section
++		// to the response after Do returned: such a response is read into one of the proxy's own, see
++		// upstreamResponse.
++		upstream := upstreamResponse(streams, res)
++		if err := adoptUpstreamResponse(res, upstream, lbc.Do(req, upstream), policy, keepHeaders...); err != nil {
+ 			return err
+ 		}
+ 
+-		if !policy.KeepHopByHopHeaders && !stripHopByHopResponseHeaders(res, keepHeaders...) {
+-			return fiber.ErrBadGateway
+-		}
+-
+ 		// Modify response
+ 		if cfg.ModifyResponse != nil {
+ 			if err := cfg.ModifyResponse(c); err != nil {
+@@ -216,7 +220,8 @@ func newHostClient(u *url.URL, cfg *Config, policy SecurityPolicy) *fasthttp.Hos
+ 
+ 		DialDualStack: cfg.DialDualStack,
+ 
+-		MaxResponseBodySize: cfg.MaxResponseBodySize,
++		// A negative value is the caller's choice of no bound, which fasthttp reads as zero.
++		MaxResponseBodySize: max(cfg.MaxResponseBodySize, 0),
+ 	}
+ 	// Validate the resolved IP at dial time so DNS rebinding cannot swap in a private address.
+ 	// fasthttp dials through DialTimeout when it is set and Dial otherwise, so both are guarded.
+diff --git a/middleware/proxy/client.go b/middleware/proxy/client.go
+index 5a4382edded..4e61b778ba3 100644
+--- a/middleware/proxy/client.go
++++ b/middleware/proxy/client.go
+@@ -3,15 +3,35 @@ package proxy
+ import (
+ 	"errors"
+ 	"sync/atomic"
++	"time"
+ 
+ 	"github.com/valyala/fasthttp"
+ )
+ 
+-// defaultClient sets no timeouts or size cap; bound them with WithClient or DoTimeout/DoDeadline.
++// defaultMaxResponseBodySize bounds the body the proxy buffers from an
++// upstream response, so one that streams without end does not take the
++// memory; it is the bound the client package applies too.
++const defaultMaxResponseBodySize = 100 << 20
++
++// defaultRequestTimeout bounds a request the default client makes to an upstream,
++// connect, write and read of the whole response included, so one that stalls does
++// not hold the handler and its connection. It is the request's bound, which
++// DoTimeout and DoDeadline set themselves, rather than the client's read and
++// write timeouts: those cap the time a request may be given and, being set per
++// attempt, had fasthttp re-send an idempotent request to a stalled upstream until
++// its attempts ran out. 30 seconds, set in init and held atomically, as activePolicy and
++// sharedClient are, for the test that shortens it: a handler of a test that ended before,
++// one app.Test gave up on at its timeout, may still read the bound while the test sets it.
++var defaultRequestTimeout atomic.Int64
++
++// defaultClient buffers at most defaultMaxResponseBodySize of a response and gives
++// each request defaultRequestTimeout, see doActionWithPolicy; set other bounds with
++// WithClient, or on one request with DoTimeout or DoDeadline.
+ var defaultClient = &fasthttp.Client{
+ 	NoDefaultUserAgentHeader: true,
+ 	DisablePathNormalizing:   true,
+ 	MaxConnsPerHost:          defaultMaxConnsPerHost,
++	MaxResponseBodySize:      defaultMaxResponseBodySize,
+ }
+ 
+ // sharedClient is the client used when none is passed per call.
+@@ -23,6 +43,7 @@ var (
+ )
+ 
+ func init() {
++	defaultRequestTimeout.Store(int64(30 * time.Second))
+ 	ensureClientGuarded(defaultClient)
+ 	sharedClient.Store(defaultClient)
+ }
+diff --git a/middleware/proxy/config.go b/middleware/proxy/config.go
+index 0b40cc3a5cc..0d9901f64a9 100644
+--- a/middleware/proxy/config.go
++++ b/middleware/proxy/config.go
+@@ -20,7 +20,9 @@ type Config struct {
+ 	// Optional. Default: nil
+ 	ModifyRequest fiber.Handler
+ 
+-	// ModifyResponse allows you to alter the response
++	// ModifyResponse allows you to alter the response. It runs on the upstream's
++	// response with its trailer section already dropped and, unless the policy
++	// keeps them, its hop-by-hop fields stripped.
+ 	//
+ 	// Optional. Default: nil
+ 	ModifyResponse fiber.Handler
+@@ -73,10 +75,11 @@ type Config struct {
+ 
+ 	// MaxResponseBodySize bounds the size (in bytes) of upstream
+ 	// responses accepted by the proxy. Responses larger than this are
+-	// rejected to protect the proxy from memory exhaustion. Zero
+-	// preserves fasthttp's default unlimited behavior, so set it for untrusted upstreams.
++	// rejected to protect the proxy from memory exhaustion. Zero takes
++	// the default; a negative value removes the bound, as fasthttp's
++	// unlimited default does.
+ 	//
+-	// Optional. Default: 0
++	// Optional. Default: 100 MiB
+ 	MaxResponseBodySize int
+ 
+ 	// KeepConnectionHeader keeps the "Connection" header when set to true.
+@@ -107,6 +110,7 @@ var ConfigDefault = Config{
+ 	ModifyRequest:        nil,
+ 	ModifyResponse:       nil,
+ 	MaxConnsPerHost:      defaultMaxConnsPerHost,
++	MaxResponseBodySize:  defaultMaxResponseBodySize,
+ 	Timeout:              fasthttp.DefaultLBClientTimeout,
+ 	KeepConnectionHeader: false,
+ }
+@@ -128,6 +132,10 @@ func configDefault(config ...Config) Config {
+ 		cfg.MaxConnsPerHost = ConfigDefault.MaxConnsPerHost
+ 	}
+ 
++	if cfg.MaxResponseBodySize == 0 {
++		cfg.MaxResponseBodySize = ConfigDefault.MaxResponseBodySize
++	}
++
+ 	// Servers (or a Client) is required even when no Config was passed
+ 	if len(cfg.Servers) == 0 && cfg.Client == nil {
+ 		panic("Servers cannot be empty")
+diff --git a/middleware/proxy/headers.go b/middleware/proxy/headers.go
+index 04dd2b8985e..cdffd2f7e48 100644
+--- a/middleware/proxy/headers.go
++++ b/middleware/proxy/headers.go
+@@ -92,8 +92,26 @@ func stripHopByHopRequestHeaders(req *fasthttp.Request, normalized bool, except
+ 	return true
+ }
+ 
++// sanitizeUpstreamResponse readies an upstream response for the client, before a
++// ModifyResponse hook or a Do caller sees it: its trailer section is discarded
++// whatever the hop-by-hop policy, since the proxy answers with a sized body, which
++// has no trailer section, and deleting Trailer alone would have fasthttp return the
++// received fields to the header section, where a recipient must not merge them
++// (RFC 9110 §6.5.1); then the hop-by-hop fields are stripped unless the policy keeps
++// them, except naming the ones to keep. On either failure, more trailer names than
++// fieldname.MaxTrailers (each costs a scan of the header) or the strip's budget running
++// out, res is reset so none of the upstream's fields go out with the 502 Bad Gateway
++// returned.
++func sanitizeUpstreamResponse(res *fasthttp.Response, policy SecurityPolicy, except ...string) error {
++	if !fieldname.DropResponseTrailers(&res.Header) || !policy.KeepHopByHopHeaders && !stripHopByHopResponseHeaders(res, except...) {
++		res.Reset()
++		return fiber.ErrBadGateway
++	}
++	return nil
++}
++
+ // stripHopByHopResponseHeaders applies the same filtering on the way back.
+-// It reports false, having reset res, when the same budget runs out.
++// It reports false when the same budget runs out.
+ //
+ // It takes no normalized argument: a proxied response is parsed by the outbound
+ // fasthttp.Client, whose own setting is independent of the app's, so ask the
+@@ -112,12 +130,7 @@ func stripHopByHopResponseHeaders(res *fasthttp.Response, except ...string) bool
+ 			}
+ 		}
+ 	}
+-	if budget < 0 || !fieldname.DelSetWithin(&res.Header, names, budget) {
+-		// Partly stripped, so none of the upstream's fields go out with the 502.
+-		res.Reset()
+-		return false
+-	}
+-	return true
++	return budget >= 0 && fieldname.DelSetWithin(&res.Header, names, budget)
+ }
+ 
+ // delConnectionListedHeaders deletes every comma-separated header name
+diff --git a/middleware/proxy/proxy.go b/middleware/proxy/proxy.go
+index 741c5369b4a..43675fbd050 100644
+--- a/middleware/proxy/proxy.go
++++ b/middleware/proxy/proxy.go
+@@ -54,7 +54,8 @@ func forwardWithRealIP(c fiber.Ctx, addr string, policy SecurityPolicy, clients
+ // a private one between validation and connection. The policy is read on
+ // every request, so keep it installed while the handler serves.
+ //
+-// The default client sets no timeout and no response size cap.
++// The default client gives each request 30 seconds for the whole exchange and
++// buffers at most 100 MiB of a response; WithClient replaces both bounds.
+ func Forward(addr string, clients ...*fasthttp.Client) fiber.Handler {
+ 	return func(c fiber.Ctx) error {
+ 		// See Balancer: a refused request is not forwarded.
+@@ -83,8 +84,9 @@ func Forward(addr string, clients ...*fasthttp.Client) fiber.Handler {
+ // with a custom client, register it via WithClient (or pass a dedicated,
+ // unused client) before first use.
+ //
+-// The request reaches the upstream as HTTP/1.1. As with Forward, there is no
+-// timeout or size cap; see DoTimeout and DoDeadline.
++// The request reaches the upstream as HTTP/1.1. As with Forward, the default
++// client bounds the exchange at 30 seconds and the response at 100 MiB; DoTimeout
++// and DoDeadline set the bound of their own request.
+ func Do(c fiber.Ctx, addr string, clients ...*fasthttp.Client) error {
+ 	return doAction(c, addr, func(cli *fasthttp.Client, req *fasthttp.Request, resp *fasthttp.Response, _ *url.URL) error {
+ 		return cli.Do(req, resp)
+@@ -233,13 +235,17 @@ func doActionWithPolicy(
+ 	// inherited from the inbound request (e.g. "HTTP/2" propagated by the
+ 	// net/http adaptor) so the serialized request line stays valid.
+ 	req.Header.SetProtocol("HTTP/1.1")
+-	if err := action(cli, req, res, u); err != nil {
+-		return err
+-	}
+-	if !policy.KeepHopByHopHeaders && !stripHopByHopResponseHeaders(res) {
+-		return fiber.ErrBadGateway
++	// The default client bounds the request as a whole, connect and body included,
++	// unless the request has a bound of its own: DoTimeout and DoDeadline set theirs
++	// over this one, and a redirect hop takes the request's along.
++	if cli == defaultClient && req.GetTimeOut() == 0 {
++		req.SetTimeout(time.Duration(defaultRequestTimeout.Load()))
++		defer req.SetTimeout(0)
+ 	}
+-	return nil
++	// A client that streams response bodies hands the upstream's trailer section to the response after
++	// the action returned: such a response is read into one of the proxy's own, see upstreamResponse.
++	upstream := upstreamResponse(cli.StreamResponseBody, res)
++	return adoptUpstreamResponse(res, upstream, action(cli, req, upstream, u), policy)
+ }
+ 
+ // forwardRouted forwards the routed path to base for DomainForward and BalancerForward. A path
+diff --git a/middleware/proxy/redirect.go b/middleware/proxy/redirect.go
+index cf786af832c..259effd74e0 100644
+--- a/middleware/proxy/redirect.go
++++ b/middleware/proxy/redirect.go
+@@ -6,6 +6,7 @@ import (
+ 	"github.com/gofiber/fiber/v3"
+ 	"github.com/gofiber/fiber/v3/internal/crosshost"
+ 	"github.com/gofiber/fiber/v3/internal/fieldname"
++	"github.com/gofiber/fiber/v3/internal/redirectbody"
+ 	"github.com/gofiber/fiber/v3/internal/schemehost"
+ 	"github.com/gofiber/utils/v2"
+ 	"github.com/valyala/fasthttp"
+@@ -143,7 +144,8 @@ func carryFormBody(hop, req *fasthttp.Request) {
+ }
+ 
+ // contentFields describe or expect content, which a request without any must not carry (RFC 9110
+-// §10.1.1); redirectRequest drops the fields that frame a body one by one.
++// §10.1.1); redirectRequest drops them in every spelling, once redirectbody.Drop took the body and
++// the fields framing it.
+ var contentFields = []string{
+ 	fasthttp.HeaderContentEncoding,
+ 	fasthttp.HeaderContentLanguage,
+@@ -156,18 +158,11 @@ var contentFields = []string{
+ 
+ // redirectRequest rewrites req, a hop's private copy, as a GET without the body and the fields that
+ // framed or described it. It reports false when those are spelled in more than maxConnectionOptions
+-// further ways, as fieldname.DelSetWithin counts them.
++// further ways, as fieldname.DelSetWithin counts them, or when the trailer section announces more
++// names than fieldname.MaxTrailers.
+ func redirectRequest(req *fasthttp.Request) bool {
+ 	req.Header.SetMethod(fasthttp.MethodGet)
+-	req.ResetBody()
+-	// A form the handler already read lives on in the post args, which fasthttp
+-	// writes as the body when the body is empty.
+-	req.PostArgs().Reset()
+-	req.Header.Del(fasthttp.HeaderContentType)
+-	req.Header.Del(fasthttp.HeaderContentLength)
+-	req.Header.Del(fasthttp.HeaderTransferEncoding)
+-	req.Header.Del(fasthttp.HeaderTrailer)
+-	return fieldname.DelSetWithin(&req.Header, contentFields, maxConnectionOptions)
++	return redirectbody.Drop(req) && fieldname.DelSetWithin(&req.Header, contentFields, maxConnectionOptions)
+ }
+ 
+ // resolveRedirect parses a redirect target relative to the current URL
+diff --git a/middleware/proxy/response.go b/middleware/proxy/response.go
+new file mode 100644
+index 00000000000..b5b8be0be7a
+--- /dev/null
++++ b/middleware/proxy/response.go
+@@ -0,0 +1,77 @@
++package proxy
++
++import (
++	"io"
++
++	"github.com/valyala/fasthttp"
++)
++
++// upstreamResponse returns the response the client fills with the upstream's: res, the client's own, or one
++// of the proxy's when the body is read as a stream, by a client that streams or into a response whose
++// StreamBody is set. Such a body ends with the upstream's trailer section, which fasthttp parses into the
++// header of the response it streams into once the body has been read, after sanitizeUpstreamResponse ran:
++// read from a response of the proxy's own, the body leaves the section there, see adoptUpstreamResponse.
++func upstreamResponse(streams bool, res *fasthttp.Response) *fasthttp.Response { //nolint:revive // flag-parameter: streams is the client's setting
++	if !streams && !res.StreamBody {
++		return res
++	}
++	upstream := fasthttp.AcquireResponse()
++	// The options the server set on res go along, as the client keeps them across its own reset:
++	// whether a default Content-Type is added, which has no getter to carry alone.
++	res.Header.CopyTo(&upstream.Header)
++	upstream.StreamBody, upstream.SkipBody = res.StreamBody, res.SkipBody
++	return upstream
++}
++
++// adoptUpstreamResponse readies upstream, the response the client filled with err as the outcome, as res, the
++// client's: sanitized and, when upstream is the proxy's own, its header section copied over and its body read
++// from it through an upstreamBody, which releases it once the body has been sent, or moved over without a copy
++// when the client buffered the body after all. upstream is released on an error.
++func adoptUpstreamResponse(res, upstream *fasthttp.Response, err error, policy SecurityPolicy, except ...string) error {
++	if err == nil {
++		err = sanitizeUpstreamResponse(upstream, policy, except...)
++	}
++	if upstream == res {
++		return err
++	}
++	if err != nil {
++		fasthttp.ReleaseResponse(upstream)
++		return err
++	}
++	upstream.Header.CopyTo(&res.Header)
++	if !upstream.IsBodyStream() {
++		// Buffered: a response without a body, as a HEAD's or a 204, or any by a client that does not stream.
++		res.SkipBody = upstream.SkipBody
++		moveBody(res, upstream)
++		fasthttp.ReleaseResponse(upstream)
++		return nil
++	}
++	res.SetBodyStream(&upstreamBody{Reader: upstream.BodyStream(), upstream: upstream}, upstream.Header.ContentLength())
++	return nil
++}
++
++// moveBody gives res the buffered body of upstream without copying it: res takes upstream's buffer and
++// upstream the one res had, to be released with it. A raw body, which a client of the caller's may have set
++// in place of the buffer, res refers to as upstream did.
++func moveBody(res, upstream *fasthttp.Response) {
++	body := upstream.Body()
++	buffer := upstream.SwapBody(nil) // drops a raw body, which Body returned above
++	if len(buffer) != len(body) {
++		res.SetBodyRaw(body)
++		return
++	}
++	res.ResetBody()
++	upstream.SwapBody(res.SwapBody(buffer))
++}
++
++// upstreamBody is the body of a streamed upstream response, read from the response the client streams into
++// and released with it once it has been sent, which closes the stream and so releases its connection.
++type upstreamBody struct {
++	io.Reader
++	upstream *fasthttp.Response
++}
++
++func (b *upstreamBody) Close() error {
++	fasthttp.ReleaseResponse(b.upstream)
++	return nil
++}
+diff --git a/middleware/session/data.go b/middleware/session/data.go
+index 970319fa4fb..89d68725e71 100644
+--- a/middleware/session/data.go
++++ b/middleware/session/data.go
+@@ -16,9 +16,13 @@ type data struct {
+ 	Data         map[any]any // Session key counts are expected to be bounded.
+ 	sync.RWMutex `msg:"-"`
+ 
+-	// Stored before each mutation, so false means Data is unchanged since the decode.
+-	// Only a decode clears it; clearing after an encode would drop later in-place edits.
++	// dirty is set by a Get or Keys returning a value the caller may change in place, so
++	// the snapshot may be stale and the save encodes the data again. Only a decode clears
++	// it; clearing after an encode would drop later in-place edits.
+ 	dirty atomic.Bool
++	// mutated is set by Set, Delete and Reset: the request changed the session, so its save
++	// stands over a change another request stored meanwhile. Only a decode clears it.
++	mutated atomic.Bool
+ }
+ 
+ // valueMayAlias reports whether the caller could mutate the session through v
+@@ -90,7 +94,7 @@ func releaseData(d *data) {
+ func (d *data) Reset() {
+ 	d.Lock()
+ 	defer d.Unlock()
+-	d.dirty.Store(true)
++	d.mutated.Store(true)
+ 	clear(d.Data)
+ }
+ 
+@@ -128,7 +132,7 @@ func (d *data) Get(key any) any {
+ func (d *data) Set(key, value any) {
+ 	d.Lock()
+ 	defer d.Unlock()
+-	d.dirty.Store(true)
++	d.mutated.Store(true)
+ 	d.Data[key] = value
+ }
+ 
+@@ -143,7 +147,7 @@ func (d *data) Set(key, value any) {
+ func (d *data) Delete(key any) {
+ 	d.Lock()
+ 	defer d.Unlock()
+-	d.dirty.Store(true)
++	d.mutated.Store(true)
+ 	delete(d.Data, key)
+ }
+ 
+diff --git a/middleware/session/session.go b/middleware/session/session.go
+index 44dcff5051f..2c6caa31d8e 100644
+--- a/middleware/session/session.go
++++ b/middleware/session/session.go
+@@ -5,6 +5,7 @@ import (
+ 	"context"
+ 	"encoding/gob"
+ 	"fmt"
++	"reflect"
+ 	"sync"
+ 	"time"
+ 
+@@ -151,7 +152,9 @@ func (s *Session) ID() string {
+ //
+ // Note: returning a value that can alias the session (map, slice, array,
+ // pointer, struct) makes every later Save re-encode, since the caller may
+-// mutate it in place without calling Set.
++// mutate it in place without calling Set. Such an edit counts as the request's
++// own change, as a Set does, so its save stands over a change another request
++// stored meanwhile; a read alone yields to it.
+ //
+ // Usage:
+ //
+@@ -275,10 +278,13 @@ func (s *Session) RegenerateWithContext(ctx context.Context) error {
+ 	defer s.mu.Unlock()
+ 
+ 	// Delete old id from storage
+-	var ended bool
+-	var err error
++	var (
++		stored []byte
++		ended  bool
++		err    error
++	)
+ 	if s.loaded {
+-		ended, err = s.config.deleteLoadedKey(ctx, s.storageKey(), s.loadGen)
++		stored, ended, err = s.config.deleteLoadedKey(ctx, s.storageKey(), s.loadGen)
+ 	} else {
+ 		err = s.config.deleteKey(ctx, s.storageKey())
+ 	}
+@@ -290,11 +296,19 @@ func (s *Session) RegenerateWithContext(ctx context.Context) error {
+ 	if ended {
+ 		s.dropped = true
+ 	}
++	// Another request changed it since the load and this one changed nothing, in place
++	// included: the rotated session carries that change, not the snapshot this request loaded.
++	if stored != nil && s.overtakenBy(stored) {
++		// Rotated even when the decode fails: the old key is already gone, so the save
++		// stores this request's snapshot, which a failed decode leaves as it was, under
++		// the new ID rather than nothing.
++		err = s.decodeSessionData(stored)
++	}
+ 
+ 	// Generate a new session, and set session.isFresh to true
+ 	s.refresh()
+ 
+-	return nil
++	return err
+ }
+ 
+ // Reset generates a new session id, deletes the old one from storage, and resets the associated data.
+@@ -436,9 +450,13 @@ func (s *Session) saveSessionWithContext(ctx context.Context) error {
+ 	}
+ 
+ 	// Unchanged since the decode: write the snapshot back so the idle timeout still
+-	// slides. Lock-free is enough; dirty is set before the mutation it reports.
++	// slides. Lock-free is enough; the flags are set before what they report.
+ 	data := s.rawData
+-	changed := data == nil || s.data.dirty.Load()
++	// Set, Delete or Reset changed the session. A read of a value the caller may change
++	// in place only makes the snapshot stale: the data is encoded again, and whether it
++	// changed is asked only once another request's change is there to yield to.
++	mutated := s.data.mutated.Load()
++	changed := data == nil || mutated || s.data.dirty.Load()
+ 	if changed {
+ 		s.data.RLock()
+ 		encoded, err := s.encodeSessionData()
+@@ -455,28 +473,27 @@ func (s *Session) saveSessionWithContext(ctx context.Context) error {
+ 		if changed {
+ 			// Held alone, so no write-back of an older snapshot lands after this change.
+ 			l.mu.Lock()
+-			defer func() {
+-				l.gen.Add(1)
+-				l.mu.Unlock()
+-			}()
++			defer l.mu.Unlock()
+ 		} else {
+ 			l.mu.RLock()
+ 			defer l.mu.RUnlock()
+ 		}
+-		// An ID of this shard was deleted or changed since the load; look at this one.
+-		if l.gen.Load() != s.loadGen {
+-			raw, err := s.config.Storage.GetWithContext(ctx, key)
+-			if err != nil {
+-				return err
+-			}
++		raw, moved, err := s.config.storedSince(ctx, key, s.loadGen)
++		if err != nil {
++			return err
++		}
++		if moved {
+ 			if raw == nil {
+ 				return nil // ended by another request: neither store it nor send its cookie again
+ 			}
+-			if !changed && !bytes.Equal(raw, data) {
++			if s.overtakenBy(raw) {
+ 				s.setSession()
+-				return nil // changed by another request: the older snapshot must not undo that
++				return nil // changed by another request: a snapshot this one did not change must not undo that
+ 			}
+ 		}
++		if changed {
++			defer l.gen.Add(1) // before the unlock: the shard changed, which a save that stored nothing leaves as it was
++		}
+ 	}
+ 
+ 	// Update client cookie
+@@ -484,6 +501,35 @@ func (s *Session) saveSessionWithContext(ctx context.Context) error {
+ 	return s.config.Storage.SetWithContext(ctx, key, data, s.idleTimeout)
+ }
+ 
++// overtakenBy reports whether raw, what the storage holds now, is a change another request
++// stored since the load that this one must not undo: one that neither called Set, Delete or
++// Reset nor changed a value Get returned in place. Such an edit counts as the request's own
++// change, as a Set does; it is told from a read by decoding the snapshot again, which only the
++// rare save that a concurrent change reaches pays for.
++func (s *Session) overtakenBy(raw []byte) bool {
++	if s.data.mutated.Load() || bytes.Equal(raw, s.rawData) {
++		return false
++	}
++	return !s.data.dirty.Load() || !s.editedInPlace()
++}
++
++// editedInPlace reports whether the data differs from the snapshot it was decoded from, as it
++// does once a value Get returned was changed in place. gob writes a map in no fixed order, so the
++// snapshot is decoded again and compared as data rather than as bytes; one that no longer decodes
++// counts as edited, which keeps the request's data.
++func (s *Session) editedInPlace() bool {
++	var snapshot map[any]any
++	if err := gob.NewDecoder(bytes.NewReader(s.rawData)).Decode(&snapshot); err != nil {
++		return true
++	}
++	s.data.RLock()
++	defer s.data.RUnlock()
++	if len(snapshot) == 0 && len(s.data.Data) == 0 {
++		return false
++	}
++	return !reflect.DeepEqual(snapshot, s.data.Data)
++}
++
+ // Keys retrieves all keys in the current session.
+ //
+ // Returns:
+@@ -671,11 +717,22 @@ func (s *Session) decodeSessionData(rawData []byte) error {
+ 	defer byteBuffer.Reset()
+ 	_, _ = byteBuffer.Write(raw)
+ 	decCache := gob.NewDecoder(byteBuffer)
+-	if err := decCache.Decode(&s.data.Data); err != nil {
++	s.data.Lock()
++	defer s.data.Unlock()
++	// A decode replaces the data. gob merges into a map that holds keys, so one that does
++	// is decoded beside, which also leaves it as it was when the decode fails; the empty
++	// map of a session being loaded is decoded into in place.
++	decoded := s.data.Data
++	if len(decoded) > 0 {
++		decoded = make(map[any]any, len(decoded))
++	}
++	if err := decCache.Decode(&decoded); err != nil {
+ 		return fmt.Errorf("failed to decode session data: %w", err)
+ 	}
++	s.data.Data = decoded
+ 	s.rawData = raw
+ 	s.data.dirty.Store(false)
++	s.data.mutated.Store(false)
+ 	return nil
+ }
+ 
+diff --git a/middleware/session/store.go b/middleware/session/store.go
+index 1a3604635dc..c391a645beb 100644
+--- a/middleware/session/store.go
++++ b/middleware/session/store.go
+@@ -249,10 +249,7 @@ func (s *Store) getSession(c fiber.Ctx) (*Session, error) {
+ 
+ 	// Decode session data if found
+ 	if rawData != nil {
+-		sess.data.Lock()
+-		err := sess.decodeSessionData(rawData)
+-		sess.data.Unlock()
+-		if err != nil {
++		if err := sess.decodeSessionData(rawData); err != nil {
+ 			sess.mu.Unlock()
+ 			sess.Release()
+ 			return nil, fmt.Errorf("failed to decode session data: %w", err)
+@@ -368,23 +365,37 @@ func (s *Store) deleteKey(ctx context.Context, key string) error {
+ 	return err
+ }
+ 
+-// deleteLoadedKey is deleteKey for a session read at loadGen; it reports whether
+-// another request had deleted the key since.
+-func (s *Store) deleteLoadedKey(ctx context.Context, key string, loadGen uint64) (bool, error) {
++// deleteLoadedKey is deleteKey for a session read at loadGen. It returns what the key held
++// when another request had written the shard since, nil when none had, and reports whether
++// one had deleted the key.
++//
++//nolint:gocritic // returning explicit values keeps the signature concise while avoiding unnecessary named results
++func (s *Store) deleteLoadedKey(ctx context.Context, key string, loadGen uint64) ([]byte, bool, error) {
+ 	l := lockFor(key)
+ 	l.mu.Lock()
+ 	defer l.mu.Unlock()
+-	ended := false
+-	if l.gen.Load() != loadGen {
+-		raw, err := s.Storage.GetWithContext(ctx, key)
+-		if err != nil {
+-			return false, err
+-		}
+-		ended = raw == nil
++	stored, moved, err := s.storedSince(ctx, key, loadGen)
++	if err != nil {
++		return nil, false, err
+ 	}
+-	err := s.Storage.DeleteWithContext(ctx, key)
++	err = s.Storage.DeleteWithContext(ctx, key)
+ 	l.gen.Add(1)
+-	return ended, err
++	return stored, moved && stored == nil, err
++}
++
++// storedSince returns what key holds when another request wrote its shard since loadGen and
++// reports that one did; nil and false when none did. The caller holds the shard's lock.
++//
++//nolint:gocritic // returning explicit values keeps the signature concise while avoiding unnecessary named results
++func (s *Store) storedSince(ctx context.Context, key string, loadGen uint64) ([]byte, bool, error) {
++	if lockFor(key).gen.Load() == loadGen {
++		return nil, false, nil
++	}
++	raw, err := s.Storage.GetWithContext(ctx, key)
++	if err != nil {
++		return nil, false, err
++	}
++	return raw, true, nil
+ }
+ 
+ // GetByID retrieves a session by its ID from the storage.
+@@ -446,9 +457,7 @@ func (s *Store) GetByID(ctx context.Context, id string) (*Session, error) {
+ 	sess.loaded = true
+ 	sess.loadGen = loadGen
+ 
+-	sess.data.Lock()
+ 	decodeErr := sess.decodeSessionData(rawData)
+-	sess.data.Unlock()
+ 	sess.mu.Unlock()
+ 	if decodeErr != nil {
+ 		sess.Release()
+diff --git a/middleware/static/static.go b/middleware/static/static.go
+index df8aab3b4a7..7913d068a55 100644
+--- a/middleware/static/static.go
++++ b/middleware/static/static.go
+@@ -171,6 +171,11 @@ func (s *fileServer) namesFile(p []byte) bool {
+ 	return err == nil && info.Mode().IsRegular()
+ }
+ 
++// errEmptyRoot is the panic for a root on disk left empty: it would name the
++// filesystem root, and guessing the working directory instead would serve
++// whatever the process runs from.
++const errEmptyRoot = "static: root must name a directory or file on disk; use \".\" for the working directory"
++
+ // New creates a new middleware handler.
+ // The root argument specifies the root directory from which to serve static assets.
+ //
+@@ -178,6 +183,12 @@ func (s *fileServer) namesFile(p []byte) bool {
+ func New(root string, cfg ...Config) fiber.Handler {
+ 	config := configDefault(cfg...)
+ 
++	// An empty root on disk is the filesystem root, which fasthttp serves without
++	// confinement, so an unset variable would expose every file the process can read.
++	if config.FS == nil && root == "" {
++		panic(errEmptyRoot)
++	}
++
+ 	var (
+ 		rootCheck    sync.Once
+ 		rootCheckErr error
+@@ -253,9 +264,10 @@ func New(root string, cfg ...Config) fiber.Handler {
+ 		skipCache := config.CacheDuration < 0 || (config.Browse && wildcard != "")
+ 
+ 		files := &fasthttp.FS{
+-			Root:           fsRoot,
+-			FS:             config.FS,
+-			AllowEmptyRoot: true,
++			Root: fsRoot,
++			FS:   config.FS,
++			// An io/fs root is served at "" (see fsRoot above); a root on disk is never empty.
++			AllowEmptyRoot: config.FS != nil,
+ 			// A file root serves only itself, and its compressed copy lies beside it, outside the root.
+ 			AllowSymlinksOutsideRoot: config.AllowSymlinksOutsideRoot || (rootIsFile && config.FS == nil),
+ 			GenerateIndexPages:       config.Browse,
+diff --git a/middleware/timeout/timeout.go b/middleware/timeout/timeout.go
+index a4241b35dc2..506186899a5 100644
+--- a/middleware/timeout/timeout.go
++++ b/middleware/timeout/timeout.go
+@@ -102,6 +102,10 @@ func New(h fiber.Handler, config ...Config) fiber.Handler {
+ 		// when the goroutine has stopped touching the context, which is what makes
+ 		// reclaiming the abandoned context race-free.
+ 		handlerDone := make(chan struct{})
++		// Read before the handler can change the method. A HEAD response carries no body
++		// (RFC 9110 §9.3.2), and fasthttp sends the timeout response from a fresh RequestCtx
++		// that never saw the request, so it cannot tell a HEAD apart there.
++		isHead := ctx.RequestCtx().IsHead()
+ 
+ 		// Run handler in goroutine so we can race against the timeout
+ 		go func() {
+@@ -140,7 +144,7 @@ func New(h fiber.Handler, config ...Config) fiber.Handler {
+ 			// Timeout occurred - abandon context and return immediately.
+ 			// Reclamation is scheduled so the abandoned fiber.Ctx is returned to
+ 			// the pool once the handler goroutine finishes, instead of leaking.
+-			return handleTimeout(ctx, cancel, handlerDone, req, snap, cfg)
++			return handleTimeout(ctx, cancel, handlerDone, req, snap, cfg, isHead)
+ 		}
+ 	}
+ }
+@@ -179,6 +183,16 @@ func handleResult(err error, ctx fiber.Ctx, cfg Config) error {
+ 	return err
+ }
+ 
++// sendTimeoutResponse hands fasthttp the response it sends once the handler returns.
++// TimeoutErrorWithResponse copies resp, so the active RequestCtx response is never
++// read, and sends the copy from a fresh RequestCtx whose request is empty, so the
++// body of a response to a HEAD request is skipped here rather than there.
++func sendTimeoutResponse(ctx fiber.Ctx, resp *fasthttp.Response, isHead bool) {
++	// Or kept as OnTimeout set it: a response it meant to send without a body goes without one.
++	resp.SkipBody = resp.SkipBody || isHead
++	ctx.RequestCtx().TimeoutErrorWithResponse(resp)
++}
++
+ // handleTimeout handles the timeout case using the Abandon mechanism
+ func handleTimeout(
+ 	ctx fiber.Ctx,
+@@ -187,6 +201,7 @@ func handleTimeout(
+ 	req *request,
+ 	snap *snapshot,
+ 	cfg Config,
++	isHead bool,
+ ) error {
+ 	req.mu.Lock()
+ 	defer req.mu.Unlock()
+@@ -201,9 +216,10 @@ func handleTimeout(
+ 		// Build the default timeout response separately from the RequestCtx response.
+ 		// The timed-out handler can keep running and may have already buffered
+ 		// application data there, so reusing it could disclose partial output.
+-		// TimeoutErrorWithCode constructs a fresh fasthttp.Response internally, so
+-		// the active RequestCtx response is never read.
+-		ctx.RequestCtx().TimeoutErrorWithCode(fiber.ErrServiceUnavailable.Message, fiber.StatusServiceUnavailable)
++		var resp fasthttp.Response
++		resp.SetStatusCode(fiber.StatusServiceUnavailable)
++		resp.SetBodyString(fiber.ErrServiceUnavailable.Message)
++		sendTimeoutResponse(ctx, &resp, isHead)
+ 		timeoutErr = fiber.ErrServiceUnavailable
+ 	default:
+ 		var resp *fasthttp.Response
+@@ -228,7 +244,7 @@ func handleTimeout(
+ 		// Tell fasthttp to not recycle the RequestCtx - it will acquire a new one
+ 		// for the response and send the captured payload from OnTimeout. All ctx
+ 		// mutations after this call are ignored by fasthttp.
+-		ctx.RequestCtx().TimeoutErrorWithResponse(resp)
++		sendTimeoutResponse(ctx, resp, isHead)
+ 		if timeoutErr == nil {
+ 			// An error keeps the middleware before us off the response the handler still writes.
+ 			timeoutErr = fiber.ErrServiceUnavailable
+diff --git a/mount.go b/mount.go
+index f4d48721469..ba3aa0820fa 100644
+--- a/mount.go
++++ b/mount.go
+@@ -809,14 +809,21 @@ func (app *App) processSubAppsRoutes() {
+ 			// A sub-app that registers no automatic HEAD routes of its own
+ 			// must not be given them here either: its middleware is
+ 			// registered for the methods it serves, and a HEAD route
+-			// synthesized from the GET one would run without it.
+-			skipsAutoHead := route.group.app.config.DisableHeadAutoRegister || route.group.app.methodInt(MethodHead) < 0
++			// synthesized from the GET one would run without it. An app that
++			// turned them off takes none from the apps mounted into it either:
++			// a guard it registered with Get has no HEAD companion to run in front.
++			skipsAutoHead := app.config.DisableHeadAutoRegister ||
++				route.group.app.config.DisableHeadAutoRegister || route.group.app.methodInt(MethodHead) < 0
+ 
+ 			// Create a slice to hold the sub-app's routes
+-			subRoutes := make([]*Route, len(subAppRoutes))
++			subRoutes := make([]*Route, 0, len(subAppRoutes))
+ 
+ 			// Iterate over the sub-app's routes
+-			for j, subAppRoute := range subAppRoutes {
++			for _, subAppRoute := range subAppRoutes {
++				// A sub-app started before it was mounted carries its automatic HEAD routes already.
++				if skipsAutoHead && subAppRoute.autoHead {
++					continue
++				}
+ 				// Clone the sub-app's route
+ 				subAppRouteClone := app.copyRoute(subAppRoute)
+ 
+@@ -853,7 +860,7 @@ func (app *App) processSubAppsRoutes() {
+ 				app.markRouteOwner(subAppRouteClone, owner)
+ 
+ 				// Add the cloned sub-app's route to the slice of sub-app routes
+-				subRoutes[j] = subAppRouteClone
++				subRoutes = append(subRoutes, subAppRouteClone)
+ 			}
+ 
+ 			// Insert the sub-app's routes into the parent app's stack

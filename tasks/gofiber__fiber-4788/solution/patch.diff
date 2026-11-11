@@ -1,0 +1,91 @@
+diff --git a/binder/mapping.go b/binder/mapping.go
+index 185416d381c..8918c4affce 100644
+--- a/binder/mapping.go
++++ b/binder/mapping.go
+@@ -605,7 +605,8 @@ func structKeyKind(cache *fieldCache, t reflect.Type, kind reflect.Kind, key, al
+ 			}
+ 			cur = unwrapType(cur.Elem())
+ 		case reflect.Map:
+-			cur = unwrapType(cur.Elem())
++			// The decoder reads the rest of the key as one map key.
++			return unwrapType(cur.Elem()).Kind() == kind
+ 		default:
+ 			// A scalar has nothing below it.
+ 			return false
+diff --git a/docs/api/bind.md b/docs/api/bind.md
+index cf5436e70a8..a8b60a1fb72 100644
+--- a/docs/api/bind.md
++++ b/docs/api/bind.md
+@@ -300,6 +300,8 @@ A form body is a flat list of key/value pairs, so structure lives in the field n
+ | Indexed brackets   | `items[0][sku]=A1`           | field of a struct slice element      |
+ | Dot index          | `items.0.sku=A1`             | field of a struct slice element      |
+ | Mixed index/field  | `items[0].sku=A1`            | field of a struct slice element      |
++| Map key            | `attributes[color]=red`      | entry of a [map field](#map-fields)  |
++| Dot map key        | `attributes.color=red`       | entry of a [map field](#map-fields)  |
+ 
+ Bracket and dot notation are interchangeable and can be nested to any depth:
+ 
+@@ -346,6 +348,34 @@ Indexes above 1000 are rejected: `items.1001.sku=A1` fails with `schema: index e
+ The struct field tag never contains the brackets or the index. `colors[]`, `colors[0]` and `colors.0` all resolve against `form:"colors"`.
+ :::
+ 
++#### Map Fields
++
++A `map[string]T` field collects every key under its name. Everything after the field name becomes the map key, as sent: `attributes[color]` and `attributes.color` both give `color`, and `attributes[a][b]` gives `a.b`. Values are converted like any other field, so `T` can be any scalar a struct field could hold, or a slice of one. Other map fields, such as `map[string]Address`, `map[int]string`, `map[string]any`, a nested map or a pointer to a map, are skipped without an error. Query strings work the same with `query` tags.
++
++```go title="Struct"
++type Filter struct {
++    Attributes map[string]string   `form:"attributes"`
++    Tags       map[string][]string `form:"tags"`
++    Limits     map[string]int      `form:"limits"`
++}
++```
++
++```bash title="curl"
++curl -X POST http://localhost:3000/products \
++  --data "attributes[color]=red&attributes.size=m" \
++  --data "tags[sale]=yes&tags[sale]=new&limits[max]=5"
++```
++
++```go title="Result"
++Filter{
++    Attributes: map[string]string{"color": "red", "size": "m"},
++    Tags:       map[string][]string{"sale": {"yes", "new"}},
++    Limits:     map[string]int{"max": 5},
++}
++```
++
++A map of slices keeps repeated values, and splits comma-separated ones when `EnableSplittingOnParsers` is on. A map of single values keeps the last value. A value that can't be converted fails the bind with the full key in the error, such as `"limits.max"`, and a map with no matching keys is left `nil`, or fails the bind when the tag has `required`. A map that is already set is added to, not replaced, so don't pre-fill the field with a map other requests share.
++
+ ### JSON
+ 
+ Binds the request JSON body to a struct.
+@@ -592,6 +622,7 @@ Fiber supports several formats for passing array values via query parameters. Th
+ | Indexed bracket notation | `?posts[0][title]=Hello&posts[1][title]=World` | No                                  |
+ | Nested bracket notation  | `?preferences[tags]=golang,api`                | No (comma splitting: **Yes**)       |
+ | Dot notation             | `?user.name=Alice&posts.0.title=Hello`         | No                                  |
++| [Map key](#map-fields)   | `?attributes[color]=red&attributes.size=m`     | No (comma splitting: **Yes**)       |
+ 
+ ##### Repeated Key
+ 
+@@ -859,7 +890,7 @@ app.Get("/", func(c fiber.Ctx) error {
+ - `map[string]string` keeps only the **last** value of a repeated key and never splits values on commas. `map[string][]string` keeps every value and, with [`EnableSplittingOnParsers`](fiber.md#enablesplittingonparsers), splits comma-separated ones.
+ - Bound keys are added to the map and replace entries of the same name. Other entries stay in place.
+ - A nil map passed by value fails with `binder.ErrMapNilDestination`. Pass a pointer, such as `&m`, and Fiber allocates the map. A nil pointer to a map fails as well.
+-- Only `map[string]string` and `map[string][]string` themselves are filled. A map with string or slice elements of any other type, such as `map[string][]int` or a named type like `type Headers map[string]string`, fails with `binder.ErrMapNotConvertible`. Maps with other element kinds, for example `map[string]int` or `map[string]any`, are left untouched and no error is returned.
++- Only `map[string]string` and `map[string][]string` themselves are filled. A map with string or slice elements of any other type, such as `map[string][]int` or a named type like `type Headers map[string]string`, fails with `binder.ErrMapNotConvertible`. Maps with other element kinds, for example `map[string]int` or `map[string]any`, are left untouched and no error is returned. A map field of a struct follows [Map Fields](#map-fields) instead.
+ - `Query` and `Form` rewrite bracket notation to dots, so the key `filter[name]` is stored as `filter.name` and `ids[]` as `ids`.
+ - File fields of a multipart form are not added to a map.
+ - [`All`](#all) needs a pointer to a struct, and the [struct validator](#validation) is skipped for maps.
+diff --git a/docs/whats_new.md b/docs/whats_new.md
+index ced1802a48b..61b4c11b618 100644
+--- a/docs/whats_new.md
++++ b/docs/whats_new.md
+@@ -984,6 +984,7 @@ Fiber v3 introduces a new binding mechanism that simplifies the process of bindi
+ - Support multipart file binding for `*multipart.FileHeader`, `*[]*multipart.FileHeader`, and `[]*multipart.FileHeader` field types.
+ - Support for unified binding (`Bind().All()`) with defined precedence order: (URI -> Body -> Query -> Headers -> Cookies). A struct can customize the order for all its fields with one `binding_source` tag on any top-level field. [Learn more](./api/bind.md#all).
+ - Support MsgPack binding for request body.
++- Support `map[string]T` struct fields in query and form binding: `attributes[color]=red` or `attributes.color=red` fills `Attributes map[string]string`, and maps of slices keep repeated values. [Learn more](./api/bind.md#map-fields).
+ 
+ <details>
+ <summary>Example</summary>

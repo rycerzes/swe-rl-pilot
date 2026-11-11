@@ -1,0 +1,368 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15429"
+description = "Upgrade to Go 1.27.2"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "46123a609bd1272f10acfedbf85a96515c5a08d8"
+reference = "https://github.com/gohugoio/hugo/pull/15429"
+source_access = "auto"
+built_at = "2026-11-10T23:55:58.706804+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:61af24cd841b006d663f8dbd388fc9552f4eda89512668ecd4d8a7dd5a7be5d3"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15429"
+pr_merged_at = "2026-10-09T12:28:31Z"
+base_commit = "46123a609bd1272f10acfedbf85a96515c5a08d8"
+fail_to_pass = [
+    "TestEscapeText",
+    "TestIssue81821",
+    "TestIssue81823",
+    "TestIssue81823/property_in",
+    "TestIssue81823/yield",
+    "TestNextJsCtx",
+]
+pass_to_pass = [
+    "Example",
+    "ExampleTemplate_Delims",
+    "ExampleTemplate_block",
+    "ExampleTemplate_glob",
+    "ExampleTemplate_helpers",
+    "ExampleTemplate_parsefiles",
+    "ExampleTemplate_share",
+    "Example_autoescaping",
+    "Example_escape",
+    "TestAddParseTreeHTML",
+    "TestAddParseTreeToUnparsedTemplate",
+    "TestAddrOfIndex",
+    "TestAliasedParseTreeDoesNotOverescape",
+    "TestBadFuncNames",
+    "TestBlock",
+    "TestCSSEscaper",
+    "TestCSSValueFilter",
+    "TestCVE202656858",
+    "TestCVE202656858/regexp_after_close_brace",
+    "TestCVE202656858/regexp_after_close_brace_in_template_literal",
+    "TestCVE202656858/regexp_after_open_brace_in_if_block",
+    "TestCVE202656858/regexp_after_open_brace_in_template_literal",
+    "TestCVE202656858/regexp_pathological_attacker_input",
+    "TestClone",
+    "TestCloneCrash",
+    "TestCloneGrowth",
+    "TestClonePipe",
+    "TestCloneRedefinedName",
+    "TestCloneThenParse",
+    "TestComparison",
+    "TestDecodeCSS",
+    "TestDelims",
+    "TestEmptyTemplate",
+    "TestEmptyTemplateCloneCrash",
+    "TestEmptyTemplateHTML",
+    "TestEndsWithCSSKeyword",
+    "TestEnsurePipelineContains",
+    "TestErrorOnUndefined",
+    "TestErrors",
+    "TestEscape",
+    "TestEscape/CSS_attr_block_comment",
+    "TestEscape/CSS_attr_line_comment",
+    "TestEscape/CSS_comments",
+    "TestEscape/Comment_ends_flush_with_start",
+    "TestEscape/HTML_comment",
+    "TestEscape/HTML_comment_not_first_<_in_text_node.",
+    "TestEscape/HTML_doctype_not_case-insensitive",
+    "TestEscape/HTML_doctype_not_normalized",
+    "TestEscape/HTML_normalization_1",
+    "TestEscape/HTML_normalization_2",
+    "TestEscape/HTML_normalization_3",
+    "TestEscape/HTML_substitution_commented_out",
+    "TestEscape/JS_HTML-like_comments",
+    "TestEscape/JS_attr_block_comment",
+    "TestEscape/JS_attr_line_comment",
+    "TestEscape/JS_block_comment_flush_with_mathematical_division",
+    "TestEscape/JS_hashbang_comment",
+    "TestEscape/JS_line_comment",
+    "TestEscape/JS_mixed_comments",
+    "TestEscape/JS_multiline_block_comment",
+    "TestEscape/JS_single-line_block_comment",
+    "TestEscape/JS_template_lit,_nested_JS",
+    "TestEscape/JS_template_lit_special_characters",
+    "TestEscape/JS_template_lit_special_characters,_nested_lit",
+    "TestEscape/No_RCDATA_end_tag_injection",
+    "TestEscape/No_comment_injection",
+    "TestEscape/No_doctype_injection",
+    "TestEscape/No_tag_injection",
+    "TestEscape/Special_tags_in_<script>_regex_literals_(mixed_case)",
+    "TestEscape/Special_tags_in_<script>_string_literals",
+    "TestEscape/Special_tags_in_<script>_string_literals_(mixed_case)",
+    "TestEscape/Split_HTML_comment",
+    "TestEscape/assignment",
+    "TestEscape/badMarshaler",
+    "TestEscape/bad_dynamic_attribute_name_1",
+    "TestEscape/bad_dynamic_attribute_name_2",
+    "TestEscape/bad_dynamic_attribute_name_3",
+    "TestEscape/bad_dynamic_attribute_name_4",
+    "TestEscape/bad_dynamic_element_name",
+    "TestEscape/conditional_dynamic_valueless_attr_name_1",
+    "TestEscape/conditional_dynamic_valueless_attr_name_2",
+    "TestEscape/conditional_valueless_attr_name",
+    "TestEscape/constant",
+    "TestEscape/dangerousURLStart",
+    "TestEscape/dangerousURLStart2",
+    "TestEscape/dynamic_attribute_name",
+    "TestEscape/dynamic_element_name",
+    "TestEscape/else",
+    "TestEscape/if",
+    "TestEscape/jsBoolValue",
+    "TestEscape/jsMarshaler",
+    "TestEscape/jsNilValueTyped",
+    "TestEscape/jsNilValueUntyped",
+    "TestEscape/jsNumericValue",
+    "TestEscape/jsObjValue",
+    "TestEscape/jsObjValueNotOverEscaped",
+    "TestEscape/jsObjValueScript",
+    "TestEscape/jsRe",
+    "TestEscape/jsReAmbigOk",
+    "TestEscape/jsReBlank",
+    "TestEscape/jsStr",
+    "TestEscape/jsStrNotUnderEscaped",
+    "TestEscape/jsStrValue",
+    "TestEscape/meta_content_attribute_url",
+    "TestEscape/meta_content_string",
+    "TestEscape/meta_content_url_with_space_after_equals",
+    "TestEscape/meta_content_url_with_tab_before_equals",
+    "TestEscape/meta_content_url_with_whitespace_before_equals",
+    "TestEscape/meta_content_url_with_whitespace_both_sides_of_equals",
+    "TestEscape/multipleAttrs",
+    "TestEscape/nonHierURL",
+    "TestEscape/nonStringValue",
+    "TestEscape/optional_attrs",
+    "TestEscape/overescaping1",
+    "TestEscape/overescaping2",
+    "TestEscape/overescaping3",
+    "TestEscape/pathRelativeURLStart",
+    "TestEscape/protocolRelativeURLStart",
+    "TestEscape/quoted_empty_attribute_value",
+    "TestEscape/rangeBody",
+    "TestEscape/rangeElse",
+    "TestEscape/range_in_textarea",
+    "TestEscape/scriptTypeEmpty",
+    "TestEscape/scriptTypeSpace",
+    "TestEscape/scriptTypeTab",
+    "TestEscape/srcset_bad_URL_in_second_position",
+    "TestEscape/srcset_buffer_growth",
+    "TestEscape/styleBidiKeywordPassed",
+    "TestEscape/styleBidiPropNamePassed",
+    "TestEscape/styleClassPassed",
+    "TestEscape/styleColorPassed",
+    "TestEscape/styleExpressionBlocked",
+    "TestEscape/styleFontNameString",
+    "TestEscape/styleFontNameString#01",
+    "TestEscape/styleFontNameUnquoted",
+    "TestEscape/styleIDPassed",
+    "TestEscape/styleMozBindingBlocked",
+    "TestEscape/styleObfuscatedExpressionBlocked",
+    "TestEscape/styleObfuscatedMozBindingBlocked",
+    "TestEscape/stylePctPassed",
+    "TestEscape/stylePropertyPairPassed",
+    "TestEscape/styleQuantityPassed",
+    "TestEscape/styleQuotedURLQueryEncoded",
+    "TestEscape/styleStrBadProtocolBlocked",
+    "TestEscape/styleStrEncodedProtocolEncoded",
+    "TestEscape/styleStrGoodProtocolPassed",
+    "TestEscape/styleStrQueryEncoded",
+    "TestEscape/styleStrSpecialsEncoded",
+    "TestEscape/styleTagSelectorPassed",
+    "TestEscape/styleURLBadProtocolBlocked",
+    "TestEscape/styleURLEncodedForHTMLInAttr",
+    "TestEscape/styleURLGoodProtocolPassed",
+    "TestEscape/styleURLMixedCase",
+    "TestEscape/styleURLNotEncodedForHTMLInCdata",
+    "TestEscape/styleURLQueryEncoded",
+    "TestEscape/styleURLSpecialsEncoded",
+    "TestEscape/typedNilValue",
+    "TestEscape/typed_HTML_in_RCDATA",
+    "TestEscape/typed_HTML_in_attribute",
+    "TestEscape/typed_HTML_in_script",
+    "TestEscape/typed_HTML_in_text",
+    "TestEscape/unquoted_empty_attribute_value_(plaintext)",
+    "TestEscape/unquoted_empty_attribute_value_(url)",
+    "TestEscape/untypedNilValue",
+    "TestEscape/urlBranch",
+    "TestEscape/urlBranchConflictMoot",
+    "TestEscape/urlFragment",
+    "TestEscape/urlPath",
+    "TestEscape/urlQuery",
+    "TestEscape/urlStartAbsOk",
+    "TestEscape/urlStartRel",
+    "TestEscape/withBody",
+    "TestEscape/withElse",
+    "TestEscapeErrorsNotIgnorable",
+    "TestEscapeMalformedPipelines",
+    "TestEscapeMap",
+    "TestEscapeRace",
+    "TestEscapeSet",
+    "TestEscapeSetErrorsNotIgnorable",
+    "TestEscapersOnLower7AndSelectHighCodepoints",
+    "TestEscapingNilNonemptyInterfaces",
+    "TestEvalFieldErrors",
+    "TestEvalFieldErrors/ExistingFieldOnNil",
+    "TestEvalFieldErrors/MissingFieldOnNil",
+    "TestEvalFieldErrors/MissingFieldOnNonNil",
+    "TestEvalFieldErrors/MissingKeyOnMapPtrToNil",
+    "TestEvalFieldErrors/MissingKeyOnNilMap",
+    "TestEvalFieldErrors/MissingKeyOnNilMapPtr",
+    "TestExecError",
+    "TestExecute",
+    "TestExecuteError",
+    "TestExecuteGivesExecError",
+    "TestExecuteOnNewTemplate",
+    "TestExecutePanicDuringCall",
+    "TestFinalForPrintf",
+    "TestFindEndTag",
+    "TestFuncMapWorksAfterClone",
+    "TestGoodFuncNames",
+    "TestHTMLNospaceEscaper",
+    "TestHexDecode",
+    "TestIdempotentExecute",
+    "TestIndirectPrint",
+    "TestInterfaceValues",
+    "TestIsCSSNmchar",
+    "TestIsJsMimeType",
+    "TestIssue19294",
+    "TestIssue81823/private_yield",
+    "TestIssue81823/property_yield",
+    "TestJSEscaping",
+    "TestJSRegexpEscaper",
+    "TestJSStrEscaper",
+    "TestJSValEscaper",
+    "TestMaxExecDepth",
+    "TestMessageForExecuteEmpty",
+    "TestMissingMapKey",
+    "TestMultiExecute",
+    "TestNumbers",
+    "TestOrphanedTemplate",
+    "TestParse",
+    "TestParseFS",
+    "TestParseFiles",
+    "TestParseFilesWithData",
+    "TestParseGlob",
+    "TestParseGlobWithData",
+    "TestParseZipFS",
+    "TestPipeToMethodIsEscaped",
+    "TestRecursiveExecute",
+    "TestRecursiveExecuteViaMethod",
+    "TestRedefineAfterNamedExecution",
+    "TestRedefineAfterNonExecution",
+    "TestRedefineEmptyAfterExecution",
+    "TestRedefineNestedByNameAfterExecution",
+    "TestRedefineNestedByTemplateAfterExecution",
+    "TestRedefineNonEmptyAfterExecution",
+    "TestRedefineOtherParsers",
+    "TestRedefineSafety",
+    "TestRedefineTopUse",
+    "TestRedefinition",
+    "TestRedundantFuncs",
+    "TestSkipCSSSpace",
+    "TestSkipEscapeComments",
+    "TestSrcsetFilter",
+    "TestStringer",
+    "TestStringsInScriptsWithJsonContentTypeAreCorrectlyEscaped",
+    "TestStringsInScriptsWithJsonContentTypeAreCorrectlyEscaped/ASCII_letters",
+    "TestStringsInScriptsWithJsonContentTypeAreCorrectlyEscaped/Pizza",
+    "TestStringsInScriptsWithJsonContentTypeAreCorrectlyEscaped/Unicode",
+    "TestStringsInScriptsWithJsonContentTypeAreCorrectlyEscaped/empty",
+    "TestStringsInScriptsWithJsonContentTypeAreCorrectlyEscaped/gt_and_lt",
+    "TestStringsInScriptsWithJsonContentTypeAreCorrectlyEscaped/invalid",
+    "TestStringsInScriptsWithJsonContentTypeAreCorrectlyEscaped/null",
+    "TestStringsInScriptsWithJsonContentTypeAreCorrectlyEscaped/quotes",
+    "TestStringsInScriptsWithJsonContentTypeAreCorrectlyEscaped/tab",
+    "TestStringsInScriptsWithJsonContentTypeAreCorrectlyEscaped/unit_separator",
+    "TestStripTags",
+    "TestTemplateClone",
+    "TestTemplateCloneExecuteRace",
+    "TestTemplateCloneLookup",
+    "TestTemplateFuncsAfterClone",
+    "TestTemplates",
+    "TestTree",
+    "TestTypedContent",
+    "TestURLFilters",
+    "TestURLNormalizer",
+    "TestUnterminatedStringError",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:85fb23f1c23a"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 24.534
+measured_overhead_seconds = 5.667
+measured_copy_seconds = 0.256
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 6
+p2p_count = 265
+source_files = 4
+loc_changed = 28
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:10.359647+00:00"
+inline_recipe_sha256 = "sha256:8f09ee17fc8fda9ff131b2d55752d144814877d7dcd93e9fe35e16f492c59500"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 30
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15429-c41d416e97df"

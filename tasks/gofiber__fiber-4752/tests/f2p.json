@@ -1,0 +1,20 @@
+[
+  "Test_BasicAuth_ConfigDefault_NoConfig",
+  "Test_BasicAuth_Unauthorized_KeepsVary",
+  "Test_BasicAuth_Unauthorized_KeepsVary/a_field_already_listed_is_not_repeated",
+  "Test_BasicAuth_Unauthorized_KeepsVary/a_wildcard_stays_the_only_member",
+  "Test_BasicAuth_Unauthorized_KeepsVary/an_earlier_field_is_kept",
+  "Test_BasicAuth_Unauthorized_KeepsVary/several_earlier_fields_are_kept",
+  "Test_CacheOnlyIfCachedWithNoCache",
+  "Test_CacheOnlyIfCachedWithNoCache/in-memory/Pragma_no-cache",
+  "Test_CacheOnlyIfCachedWithNoCache/in-memory/no-cache_beside_only-if-cached",
+  "Test_CacheOnlyIfCachedWithNoCache/in-memory/only-if-cached_before_no-cache",
+  "Test_CacheOnlyIfCachedWithNoCache/storage/Pragma_no-cache",
+  "Test_CacheOnlyIfCachedWithNoCache/storage/no-cache_beside_only-if-cached",
+  "Test_CacheOnlyIfCachedWithNoCache/storage/only-if-cached_before_no-cache",
+  "Test_Limiter_ExpirationFunc_NonPositiveUsesConfiguredExpiration",
+  "Test_Limiter_ExpirationFunc_NonPositiveUsesConfiguredExpiration/fixed/-1s",
+  "Test_Limiter_ExpirationFunc_NonPositiveUsesConfiguredExpiration/fixed/0s",
+  "Test_Limiter_ExpirationFunc_NonPositiveUsesConfiguredExpiration/sliding/-1s",
+  "Test_Limiter_ExpirationFunc_NonPositiveUsesConfiguredExpiration/sliding/0s"
+]

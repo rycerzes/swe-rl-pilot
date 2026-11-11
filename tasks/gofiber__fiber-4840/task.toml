@@ -1,0 +1,197 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gofiber__fiber-4840"
+description = "🐛 bug: preserve nil first field lines when joining headers"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "fiber",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gofiber/fiber"
+ref = "fb4b9f6ba468ec9dc150d303dc3cb096000d918e"
+reference = "https://github.com/gofiber/fiber/pull/4840"
+source_access = "auto"
+built_at = "2026-11-10T23:53:38.224098+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:299b3c90aacc4fe446b0c15ce266dbdac9d077e036809cdc8ad4b53c7be24be2"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gofiber/fiber/pull/4840"
+pr_merged_at = "2026-11-03T11:13:22Z"
+base_commit = "fb4b9f6ba468ec9dc150d303dc3cb096000d918e"
+fail_to_pass = [
+    "Test_JoinNext_EmptyFirstLine",
+    "Test_JoinNext_EmptyFirstLine/nil_then_empty_then_value",
+    "Test_JoinNext_EmptyFirstLine/nil_then_value",
+    "Test_JoinNext_EmptyFirstLine/two_nil_lines",
+]
+pass_to_pass = [
+    "Test_All",
+    "Test_All/empty",
+    "Test_All/only_separators",
+    "Test_All/quotes_are_not_special",
+    "Test_All/single",
+    "Test_All/skips_empty_elements",
+    "Test_All/trims_OWS",
+    "Test_All/trims_OWS_around_a_lone_element",
+    "Test_AllLines",
+    "Test_AllQuoted",
+    "Test_AllQuoted/comma_inside_quotes_is_kept",
+    "Test_AllQuoted/empty",
+    "Test_AllQuoted/separates_outside_quotes",
+    "Test_AllQuoted/skips_empty_elements",
+    "Test_AllQuoted/unterminated_quote_swallows_rest",
+    "Test_AllQuoted/weak_tags",
+    "Test_AllQuotedPairs",
+    "Test_AllQuotedPairs/backslash_outside_quotes_is_data",
+    "Test_AllQuotedPairs/comma_inside_quotes_is_kept",
+    "Test_AllQuotedPairs/empty",
+    "Test_AllQuotedPairs/escaped_backslash_closes",
+    "Test_AllQuotedPairs/escaped_comma_stays_inside",
+    "Test_AllQuotedPairs/escaped_quote_does_not_close",
+    "Test_AllQuotedPairs/trailing_backslash_inside_quotes",
+    "Test_AllQuotedPairs/unterminated_quote_swallows_rest",
+    "Test_All_EarlyExit",
+    "Test_Append",
+    "Test_Append/comma_with_space",
+    "Test_Append/comma_with_tabbed_whitespace",
+    "Test_Append/comma_with_trailing_spaces_around_values",
+    "Test_Append/empty_element_between_values",
+    "Test_Append/has_a_comma_without_element",
+    "Test_Append/has_a_space_between_words",
+    "Test_Append/headerValue_is_empty",
+    "Test_Append/multiple_comma",
+    "Test_Append/no_matter_the_value",
+    "Test_Append/normal_case",
+    "Test_Append/single_comma",
+    "Test_AppendUnique",
+    "Test_AppendUnique/appends_new",
+    "Test_AppendUnique/first_spelling_in_one_call",
+    "Test_AppendUnique/into_empty",
+    "Test_AppendUnique/keeps_first_spelling",
+    "Test_AppendUnique/nothing_to_add",
+    "Test_AppendUnique/other_case",
+    "Test_AppendUnique/partial_add",
+    "Test_AppendUnique/skips_empty_values",
+    "Test_AppendUnique/skips_present",
+    "Test_Append_ReusesStorage",
+    "Test_Contains",
+    "Test_Contains/OWS_around_a_lone_element",
+    "Test_Contains/OWS_around_every_element",
+    "Test_Contains/OWS_around_the_last_element",
+    "Test_Contains/both_empty",
+    "Test_Contains/element_with_a_prefix",
+    "Test_Contains/empty_list",
+    "Test_Contains/empty_value",
+    "Test_Contains/exact_match",
+    "Test_Contains/exact_mismatch",
+    "Test_Contains/field_name_in_another_case",
+    "Test_Contains/longer_element",
+    "Test_Contains/longer_element_in_a_list",
+    "Test_Contains/middle",
+    "Test_Contains/middle_without_OWS",
+    "Test_Contains/other_case_in_a_list",
+    "Test_Contains/prefix",
+    "Test_Contains/prefix_without_OWS",
+    "Test_Contains/suffix",
+    "Test_Contains/suffix_after_br",
+    "Test_Contains/suffix_without_OWS",
+    "Test_Contains/upper_case_element",
+    "Test_Contains/upper_case_value",
+    "Test_Contains/value_with_OWS",
+    "Test_Contains/value_with_OWS_spanning_the_list",
+    "Test_Join",
+    "Test_JoinNext",
+    "Test_JoinNext_EmptyFirstLine/empty_then_value",
+    "Test_NextPrev",
+    "Test_NextPrev/empty",
+    "Test_NextPrev/empty_elements",
+    "Test_NextPrev/only_separators",
+    "Test_NextPrev/quotes_are_literal",
+    "Test_NextPrev/raw_bytes",
+    "Test_NextPrev/raw_whitespace",
+    "Test_NextPrev/single",
+    "Test_TrimOWS",
+    "Test_TrimOWS/CR_and_LF_are_not_OWS",
+    "Test_TrimOWS/VT_and_FF_are_not_OWS",
+    "Test_TrimOWS/empty",
+    "Test_TrimOWS/inner_OWS_kept",
+    "Test_TrimOWS/mixed",
+    "Test_TrimOWS/nothing_to_trim",
+    "Test_TrimOWS/only_OWS",
+    "Test_TrimOWS/spaces",
+    "Test_TrimOWS/tabs",
+    "Test_TrimOWS_AliasesInput",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "sha256:10f6cab9d6fad98bcdc3c2d856141e5b815ebbaf26cea9ca446e4b42bfdf2194"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 14.317
+measured_overhead_seconds = 1.847
+measured_copy_seconds = 0.055
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 4
+p2p_count = 96
+source_files = 1
+loc_changed = 3
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:12.835235+00:00"
+inline_recipe_sha256 = "sha256:2b7057e689df4da30ad78ba0d436a0dd62e8f73c9aec5d1cc469582b407ca925"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 137
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gofiber__fiber-4840-6b38fc4c333e"

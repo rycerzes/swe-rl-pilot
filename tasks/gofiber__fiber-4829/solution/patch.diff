@@ -1,0 +1,76 @@
+diff --git a/ctx_interface_gen.go b/ctx_interface_gen.go
+index 5427192795a..a410fcd25c9 100644
+--- a/ctx_interface_gen.go
++++ b/ctx_interface_gen.go
+@@ -700,6 +700,8 @@ type Ctx interface {
+ 	// This method also sets the content header to application/xml; charset=utf-8.
+ 	XML(data any) error
+ 	// Links joins the links followed by the property to populate the response's Link HTTP header field.
++	// Like Express, it adds to a Link header that is already set, such as the preload links
++	// SendEarlyHints writes, instead of replacing it.
+ 	Links(link ...string)
+ 	// Location sets the response Location HTTP header to the specified path parameter.
+ 	Location(path string)
+diff --git a/docs/api/ctx.md b/docs/api/ctx.md
+index 8984dcde595..f3ab555c43e 100644
+--- a/docs/api/ctx.md
++++ b/docs/api/ctx.md
+@@ -3651,6 +3651,7 @@ app.Get("/", func(c fiber.Ctx) error {
+ 
+ Joins the links followed by the property to populate the response’s [Link HTTP header](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Link) field.
+ Quotes and backslashes in the `rel` value are escaped so the emitted quoted-string stays grammar-valid per RFC 9110.
++As in Express, the links are added to a `Link` header that is already set, such as the preload links `SendEarlyHints` writes, instead of replacing it.
+ 
+ ```go title="Signature"
+ func (c fiber.Ctx) Links(link ...string)
+diff --git a/docs/whats_new.md b/docs/whats_new.md
+index c99adedd8a8..ef204362b26 100644
+--- a/docs/whats_new.md
++++ b/docs/whats_new.md
+@@ -916,6 +916,7 @@ resolve to the **request**; use `c.Res().Get()`, `c.Res().GetHeaders()`, `c.Res(
+ - **Context()**: Renamed to `RequestCtx()` to access the underlying `fasthttp.RequestCtx`.
+ - **IP()**: When `EnableIPValidation` is `true` and `TrustProxyConfig` is set, `c.IP()` now walks the `X-Forwarded-For` chain from right to left and returns the first non-trusted IP, instead of the leftmost syntactically valid IP. This closes an IP-spoofing vector where an attacker could prepend a fake address and have it returned by `c.IP()`. An entry that is not an IP address, such as `203.0.113.50:51234` or `unknown`, ends the walk, and `c.IP()` returns the last trusted proxy passed or the TCP remote address instead of an entry further left; a proxy that appends `IP:port` entries has to send the bare address. Repeated field lines of the proxy header are joined in the order they were received. Apps with `EnableIPValidation = false` (the default) are unaffected. See [`Ctx.IP`](./api/ctx.md#ip) and the [reverse proxy guide](./guide/reverse-proxy.md#getting-the-real-client-ip-address) for details.
+ - **IPs()**: Empty `X-Forwarded-For` elements are now ignored after trimming spaces and tabs, even when `EnableIPValidation` is disabled. Repeated commas and whitespace-only elements no longer produce empty strings in the returned slice. See [`Ctx.IPs`](./api/ctx.md#ips).
++- **Links()**: Adds to a `Link` header that is already set, as `res.links` does in Express, instead of replacing it. A second call, or one after `SendEarlyHints`, keeps the earlier links; call `c.Del(fiber.HeaderLink)` first to replace them. See [`Ctx.Links`](./api/ctx.md#links).
+ - **Scheme()**: Behind a trusted proxy, the scheme headers are ranked instead of read in the order they arrive: `X-Forwarded-Proto` wins over `X-Forwarded-Protocol`, then `X-Forwarded-Ssl: on`, then `X-Url-Scheme`, so a client can no longer override the proxy's `X-Forwarded-Proto` with one of the others. A proxy that sets only a lower-ranked header must drop the ones above it. See the [reverse proxy guide](./guide/reverse-proxy.md#scheme-and-host-behind-a-proxy).
+ 
+ ### SendEarlyHints
+diff --git a/res.go b/res.go
+index 399ddd8987e..ccc106f45e1 100644
+--- a/res.go
++++ b/res.go
+@@ -978,11 +978,21 @@ func (r *DefaultRes) XML(data any) error {
+ }
+ 
+ // Links joins the links followed by the property to populate the response's Link HTTP header field.
++// Like Express, it adds to a Link header that is already set, such as the preload links
++// SendEarlyHints writes, instead of replacing it.
+ func (r *DefaultRes) Links(link ...string) {
+ 	if len(link) == 0 {
+ 		return
+ 	}
+ 	bb := bytebufferpool.Get()
++	existing, _ := peekJoinedResponseHeader(&r.c.fasthttp.Response.Header, HeaderLink)
++	if len(existing) > 0 {
++		bb.Write(existing)
++		bb.WriteByte(',')
++		// The lines are copied into bb; remove them in every spelling so the
++		// folded value is not sent beside them.
++		r.Del(HeaderLink)
++	}
+ 	for i := range link {
+ 		if i%2 == 0 {
+ 			bb.WriteByte('<')
+diff --git a/res_interface_gen.go b/res_interface_gen.go
+index 5794c229800..a13c10d1181 100644
+--- a/res_interface_gen.go
++++ b/res_interface_gen.go
+@@ -130,6 +130,8 @@ type Res interface {
+ 	// This method also sets the content header to application/xml; charset=utf-8.
+ 	XML(data any) error
+ 	// Links joins the links followed by the property to populate the response's Link HTTP header field.
++	// Like Express, it adds to a Link header that is already set, such as the preload links
++	// SendEarlyHints writes, instead of replacing it.
+ 	Links(link ...string)
+ 	// Location sets the response Location HTTP header to the specified path parameter.
+ 	Location(path string)

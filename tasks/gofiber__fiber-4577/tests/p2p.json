@@ -1,0 +1,12 @@
+[
+  "Test_HealthCheck_CBOR_Format",
+  "Test_HealthCheck_Custom",
+  "Test_HealthCheck_Custom_Nested",
+  "Test_HealthCheck_Default",
+  "Test_HealthCheck_JSON_Format",
+  "Test_HealthCheck_MsgPack_Format",
+  "Test_HealthCheck_Next",
+  "Test_HealthCheck_Strict_Routing_Default",
+  "Test_HealthCheck_Text_Format",
+  "Test_HealthCheck_XML_Format"
+]

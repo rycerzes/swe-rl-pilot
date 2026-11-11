@@ -1,0 +1,278 @@
+diff --git a/go.mod b/go.mod
+index db5eb35aea5..36f52fd4530 100644
+--- a/go.mod
++++ b/go.mod
+@@ -15,7 +15,7 @@ require (
+ 	github.com/bep/golocales v0.2.0
+ 	github.com/bep/goportabletext v0.2.0
+ 	github.com/bep/helpers v0.12.0
+-	github.com/bep/imagemeta v1.0.1
++	github.com/bep/imagemeta v1.1.0
+ 	github.com/bep/lazycache v0.9.0
+ 	github.com/bep/logg v0.4.0
+ 	github.com/bep/mclib v1.20401.20400
+@@ -76,9 +76,9 @@ require (
+ 	golang.org/x/image v0.46.0
+ 	golang.org/x/mod v0.41.0
+ 	golang.org/x/net v0.59.0
+-	golang.org/x/sync v0.23.0
+-	golang.org/x/text v0.42.0
+-	golang.org/x/tools v0.50.0
++	golang.org/x/sync v0.24.0
++	golang.org/x/text v0.43.0
++	golang.org/x/tools v0.51.0
+ 	google.golang.org/api v0.276.0
+ 	rsc.io/qr v0.2.0
+ )
+diff --git a/go.sum b/go.sum
+index d61eb79de48..618e8f9827b 100644
+--- a/go.sum
++++ b/go.sum
+@@ -166,6 +166,8 @@ github.com/bep/helpers v0.12.0 h1:tD6V2DQW0B+FUynF2etR/106S/TO9akm+vA/Hk24GxY=
+ github.com/bep/helpers v0.12.0/go.mod h1:PfE7MGdA8sSQ19nyDh4tYbs5rAlStlJaDI21f/fnNps=
+ github.com/bep/imagemeta v1.0.1 h1:p8W9TcQraMbCbP3ubUPyVVEremktUV7LJm0O2t4jC9o=
+ github.com/bep/imagemeta v1.0.1/go.mod h1:QEtPJyviOAAssgv5MNCfdhoVLUfhhnko0YzJQOxqDGE=
++github.com/bep/imagemeta v1.1.0 h1:CO12aFmrQIB8byUzvq9b5rD2DPTw8QhcaNlBZ7NgoOk=
++github.com/bep/imagemeta v1.1.0/go.mod h1:z2CUPKGs9uOCxeBbSiFTTkFRKMlO1UZjU2S2Gpy9z54=
+ github.com/bep/lazycache v0.9.0 h1:JLpAJGotKPaacb7dgv0+qBLneQjcMhJ3g9MvEhDyZUg=
+ github.com/bep/lazycache v0.9.0/go.mod h1:E3yeEfnmWUNNuIIR/EX6srqQwsvAFHSLQ8tR+jClATg=
+ github.com/bep/logg v0.4.0 h1:luAo5mO4ZkhA5M1iDVDqDqnBBnlHjmtZF6VAyTp+nCQ=
+@@ -641,6 +643,8 @@ golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9/go.mod h1:RxMgew5VJxzue5/jJ
+ golang.org/x/sync v0.0.0-20201207232520-09787c993a3a/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
+ golang.org/x/sync v0.23.0 h1:KameEIfc1IkluZyXWLn39Wd4tURc6GbCiISGiZm2bQk=
+ golang.org/x/sync v0.23.0/go.mod h1:sUUOizhqBxiL6pEWpqNLUiaJn1ShEbZ6BBqskPbjZm0=
++golang.org/x/sync v0.24.0 h1:iqiDrGoDgyuvAKrhLQthUEzU/R378N78gXbBjxed7oA=
++golang.org/x/sync v0.24.0/go.mod h1:sUUOizhqBxiL6pEWpqNLUiaJn1ShEbZ6BBqskPbjZm0=
+ golang.org/x/sys v0.0.0-20180830151530-49385e6e1522/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
+ golang.org/x/sys v0.0.0-20190215142949-d0b11bdaac8a/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
+ golang.org/x/sys v0.0.0-20190312061237-fead79001313/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+@@ -688,6 +692,8 @@ golang.org/x/text v0.3.3/go.mod h1:5Zoc/QRtKVWzQhOtBMvqHzDpF6irO9z98xDceosuGiQ=
+ golang.org/x/text v0.3.4/go.mod h1:5Zoc/QRtKVWzQhOtBMvqHzDpF6irO9z98xDceosuGiQ=
+ golang.org/x/text v0.42.0 h1:JbOZXgfeCPU9gacVtYliJqOhD+zhrEqK4LfdpmlUZqI=
+ golang.org/x/text v0.42.0/go.mod h1:ojzP1Z+2QtioaF8DTtO8K5q7JWVVYwZKenzujK0Zd0E=
++golang.org/x/text v0.43.0 h1:1QivrlhwAsnMOcqgOdl9my7s9OyZl8O5/UGUTJVXoWc=
++golang.org/x/text v0.43.0/go.mod h1:hbSIYA/amXcRXTFSZqh8tWHEoqRvvbKPJ2uz/KU+a+s=
+ golang.org/x/time v0.0.0-20181108054448-85acf8d2951c/go.mod h1:tRJNPiyCQ0inRvYxbN9jk5I+vvW/OXSQhTDSoE431IQ=
+ golang.org/x/time v0.0.0-20190308202827-9d24e82272b4/go.mod h1:tRJNPiyCQ0inRvYxbN9jk5I+vvW/OXSQhTDSoE431IQ=
+ golang.org/x/time v0.0.0-20191024005414-555d28b269f0/go.mod h1:tRJNPiyCQ0inRvYxbN9jk5I+vvW/OXSQhTDSoE431IQ=
+@@ -742,6 +748,8 @@ golang.org/x/tools v0.0.0-20210108195828-e2f9c7f1fc8e/go.mod h1:emZCQorbCU4vsT4f
+ golang.org/x/tools v0.1.0/go.mod h1:xkSsbof2nBLbhDlRMhhhyNLN/zl3eTqcnHD5viDpcZ0=
+ golang.org/x/tools v0.50.0 h1:c2ifzfcuY7L90lZ2aKd8S4K2NpASF08SZx9ZuJkHmSU=
+ golang.org/x/tools v0.50.0/go.mod h1:7ulVMw3831Mwi5EZD6RomGyffr4VFjuNYXf2BbCEAV0=
++golang.org/x/tools v0.51.0 h1:k4Xc/1Om9jwkBJBo4NVLMSARBoWtK10mx+W5BnXCeAI=
++golang.org/x/tools v0.51.0/go.mod h1:9eEncMayCV6zRMGhR5eZEC2iBx98qWcF1HZ9Z7wJOoA=
+ golang.org/x/xerrors v0.0.0-20190717185122-a985d3407aa7/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
+ golang.org/x/xerrors v0.0.0-20191011141410-1b5146add898/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
+ golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
+diff --git a/resources/images/codec.go b/resources/images/codec.go
+index eec1cfcc503..cdd49bc3a57 100644
+--- a/resources/images/codec.go
++++ b/resources/images/codec.go
+@@ -246,25 +246,36 @@ func (d *Codec) Decode(r io.Reader) (image.Image, error) {
+ }
+ 
+ func (d *Codec) DecodeConfig(f Format, r io.Reader) (image.Config, string, error) {
++	conf, _, name, err := d.decodeConfig(f, r, false)
++	return conf, name, err
++}
++
++// decodeConfig also returns the frame count, which is 1 for still images.
++// The frame count is only read for GIF and PNG if withFrameCount is set.
++func (d *Codec) decodeConfig(f Format, r io.Reader, withFrameCount bool) (image.Config, int, string, error) {
++	rs, isSeeker := r.(io.ReadSeeker)
+ 	rr := toPeekReader(r)
+ 	format, err := formatFromImage(rr)
+ 	if err != nil {
+-		return image.Config{}, "", err
++		return image.Config{}, 0, "", err
+ 	}
+ 	if format == 0 {
+ 		format = f
+ 	}
+ 	r = rr
+-	if format.UseImageMetaConfigDecoder() {
+-		rs, err := hugio.NewReadSeekerNoOpCloserFromReader(r)
+-		if err != nil {
+-			return image.Config{}, "", err
++	if mf := format.toImageMetaConfigFormat(withFrameCount); mf != -1 {
++		if !isSeeker {
++			// Note that this reads the entire image into memory.
++			rs, err = hugio.NewReadSeekerNoOpCloserFromReader(r)
++			if err != nil {
++				return image.Config{}, 0, "", err
++			}
+ 		}
+-		rs.Seek(0, 0)
++		rs.Seek(0, io.SeekStart)
+ 		res, err := imagemeta.Decode(
+ 			imagemeta.Options{
+ 				R:           rs,
+-				ImageFormat: format.ToImageMetaImageFormatFormat(),
++				ImageFormat: mf,
+ 				Sources:     imagemeta.CONFIG,
+ 			},
+ 		)
+@@ -273,17 +284,17 @@ func (d *Codec) DecodeConfig(f Format, r io.Reader) (image.Config, string, error
+ 				Width:      res.ImageConfig.Width,
+ 				Height:     res.ImageConfig.Height,
+ 				ColorModel: color.RGBAModel,
+-			}, strings.ToLower(format.String()), nil
++			}, res.ImageConfig.FrameCount, strings.ToLower(format.String()), nil
+ 		}
+ 
+ 		// Fallback to the standard image.DecodeConfig.
+-		rs.Seek(0, 0)
++		rs.Seek(0, io.SeekStart)
+ 		r = rs
+ 	}
+ 
+ 	conf, name, err := image.DecodeConfig(r)
+ 
+-	return conf, name, err
++	return conf, 1, name, err
+ }
+ 
+ // toPeekReader converts an io.Reader to a peekReader.
+diff --git a/resources/images/image.go b/resources/images/image.go
+index d147be05d00..d0e902e610b 100644
+--- a/resources/images/image.go
++++ b/resources/images/image.go
+@@ -39,13 +39,10 @@ import (
+ func NewImage(f Format, proc *ImageProcessor, img image.Image, s Spec) *Image {
+ 	if img != nil {
+ 		return &Image{
+-			Format: f,
+-			Proc:   proc,
+-			Spec:   s,
+-			imageConfig: &imageConfig{
+-				config:       imageConfigFromImage(img),
+-				configLoaded: true,
+-			},
++			Format:      f,
++			Proc:        proc,
++			Spec:        s,
++			imageConfig: imageConfigFromImage(img),
+ 		}
+ 	}
+ 	return &Image{Format: f, Proc: proc, Spec: s, imageConfig: &imageConfig{}}
+@@ -74,12 +71,15 @@ func (i *Image) Width() int {
+ 	return i.config.Width
+ }
+ 
++// FrameCount returns the number of frames in i, 1 for still images.
++func (i *Image) FrameCount() int {
++	i.initConfig()
++	return i.frameCount
++}
++
+ func (i Image) WithImage(img image.Image) *Image {
+ 	i.Spec = nil
+-	i.imageConfig = &imageConfig{
+-		config:       imageConfigFromImage(img),
+-		configLoaded: true,
+-	}
++	i.imageConfig = imageConfigFromImage(img)
+ 
+ 	return &i
+ }
+@@ -94,7 +94,7 @@ func (i Image) WithSpec(s Spec) *Image {
+ func (i *Image) InitConfig(r io.Reader) error {
+ 	var err error
+ 	i.configInit.Do(func() {
+-		i.config, _, err = i.Proc.Codec.DecodeConfig(i.Format, r)
++		i.config, i.frameCount, _, err = i.Proc.Codec.decodeConfig(i.Format, r, true)
+ 	})
+ 	return err
+ }
+@@ -114,7 +114,7 @@ func (i *Image) initConfig() {
+ 		}
+ 		defer f.Close()
+ 
+-		i.config, _, err = i.Proc.Codec.DecodeConfig(i.Format, f)
++		i.config, i.frameCount, _, err = i.Proc.Codec.decodeConfig(i.Format, f, true)
+ 	})
+ 
+ 	if err != nil {
+@@ -378,9 +378,22 @@ const (
+ 	HEIC
+ )
+ 
+-// Whether to use imagemeta to decode image config (width/height	).
+-func (f Format) UseImageMetaConfigDecoder() bool {
+-	return f == WEBP || f == AVIF || f == HEIF || f == HEIC
++// toImageMetaConfigFormat returns the imagemeta format to use to decode
++// the image config (width, height and frame count), or -1 if none.
++func (f Format) toImageMetaConfigFormat(withFrameCount bool) imagemeta.ImageFormat {
++	switch f {
++	case GIF:
++		if withFrameCount {
++			return imagemeta.GIF
++		}
++	case PNG:
++		if withFrameCount {
++			return imagemeta.PNG
++		}
++	case WEBP, AVIF, HEIF, HEIC:
++		return f.ToImageMetaImageFormatFormat()
++	}
++	return -1
+ }
+ 
+ func (f Format) ToImageMetaImageFormatFormat() imagemeta.ImageFormat {
+@@ -476,16 +489,23 @@ func (f Format) String() string {
+ 
+ type imageConfig struct {
+ 	config       image.Config
++	frameCount   int
+ 	configInit   sync.Once
+ 	configLoaded bool
+ }
+ 
+-func imageConfigFromImage(img image.Image) image.Config {
++func imageConfigFromImage(img image.Image) *imageConfig {
++	c := &imageConfig{frameCount: 1, configLoaded: true}
++	if anim, ok := img.(himage.AnimatedImage); ok {
++		c.frameCount = max(1, len(anim.GetFrames()))
++	}
+ 	if cp, ok := img.(himage.ImageConfigProvider); ok {
+-		return cp.GetImageConfig()
++		c.config = cp.GetImageConfig()
++	} else {
++		b := img.Bounds()
++		c.config = image.Config{Width: b.Max.X, Height: b.Max.Y}
+ 	}
+-	b := img.Bounds()
+-	return image.Config{Width: b.Max.X, Height: b.Max.Y}
++	return c
+ }
+ 
+ // UnwrapFilter unwraps the given filter if it is a filter wrapper.
+diff --git a/resources/images/image_resource.go b/resources/images/image_resource.go
+index 6612a8b7a3e..32cd6c90c60 100644
+--- a/resources/images/image_resource.go
++++ b/resources/images/image_resource.go
+@@ -33,6 +33,9 @@ type ImageResourceOps interface {
+ 	// Width returns the width of the Image.
+ 	Width() int
+ 
++	// FrameCount returns the number of frames in the Image, 1 for still images.
++	FrameCount() int
++
+ 	// Process applies the given image processing options to the image.
+ 	Process(spec string) (ImageResource, error)
+ 
+diff --git a/resources/transform.go b/resources/transform.go
+index 504ed8cbbf2..111b1d2150e 100644
+--- a/resources/transform.go
++++ b/resources/transform.go
+@@ -393,6 +393,10 @@ func (r resourceAdapter) TransformWithContext(ctx context.Context, t ...Resource
+ 	return &r, nil
+ }
+ 
++func (r *resourceAdapter) FrameCount() int {
++	return r.getImageOps().FrameCount()
++}
++
+ func (r *resourceAdapter) Width() int {
+ 	return r.getImageOps().Width()
+ }

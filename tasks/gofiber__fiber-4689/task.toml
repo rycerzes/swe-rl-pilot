@@ -1,0 +1,357 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gofiber__fiber-4689"
+description = "🐛 bug: preserve IPv6 brackets in proxy domain forwarding"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "fiber",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gofiber/fiber"
+ref = "255b89cd10c9fdf0441a7a1f45af322a65a66c21"
+reference = "https://github.com/gofiber/fiber/pull/4689"
+source_access = "auto"
+built_at = "2026-11-11T00:10:23.824079+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:854969c6648c8769d8e2be18d3fbd5c597f6c323271f738ef704d74b488b55fa"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gofiber/fiber/pull/4689"
+pr_merged_at = "2026-09-16T11:14:51Z"
+base_commit = "255b89cd10c9fdf0441a7a1f45af322a65a66c21"
+fail_to_pass = [
+    "Test_Proxy_DomainForward_HostMatchPreservesIPv6Brackets",
+]
+pass_to_pass = [
+    "FuzzConnectionListedHeaders",
+    "FuzzConnectionListedHeaders/seed#0",
+    "FuzzConnectionListedHeaders/seed#1",
+    "FuzzConnectionListedHeaders/seed#2",
+    "FuzzConnectionListedHeaders/seed#3",
+    "FuzzConnectionListedHeaders/seed#4",
+    "FuzzConnectionListedHeaders/seed#5",
+    "FuzzConnectionListedHeaders/seed#6",
+    "FuzzConnectionListedHeaders/seed#7",
+    "FuzzJoinUpstreamPath",
+    "FuzzJoinUpstreamPath/seed#0",
+    "FuzzJoinUpstreamPath/seed#1",
+    "FuzzJoinUpstreamPath/seed#10",
+    "FuzzJoinUpstreamPath/seed#11",
+    "FuzzJoinUpstreamPath/seed#12",
+    "FuzzJoinUpstreamPath/seed#13",
+    "FuzzJoinUpstreamPath/seed#14",
+    "FuzzJoinUpstreamPath/seed#15",
+    "FuzzJoinUpstreamPath/seed#16",
+    "FuzzJoinUpstreamPath/seed#2",
+    "FuzzJoinUpstreamPath/seed#3",
+    "FuzzJoinUpstreamPath/seed#4",
+    "FuzzJoinUpstreamPath/seed#5",
+    "FuzzJoinUpstreamPath/seed#6",
+    "FuzzJoinUpstreamPath/seed#7",
+    "FuzzJoinUpstreamPath/seed#8",
+    "FuzzJoinUpstreamPath/seed#9",
+    "FuzzValidateUpstream",
+    "FuzzValidateUpstream/seed#0",
+    "FuzzValidateUpstream/seed#1",
+    "FuzzValidateUpstream/seed#10",
+    "FuzzValidateUpstream/seed#11",
+    "FuzzValidateUpstream/seed#12",
+    "FuzzValidateUpstream/seed#13",
+    "FuzzValidateUpstream/seed#14",
+    "FuzzValidateUpstream/seed#15",
+    "FuzzValidateUpstream/seed#16",
+    "FuzzValidateUpstream/seed#17",
+    "FuzzValidateUpstream/seed#2",
+    "FuzzValidateUpstream/seed#3",
+    "FuzzValidateUpstream/seed#4",
+    "FuzzValidateUpstream/seed#5",
+    "FuzzValidateUpstream/seed#6",
+    "FuzzValidateUpstream/seed#7",
+    "FuzzValidateUpstream/seed#8",
+    "FuzzValidateUpstream/seed#9",
+    "Test_Coverage_ConfigDefault_NoArgsReturnsDefault",
+    "Test_Coverage_ConfigDefault_PanicsOnEmptyServersAndNoClient",
+    "Test_Coverage_DialValidatedIPs_DualStackTriesV6",
+    "Test_Coverage_DialValidatedIPs_FallsBackOnError",
+    "Test_Coverage_DialValidatedIPs_SkipsV6ThenDialsV4",
+    "Test_Coverage_DialValidatedIPs_SkipsV6_WhenNoDualStack",
+    "Test_Coverage_DialValidatedIPs_SuccessOnIPv4",
+    "Test_Coverage_DomainForward_HostMismatch_DoesNotProxy",
+    "Test_Coverage_JoinUpstreamPath_FallbackPreservesBasePathPrefix",
+    "Test_Coverage_JoinUpstreamPath_PreservesRawPath_BaseHasPercentEncoded",
+    "Test_Coverage_JoinUpstreamPath_RawPathFallback",
+    "Test_Coverage_JoinUpstreamPath_RejectsAuthorityInjection",
+    "Test_Coverage_NewSSRFDialer_PassesGuardThenDials",
+    "Test_Coverage_NewSSRFDialer_RejectsLoopbackHostname",
+    "Test_Coverage_ResolveAndValidateHost_BlocksIPLiteral",
+    "Test_Coverage_ResolveAndValidateHost_IPLiteralOK",
+    "Test_Coverage_ResolveAndValidateHost_LookupFails",
+    "Test_Coverage_ResolveRedirect_RejectsHostlessTarget",
+    "Test_Coverage_ValidateHostForSSRF_PublicHostname",
+    "Test_Proxy",
+    "Test_ProxyBalancer_Custom_Client",
+    "Test_Proxy_Balancer_Forward_Empty_Servers",
+    "Test_Proxy_Balancer_Forward_Local",
+    "Test_Proxy_Balancer_Forward_OverwritesXRealIP",
+    "Test_Proxy_Balancer_IPv4_Upstream_With_DialDualStack",
+    "Test_Proxy_Balancer_IPv6_Upstream",
+    "Test_Proxy_Balancer_IPv6_Upstream_With_DialDualStack",
+    "Test_Proxy_Balancer_WithTlsConfig",
+    "Test_Proxy_Buffer_Size_Response",
+    "Test_Proxy_ConfigDefault_MaxConnsPerHost",
+    "Test_Proxy_ConfigDefault_MaxConnsPerHost_Override",
+    "Test_Proxy_CrossHostCredentialsStrippedWhateverTheirCase",
+    "Test_Proxy_CrossHostStripsEveryCredentialHeader",
+    "Test_Proxy_DefaultClient_MaxConnsPerHost",
+    "Test_Proxy_DoDeadline_PastDeadline",
+    "Test_Proxy_DoDeadline_RestoreOriginalURL",
+    "Test_Proxy_DoRedirects_AliasedAddr",
+    "Test_Proxy_DoRedirects_RestoreOriginalURL",
+    "Test_Proxy_DoRedirects_TooManyRedirects",
+    "Test_Proxy_DoTimeout_RestoreOriginalURL",
+    "Test_Proxy_DoTimeout_Timeout",
+    "Test_Proxy_Do_HTTP_Prefix_URL",
+    "Test_Proxy_Do_NilClientOverride",
+    "Test_Proxy_Do_NonNilClientOverride",
+    "Test_Proxy_Do_RestoreOriginalURL",
+    "Test_Proxy_Do_WithRealURL",
+    "Test_Proxy_Do_WithRedirect",
+    "Test_Proxy_DomainForward_HostMatchFoldsIDN",
+    "Test_Proxy_DomainForward_HostMatchFoldsIDN_WithPort",
+    "Test_Proxy_DomainForward_HostMatchIsCaseInsensitive",
+    "Test_Proxy_DomainForward_NonMatchingHostContinues",
+    "Test_Proxy_DomainForward_OverwritesXRealIP",
+    "Test_Proxy_Domain_Forward_Local",
+    "Test_Proxy_DropConnectionHeader",
+    "Test_Proxy_Empty_Config",
+    "Test_Proxy_Empty_Upstream_Servers",
+    "Test_Proxy_Forward",
+    "Test_Proxy_Forward_Global_Client",
+    "Test_Proxy_Forward_Local_Client",
+    "Test_Proxy_Forward_OverwritesXRealIP",
+    "Test_Proxy_Forward_RealIPFromProxyHeader",
+    "Test_Proxy_Forward_ReplacesClientSuppliedRealIP",
+    "Test_Proxy_Forward_ReplacesClientSuppliedRealIP/BalancerForward",
+    "Test_Proxy_Forward_ReplacesClientSuppliedRealIP/DomainForward",
+    "Test_Proxy_Forward_ReplacesClientSuppliedRealIP/Forward",
+    "Test_Proxy_Forward_RestoresHost",
+    "Test_Proxy_Forward_WithClient_TLSConfig",
+    "Test_Proxy_Forward_WithTlsConfig_To_Http",
+    "Test_Proxy_HopByHopHeadersStrippedWhateverTheirCase",
+    "Test_Proxy_HostWithoutPort",
+    "Test_Proxy_Immutable",
+    "Test_Proxy_KeepConnectionHeader",
+    "Test_Proxy_Modify_Request",
+    "Test_Proxy_Modify_Response",
+    "Test_Proxy_Next",
+    "Test_Proxy_NilClientOverride_AcrossHelpers",
+    "Test_Proxy_NilClientOverride_AcrossHelpers/DoDeadline",
+    "Test_Proxy_NilClientOverride_AcrossHelpers/DoRedirects",
+    "Test_Proxy_NilClientOverride_AcrossHelpers/DoTimeout",
+    "Test_Proxy_RealIPReplacedWhateverTheirCase",
+    "Test_Proxy_ResponseStripIgnoresTheAppsNormalizationSetting",
+    "Test_Proxy_SelectClient_NilGlobal",
+    "Test_Proxy_Timeout_Slow_Server",
+    "Test_Proxy_WithClient_Nil_Panics",
+    "Test_Proxy_With_Timeout",
+    "Test_Security_BalancerForward_InvalidUpstreamPanicsAtConstruction",
+    "Test_Security_Balancer_AllowsPrivateOptIn",
+    "Test_Security_Balancer_BlocksPrivateByDefault",
+    "Test_Security_Balancer_BuildsHTTPSHostClient",
+    "Test_Security_Balancer_HostnameDefersToDial",
+    "Test_Security_Balancer_ModifyRequestErrorPropagates",
+    "Test_Security_Balancer_ModifyResponseErrorPropagates",
+    "Test_Security_Balancer_PanicsOnInvalidUpstream",
+    "Test_Security_DefaultSecurityPolicy_AllowedSchemesIsCopy",
+    "Test_Security_DoRedirects_BlocksDowngrade",
+    "Test_Security_Do_BlocksDNSRebinding",
+    "Test_Security_Do_BlocksDNSRebinding/DoRedirects",
+    "Test_Security_Do_BlocksDNSRebinding/custom_client",
+    "Test_Security_Do_BlocksDNSRebinding/custom_client_with_DialTimeout",
+    "Test_Security_Do_BlocksDNSRebinding/default_client",
+    "Test_Security_Do_BlocksFileScheme",
+    "Test_Security_DomainForward_HostMismatchPassesThrough",
+    "Test_Security_DomainForward_InvalidUpstreamPanicsAtConstruction",
+    "Test_Security_EnsureClientGuarded_ComposePropagatesError",
+    "Test_Security_EnsureClientGuarded_ComposesAndIsIdempotent",
+    "Test_Security_EnsureClientGuarded_ConcurrentIsSafe",
+    "Test_Security_EnsureClientGuarded_ConcurrentIsSafe/nil_ConfigureClient",
+    "Test_Security_EnsureClientGuarded_ConcurrentIsSafe/pre-existing_ConfigureClient",
+    "Test_Security_FollowRedirects_MissingLocation",
+    "Test_Security_FollowRedirects_NegativeMaxBecomesZero",
+    "Test_Security_FollowRedirects_PostBecomesGetOn303",
+    "Test_Security_FollowRedirects_PropagatesClientError",
+    "Test_Security_FollowRedirects_ReappliesSchemePerHop",
+    "Test_Security_FollowRedirects_StripsCredentialsCrossHost",
+    "Test_Security_FollowRedirects_StripsCredentialsCrossHost/cross-host_strips",
+    "Test_Security_FollowRedirects_StripsCredentialsCrossHost/same-host_preserves",
+    "Test_Security_Forward_BlocksPrivateByDefault",
+    "Test_Security_HopByHopRequestStripping",
+    "Test_Security_HopByHopResponseStripping",
+    "Test_Security_InstallHostClientGuard_GuardsDialTimeout",
+    "Test_Security_IsBlockedIP",
+    "Test_Security_IsBlockedIP/0.0.0.0",
+    "Test_Security_IsBlockedIP/1.1.1.1",
+    "Test_Security_IsBlockedIP/10.0.0.1",
+    "Test_Security_IsBlockedIP/100.64.0.1",
+    "Test_Security_IsBlockedIP/127.0.0.1",
+    "Test_Security_IsBlockedIP/169.254.169.254",
+    "Test_Security_IsBlockedIP/172.16.0.1",
+    "Test_Security_IsBlockedIP/192.168.1.1",
+    "Test_Security_IsBlockedIP/2001:0:a00:1::",
+    "Test_Security_IsBlockedIP/2001::5601:5601",
+    "Test_Security_IsBlockedIP/2001::808:808",
+    "Test_Security_IsBlockedIP/2001::f5ff:fffe",
+    "Test_Security_IsBlockedIP/2001:db8::200:5efe:a00:1",
+    "Test_Security_IsBlockedIP/2001:db8::5efe:808:808",
+    "Test_Security_IsBlockedIP/2001:db8::5efe:a9fe:a9fe",
+    "Test_Security_IsBlockedIP/2002:7f00:1::",
+    "Test_Security_IsBlockedIP/2002:808:808::",
+    "Test_Security_IsBlockedIP/2002:a00:1::",
+    "Test_Security_IsBlockedIP/2002:a9fe:a9fe::",
+    "Test_Security_IsBlockedIP/224.0.0.1",
+    "Test_Security_IsBlockedIP/2606:4700:4700::1111",
+    "Test_Security_IsBlockedIP/64:ff9b:1::808:808",
+    "Test_Security_IsBlockedIP/64:ff9b:1::a00:1",
+    "Test_Security_IsBlockedIP/64:ff9b:1::a9fe:a9fe",
+    "Test_Security_IsBlockedIP/64:ff9b::7f00:1",
+    "Test_Security_IsBlockedIP/64:ff9b::808:808",
+    "Test_Security_IsBlockedIP/64:ff9b::a00:1",
+    "Test_Security_IsBlockedIP/64:ff9b::a9fe:a9fe",
+    "Test_Security_IsBlockedIP/8.8.8.8",
+    "Test_Security_IsBlockedIP/93.184.216.34",
+    "Test_Security_IsBlockedIP/::1",
+    "Test_Security_IsBlockedIP/::10.0.0.1",
+    "Test_Security_IsBlockedIP/::127.0.0.1",
+    "Test_Security_IsBlockedIP/::ffff:0:7f00:1",
+    "Test_Security_IsBlockedIP/::ffff:0:808:808",
+    "Test_Security_IsBlockedIP/::ffff:0:a00:1",
+    "Test_Security_IsBlockedIP/::ffff:0:a9fe:a9fe",
+    "Test_Security_IsBlockedIP/::ffff:10.0.0.1",
+    "Test_Security_IsBlockedIP/::ffff:127.0.0.1",
+    "Test_Security_IsBlockedIP_NilReturnsTrue",
+    "Test_Security_JoinUpstreamPath_BlocksNetworkPathInjection",
+    "Test_Security_JoinUpstreamPath_EmptyPath",
+    "Test_Security_JoinUpstreamPath_EmptyQueryMarkersUseSlowPath",
+    "Test_Security_JoinUpstreamPath_NilBase",
+    "Test_Security_JoinUpstreamPath_PreservesBasePathPrefix",
+    "Test_Security_JoinUpstreamPath_PreservesQuery",
+    "Test_Security_JoinUpstreamPath_QueryOnly",
+    "Test_Security_KeepConnectionPreservesOtherHopByHop",
+    "Test_Security_NewGuardedClientDialerWithTimeout_Delegates",
+    "Test_Security_NewGuardedClientDialerWithTimeout_ValidatedDialsThrough",
+    "Test_Security_NewGuardedClientDialer_AllowsValidatedHostname",
+    "Test_Security_NewGuardedClientDialer_BlocksWhenPrivateDisallowed",
+    "Test_Security_NewGuardedClientDialer_ComposesWithOrig",
+    "Test_Security_NewGuardedClientDialer_DelegatesDualStack",
+    "Test_Security_NewGuardedClientDialer_DelegatesWhenPrivateAllowed",
+    "Test_Security_NewGuardedClientDialer_RejectsMalformedAddr",
+    "Test_Security_NewSSRFDialer_BlocksLoopback",
+    "Test_Security_NewSSRFDialer_RejectsMalformedAddr",
+    "Test_Security_NormalizePolicy_EmptyAllowedSchemesIsFreshCopy",
+    "Test_Security_ResolvePolicy_OverrideEmptySchemes",
+    "Test_Security_ResolveRedirect_AllowsDowngradeWhenOptIn",
+    "Test_Security_ResolveRedirect_HTTPSDowngradeBlocked",
+    "Test_Security_ResolveRedirect_RejectsControlChars",
+    "Test_Security_ResolveRedirect_RejectsDisallowedScheme",
+    "Test_Security_RoundRobin_ConcurrentSelection",
+    "Test_Security_RoundRobin_WrapsAround",
+    "Test_Security_RoundRobin_WrapsAround/counter_limit",
+    "Test_Security_RoundRobin_WrapsAround/current_index",
+    "Test_Security_SchemeAllowed",
+    "Test_Security_SecureTLSConfig_DefaultMinVersion",
+    "Test_Security_ValidateHostForSSRF_EmptyHost",
+    "Test_Security_ValidateHostForSSRF_LookupFailure",
+    "Test_Security_ValidateHostForSSRF_PublicIPLiteral",
+    "Test_Security_ValidateUpstream_AllowsPrivateOptIn",
+    "Test_Security_ValidateUpstream_BlocksPrivateIPs",
+    "Test_Security_ValidateUpstream_BlocksPrivateIPs/http://10.0.0.1",
+    "Test_Security_ValidateUpstream_BlocksPrivateIPs/http://127.0.0.1",
+    "Test_Security_ValidateUpstream_BlocksPrivateIPs/http://169.254.169.254/latest/meta-data/",
+    "Test_Security_ValidateUpstream_BlocksPrivateIPs/http://192.168.1.1/path",
+    "Test_Security_ValidateUpstream_BlocksPrivateIPs/http://localhost:8080",
+    "Test_Security_ValidateUpstream_BlocksPrivateIPs/https://[::1]/",
+    "Test_Security_ValidateUpstream_EmptyHostAfterScheme",
+    "Test_Security_ValidateUpstream_PublicIPLiteral",
+    "Test_Security_ValidateUpstream_RejectsEmpty",
+    "Test_Security_ValidateUpstream_RejectsSchemes",
+    "Test_Security_ValidateUpstream_RejectsSchemes/file:///etc/passwd",
+    "Test_Security_ValidateUpstream_RejectsSchemes/ftp://example.com",
+    "Test_Security_ValidateUpstream_RejectsSchemes/gopher://example.com",
+    "Test_Security_WithSecurityPolicy_EmptyAllowedSchemesGetsDefault",
+    "Test_Security_WithSecurityPolicy_RestoresDefaults",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gofiber__fiber:959a2e370e62"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "mutants"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 30.75
+measured_overhead_seconds = 2.311
+measured_copy_seconds = 0.052
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 2
+verifier_timeout_sec = 720
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 1
+p2p_count = 257
+source_files = 1
+loc_changed = 3
+difficulty = "trivial"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:11.824744+00:00"
+inline_recipe_sha256 = "sha256:049ecba115d3c541d20df7e04d4c352c8865f7fd40a96588f5fb4a27a3413e7f"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = [
+    "Test_Proxy_DomainForward_HostMatchPreservesIPv6Brackets",
+]
+instruction_description_words = 108
+instruction_ok = false
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 720.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gofiber__fiber-4689-0843ae388a46"

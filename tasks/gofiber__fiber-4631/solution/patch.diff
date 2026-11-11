@@ -1,0 +1,381 @@
+diff --git a/docs/middleware/basicauth.md b/docs/middleware/basicauth.md
+index 49424e298c0..94314fe9a51 100644
+--- a/docs/middleware/basicauth.md
++++ b/docs/middleware/basicauth.md
+@@ -6,7 +6,7 @@ id: basicauth
+ 
+ Basic Authentication middleware for [Fiber](https://github.com/gofiber/fiber) that provides HTTP basic auth. It calls the next handler for valid credentials and returns [`401 Unauthorized`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401) for missing or invalid credentials, [`400 Bad Request`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400) for malformed `Authorization` headers, or [`431 Request Header Fields Too Large`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/431) when the header exceeds size limits. Credentials may omit Base64 padding as permitted by RFC 7235's `token68` syntax.
+ 
+-The default unauthorized response includes the header `WWW-Authenticate: Basic realm="Restricted", charset="UTF-8"`, sets `Cache-Control: no-store`, and adds a `Vary: Authorization` header. Only the `UTF-8` charset is supported; any other value will panic.
++The default unauthorized response includes the header `WWW-Authenticate: Basic realm="Restricted", charset="UTF-8"`, sets `Cache-Control: no-store`, and adds a `Vary: Authorization` header. Only the `UTF-8` charset is supported; any other value will panic. Generated realm and charset values are escaped as RFC 9110 HTTP quoted strings.
+ 
+ ## Signatures
+ 
+diff --git a/docs/middleware/keyauth.md b/docs/middleware/keyauth.md
+index c8f510b3718..ab2e53e1ab4 100644
+--- a/docs/middleware/keyauth.md
++++ b/docs/middleware/keyauth.md
+@@ -291,6 +291,9 @@ Refer to the [Extractors Guide](../guide/extractors) for details, security notes
+ | ErrorURI        | `string`                                 | URI identifying a human-readable web page with information about the `error` in Bearer challenges. Requires `Error` and must be an absolute URI. | `""` |
+ | Scope           | `string`                                 | Space-delimited list of scopes for the `scope` parameter in Bearer challenges. Each token must conform to the RFC 6750 `scope-token` syntax and requires `Error` set to `insufficient_scope`. | `""` |
+ 
++Generated challenge parameter values are escaped as RFC 9110 HTTP quoted
++strings. A custom `Challenge` value is emitted verbatim.
++
+ ## Default Config
+ 
+ ```go
+diff --git a/helpers.go b/helpers.go
+index 128cfe105dd..c8b5a004da1 100644
+--- a/helpers.go
++++ b/helpers.go
+@@ -32,7 +32,6 @@ import (
+ 	"github.com/gofiber/fiber/v3/internal/mediatype"
+ 	"github.com/gofiber/fiber/v3/log"
+ 
+-	"github.com/valyala/bytebufferpool"
+ 	"github.com/valyala/fasthttp"
+ )
+ 
+@@ -169,90 +168,6 @@ func readContent(rf io.ReaderFrom, name string) (int64, error) {
+ 	return n, nil
+ }
+ 
+-// quoteEscapeMask marks the lanes of w holding bytes quoteRawString must
+-// escape: '\\', '"', any C0 control (including HTAB), or DEL. Lanes >= 0x80
+-// are never marked; non-ASCII bytes pass through verbatim. This is
+-// utils.IndexNonQuotable's RFC 9110 set widened by HTAB, which the RFC
+-// permits as qdtext but this function has always percent-encoded.
+-func quoteEscapeMask(w uint64) uint64 {
+-	return swar.MatchByteMask(w, '\\') | swar.MatchByteMask(w, '"') |
+-		swar.MatchRangeMask(w, 0x00, 0x1f) | swar.MatchByteMask(w, 0x7f)
+-}
+-
+-// indexQuoteEscape returns the index of the first byte quoteEscapeMask
+-// matches, or -1 if raw needs no escaping. It scans eight bytes at a time,
+-// finishing inputs of 8+ bytes with one overlapping word; shorter inputs
+-// are checked byte-wise.
+-func indexQuoteEscape(raw string) int {
+-	n := len(raw)
+-	i := 0
+-	for ; i+swar.WordLen <= n; i += swar.WordLen {
+-		if m := quoteEscapeMask(swar.Load8(raw, i)); m != 0 {
+-			return i + swar.FirstLane(m)
+-		}
+-	}
+-	if i == n {
+-		return -1
+-	}
+-	if n >= swar.WordLen {
+-		if m := quoteEscapeMask(swar.Load8(raw, n-swar.WordLen)); m != 0 {
+-			return n - swar.WordLen + swar.FirstLane(m)
+-		}
+-		return -1
+-	}
+-	for ; i < n; i++ {
+-		if c := raw[i]; c == '\\' || c == '"' || c < 0x20 || c == 0x7f {
+-			return i
+-		}
+-	}
+-	return -1
+-}
+-
+-// quoteRawString escapes the characters that need quoting inside an RFC 9110
+-// quoted-string (https://www.rfc-editor.org/rfc/rfc9110#section-5.6.4), plus
+-// HTAB, which the RFC permits as qdtext but this function has always
+-// percent-encoded. The result may contain non-ASCII bytes.
+-func (*App) quoteRawString(raw string) string {
+-	// Fast path: most values need no escaping at all; avoid the pooled
+-	// buffer and the string allocation entirely.
+-	end := indexQuoteEscape(raw)
+-	if end == -1 {
+-		return raw
+-	}
+-
+-	const hex = "0123456789ABCDEF"
+-	bb := bytebufferpool.Get()
+-	defer bytebufferpool.Put(bb)
+-
+-	// Every byte before end is quotable and tab-free, so it hits the
+-	// verbatim case of the switch below; copy it in one append.
+-	bb.B = append(bb.B, raw[:end]...)
+-	for i := end; i < len(raw); i++ {
+-		c := raw[i]
+-		switch {
+-		case c == '\\' || c == '"':
+-			// escape backslash and quote
+-			bb.B = append(bb.B, '\\', c)
+-		case c == '\n':
+-			bb.B = append(bb.B, '\\', 'n')
+-		case c == '\r':
+-			bb.B = append(bb.B, '\\', 'r')
+-		case c < 0x20 || c == 0x7f:
+-			// percent-encode control and DEL
+-			bb.B = append(
+-				bb.B,
+-				'%',
+-				hex[c>>4],
+-				hex[c&0x0f],
+-			)
+-		default:
+-			bb.B = append(bb.B, c)
+-		}
+-	}
+-
+-	return string(bb.B)
+-}
+-
+ // appendLowerASCII writes the ASCII-lowercased bytes of src into dst[:0],
+ // growing dst as needed, in a single pass over src (instead of a copy
+ // followed by an in-place case fold). Bytes outside 'A'..'Z', including
+diff --git a/internal/quotedstring/quotedstring.go b/internal/quotedstring/quotedstring.go
+new file mode 100644
+index 00000000000..1b42b886004
+--- /dev/null
++++ b/internal/quotedstring/quotedstring.go
+@@ -0,0 +1,80 @@
++// Package quotedstring encodes values placed inside HTTP quoted strings.
++package quotedstring
++
++import (
++	"github.com/gofiber/utils/v2/swar"
++	"github.com/valyala/bytebufferpool"
++)
++
++// escapeMask marks the lanes of w holding bytes Escape must encode: '\\',
++// '"', any C0 control (including HTAB), or DEL. Lanes >= 0x80 are never
++// marked; non-ASCII bytes pass through verbatim.
++func escapeMask(w uint64) uint64 {
++	return swar.MatchByteMask(w, '\\') | swar.MatchByteMask(w, '"') |
++		swar.MatchRangeMask(w, 0x00, 0x1f) | swar.MatchByteMask(w, 0x7f)
++}
++
++// indexEscape returns the index of the first byte escapeMask matches, or -1
++// when raw needs no escaping. It scans eight bytes at a time, finishing inputs
++// of 8+ bytes with one overlapping word; shorter inputs are checked byte-wise.
++func indexEscape(raw string) int {
++	n := len(raw)
++	i := 0
++	for ; i+swar.WordLen <= n; i += swar.WordLen {
++		if m := escapeMask(swar.Load8(raw, i)); m != 0 {
++			return i + swar.FirstLane(m)
++		}
++	}
++	if i == n {
++		return -1
++	}
++	if n >= swar.WordLen {
++		if m := escapeMask(swar.Load8(raw, n-swar.WordLen)); m != 0 {
++			return n - swar.WordLen + swar.FirstLane(m)
++		}
++		return -1
++	}
++	for ; i < n; i++ {
++		if c := raw[i]; c == '\\' || c == '"' || c < 0x20 || c == 0x7f {
++			return i
++		}
++	}
++	return -1
++}
++
++// Escape encodes raw for placement inside an RFC 9110 quoted-string. Quotes
++// and backslashes use quoted-pair escaping, LF and CR use their conventional
++// backslash forms, and other C0 controls plus DEL are percent-encoded. HTAB is
++// encoded even though RFC 9110 permits it as qdtext. Non-ASCII bytes pass
++// through verbatim. The returned value excludes the surrounding quotes.
++// Escape is a serializer, not input validation; callers apply their own
++// rejection or sanitization policy before calling it.
++func Escape(raw string) string {
++	end := indexEscape(raw)
++	if end == -1 {
++		return raw
++	}
++
++	const hex = "0123456789ABCDEF"
++	bb := bytebufferpool.Get()
++	defer bytebufferpool.Put(bb)
++
++	bb.B = append(bb.B, raw[:end]...)
++	for i := end; i < len(raw); i++ {
++		c := raw[i]
++		switch {
++		case c == '\\' || c == '"':
++			bb.B = append(bb.B, '\\', c)
++		case c == '\n':
++			bb.B = append(bb.B, '\\', 'n')
++		case c == '\r':
++			bb.B = append(bb.B, '\\', 'r')
++		case c < 0x20 || c == 0x7f:
++			bb.B = append(bb.B, '%', hex[c>>4], hex[c&0x0f])
++		default:
++			bb.B = append(bb.B, c)
++		}
++	}
++
++	return string(bb.B)
++}
+diff --git a/middleware/basicauth/config.go b/middleware/basicauth/config.go
+index efea842295e..c0f429c1f6e 100644
+--- a/middleware/basicauth/config.go
++++ b/middleware/basicauth/config.go
+@@ -9,10 +9,10 @@ import (
+ 	"errors"
+ 	"fmt"
+ 	"sort"
+-	"strconv"
+ 	"strings"
+ 
+ 	"github.com/gofiber/fiber/v3"
++	"github.com/gofiber/fiber/v3/internal/quotedstring"
+ 	"github.com/gofiber/utils/v2"
+ 	"golang.org/x/crypto/bcrypt"
+ )
+@@ -166,9 +166,9 @@ func configDefault(config ...Config) Config {
+ 
+ 	if cfg.Unauthorized == nil {
+ 		cfg.Unauthorized = func(c fiber.Ctx) error {
+-			header := "Basic realm=" + strconv.Quote(cfg.Realm)
++			header := `Basic realm="` + quotedstring.Escape(cfg.Realm) + `"`
+ 			if cfg.Charset != "" {
+-				header += ", charset=" + strconv.Quote(cfg.Charset)
++				header += `, charset="` + quotedstring.Escape(cfg.Charset) + `"`
+ 			}
+ 			c.Set(fiber.HeaderWWWAuthenticate, header)
+ 			c.Set(fiber.HeaderCacheControl, "no-store")
+diff --git a/middleware/keyauth/config.go b/middleware/keyauth/config.go
+index a6fa197b50f..c0547f04c39 100644
+--- a/middleware/keyauth/config.go
++++ b/middleware/keyauth/config.go
+@@ -1,12 +1,12 @@
+ package keyauth
+ 
+ import (
+-	"fmt"
+ 	"net/url"
+ 	"strings"
+ 
+ 	"github.com/gofiber/fiber/v3"
+ 	"github.com/gofiber/fiber/v3/extractors"
++	"github.com/gofiber/fiber/v3/internal/quotedstring"
+ )
+ 
+ const (
+@@ -126,7 +126,7 @@ func configDefault(config ...Config) Config {
+ 	}
+ 
+ 	if len(getAuthSchemes(cfg.Extractor)) == 0 && cfg.Challenge == "" {
+-		cfg.Challenge = fmt.Sprintf("ApiKey realm=%q", cfg.Realm)
++		cfg.Challenge = `ApiKey realm="` + quotedstring.Escape(cfg.Realm) + `"`
+ 	}
+ 
+ 	if cfg.Error != "" {
+diff --git a/middleware/keyauth/keyauth.go b/middleware/keyauth/keyauth.go
+index e0ef3ef6be1..9a841c41680 100644
+--- a/middleware/keyauth/keyauth.go
++++ b/middleware/keyauth/keyauth.go
+@@ -2,12 +2,12 @@ package keyauth
+ 
+ import (
+ 	"errors"
+-	"fmt"
+ 	"strings"
+ 	"sync"
+ 
+ 	"github.com/gofiber/fiber/v3"
+ 	"github.com/gofiber/fiber/v3/extractors"
++	"github.com/gofiber/fiber/v3/internal/quotedstring"
+ 	"github.com/gofiber/fiber/v3/internal/redact"
+ 	"github.com/gofiber/fiber/v3/middleware/logger"
+ 	"github.com/gofiber/utils/v2"
+@@ -43,23 +43,34 @@ func New(config ...Config) fiber.Handler {
+ 	if len(authSchemes) > 0 {
+ 		challenges := make([]string, 0, len(authSchemes))
+ 		for _, scheme := range authSchemes {
+-			var b strings.Builder
+-			fmt.Fprintf(&b, "%s realm=%q", scheme, cfg.Realm)
++			b := make([]byte, 0, len(scheme)+len(cfg.Realm)+16)
++			b = append(b, scheme...)
++			b = append(b, ` realm="`...)
++			b = append(b, quotedstring.Escape(cfg.Realm)...)
++			b = append(b, '"')
+ 			if utils.EqualFold(scheme, "Bearer") {
+ 				if cfg.Error != "" {
+-					fmt.Fprintf(&b, ", error=%q", cfg.Error)
++					b = append(b, `, error="`...)
++					b = append(b, quotedstring.Escape(cfg.Error)...)
++					b = append(b, '"')
+ 					if cfg.ErrorDescription != "" {
+-						fmt.Fprintf(&b, ", error_description=%q", cfg.ErrorDescription)
++						b = append(b, `, error_description="`...)
++						b = append(b, quotedstring.Escape(cfg.ErrorDescription)...)
++						b = append(b, '"')
+ 					}
+ 					if cfg.ErrorURI != "" {
+-						fmt.Fprintf(&b, ", error_uri=%q", cfg.ErrorURI)
++						b = append(b, `, error_uri="`...)
++						b = append(b, quotedstring.Escape(cfg.ErrorURI)...)
++						b = append(b, '"')
+ 					}
+ 					if cfg.Error == ErrorInsufficientScope {
+-						fmt.Fprintf(&b, ", scope=%q", cfg.Scope)
++						b = append(b, `, scope="`...)
++						b = append(b, quotedstring.Escape(cfg.Scope)...)
++						b = append(b, '"')
+ 					}
+ 				}
+ 			}
+-			challenges = append(challenges, b.String())
++			challenges = append(challenges, string(b))
+ 		}
+ 		challengeValue = strings.Join(challenges, ", ")
+ 	}
+diff --git a/res.go b/res.go
+index 760cb39a75f..e9b1a0f7916 100644
+--- a/res.go
++++ b/res.go
+@@ -16,6 +16,7 @@ import (
+ 	"unicode"
+ 	"unicode/utf8"
+ 
++	"github.com/gofiber/fiber/v3/internal/quotedstring"
+ 	"github.com/gofiber/utils/v2"
+ 	"github.com/valyala/bytebufferpool"
+ 	"github.com/valyala/fasthttp"
+@@ -262,8 +263,8 @@ func encodeExtValue(s string) string {
+ // for a sanitized filename: the filename parameter is a quoted-string with
+ // RFC 9110 §5.6.4 escaping, and non-ASCII names additionally carry an
+ // RFC 8187 filename* ext-value for interoperability.
+-func contentDispositionAttachment(app *App, fname string) string {
+-	disp := `attachment; filename="` + app.quoteRawString(fname) + `"`
++func contentDispositionAttachment(fname string) string {
++	disp := `attachment; filename="` + quotedstring.Escape(fname) + `"`
+ 	if !utils.IsASCII(fname) {
+ 		disp += `; filename*=UTF-8''` + encodeExtValue(fname)
+ 	}
+@@ -277,7 +278,7 @@ func (r *DefaultRes) Attachment(filename ...string) {
+ 		fname = sanitizeFilename(fname)
+ 		fname = fallbackFilenameIfInvalid(fname)
+ 		r.Type(filepath.Ext(fname))
+-		r.setCanonical(HeaderContentDisposition, contentDispositionAttachment(r.c.app, fname))
++		r.setCanonical(HeaderContentDisposition, contentDispositionAttachment(fname))
+ 		return
+ 	}
+ 	r.setCanonical(HeaderContentDisposition, "attachment")
+@@ -410,7 +411,7 @@ func (r *DefaultRes) Download(file string, filename ...string) error {
+ 	}
+ 	fname = sanitizeFilename(fname)
+ 	fname = fallbackFilenameIfInvalid(fname)
+-	r.setCanonical(HeaderContentDisposition, contentDispositionAttachment(r.c.app, fname))
++	r.setCanonical(HeaderContentDisposition, contentDispositionAttachment(fname))
+ 	return r.SendFile(file)
+ }
+ 
+@@ -834,7 +835,7 @@ func (r *DefaultRes) Links(link ...string) {
+ 			bb.WriteString(`; rel="`)
+ 			// The rel value sits inside a quoted-string, so quotes and
+ 			// backslashes must be escaped (RFC 9110 Section 5.6.4).
+-			bb.WriteString(r.c.app.quoteRawString(link[i]))
++			bb.WriteString(quotedstring.Escape(link[i]))
+ 			bb.WriteString(`",`)
+ 		}
+ 	}

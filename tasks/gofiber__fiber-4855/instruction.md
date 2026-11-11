@@ -1,0 +1,22 @@
+# Issue
+
+**Title:** 🐛 bug: close the cache, proxy and session gaps found auditing the recent merges
+
+## Description
+
+# Description
+
+Found while auditing the commits merged since 135c141 for security issues. The code behind every finding came in with #4850. The audit found nothing high or critical. This fixes the two low findings and the informational ones that can be fixed in this repository, in separate commits:
+
+- **Cache.** A response that varies on a request header an inner middleware overwrote was stored under the value the client sent, so any client sending the same placeholder, such as an `X-User-Id` the middleware replaces with the session's, was served another client's page. Only an added header was refused, and a test and the docs pinned the rest. A response is now stored only when the headers it varies on reach the handler as the cache saw them. Added, rewritten or removed headers make it `X-Cache: unreachable`. The comparison hashes the headers the way the key does, so a change is exactly what would give the request another key. `varyLinesAdded`, `cookieAdded` and `fieldname.CountLines` are removed. A hit never looks at the headers the handler saw, so an entry the old rule stored would still be served from an external `Storage` that outlives the upgrade. The cache key version therefore moves from `v6` to `v7`, as the comment above it says to do whenever what a key stands for changes, and a test seeds a store with an entry under the `v6` keys and requires that it is not read.
+- **Proxy.** fasthttp ignores a client's `MaxResponseBodySize` for a body it hands over as a stream, so the 100 MiB default and any configured size bounded only buffered bodies. A streamed upstream body passed through unbounded, and a `ModifyResponse` hook that read one took all of it into memory. A streamed body is now held to the bound. A declared length over it is refused with `fasthttp.ErrBodyTooLarge` before anything is sent, and a body that passes it without declaring a length fails the read, which aborts the response. `Balancer` uses `MaxResponseBodySize` (100 MiB by default), and behind a `Client` of your own only a size that was set: its clients keep their own bounds for the bodies they buffer, but fasthttp applies none to a body they stream. `Do`, `Forward` and the other helpers use the `MaxResponseBodySize` of the client they use. Later commits cover a `ModifyResponse` hook that read a streamed body past the bound: fasthttp's `Response.Body` swaps a failed read for the error's text, which would have gone out as the body of a 200, so `Balancer` fails the request with `fasthttp.ErrBodyTooLarge` after the hook, unless the hook set a response of its own after the read, as one that reads the stream itself and sends a fallback for `fasthttp.ErrBodyTooLarge` does. A body that is exactly the error's text cannot be told from the failure `Body` leaves in place, so a hook that wants a status of its own returns an error, such as `fiber.ErrRequestEntityTooLarge`.
+- **Session.** The in-place edit check compared the loaded snapshot with the data using `reflect.DeepEqual`. A NaN is never equal to itself, so a session holding one always read as edited, and a request that only read it overwrote a change another request had stored, a role taken away for one. NaN now equals NaN in that comparison, and real in-place edits still count, also beside a NaN. The first version of that walk could follow data that refers to itself without end, as a registered type with its own `GobDecode` can rebuild in the snapshot, and overflow the stack. A review caught it, and a second commit makes the walk note the pairs it has compared, as `reflect.DeepEqual` does.
+- **Client docs.** A cancellation cannot reach a streamed response, because fasthttp keeps the connection in its own transport. A timeout or deadline can, and the docs now say so. This was checked against a server that accepts a request and never answers. No code changes.
+
+The other informational findings need nothing in this repository. The Go 1.26.0 standard library advisories are fixed by Go 1.26.1 to 1.26.10, and CI builds
+
+…(truncated)
+
+## Task
+
+Modify the repository so that the issue described above is resolved. The task's test suite verifies your patch by applying it on top of the base commit `95d7398102ac` and running the modified tests.

@@ -1,0 +1,137 @@
+diff --git a/internal/idnafold/idnafold.go b/internal/idnafold/idnafold.go
+new file mode 100644
+index 00000000000..1fe37837e27
+--- /dev/null
++++ b/internal/idnafold/idnafold.go
+@@ -0,0 +1,34 @@
++// Package idnafold converts a Unicode hostname label to the Punycode form a
++// browser puts on the wire (RFC 5891), so a hostname literal written in
++// source still matches the requests that name actually generates.
++package idnafold
++
++import (
++	"strings"
++
++	"github.com/gofiber/utils/v2"
++	"golang.org/x/net/idna"
++)
++
++// ToASCII converts host to its Punycode ("xn--...") form when it carries
++// non-ASCII characters, and returns it unchanged otherwise — including when
++// it is already Punycode, which is itself ASCII.
++//
++// A value containing a colon is returned unchanged: IDNA has no concept of a
++// port, and a bracketed IPv6 literal is never subject to IDNA. A caller with
++// a "host:port" or "[ipv6]:port" value splits it first and folds the host
++// part alone.
++//
++// Input idna.Lookup's stricter validation rejects is also returned
++// unchanged rather than as an error: it will not match any Punycode-encoded
++// value, which is the correct security default — reject by non-match, not by
++// a second error path every caller would have to remember to handle.
++func ToASCII(host string) string {
++	if host == "" || strings.IndexByte(host, ':') >= 0 || utils.IsASCII(host) {
++		return host
++	}
++	if ascii, err := idna.Lookup.ToASCII(host); err == nil {
++		return ascii
++	}
++	return host
++}
+diff --git a/middleware/hostauthorization/hostauthorization.go b/middleware/hostauthorization/hostauthorization.go
+index fdfb35c9ce3..fdf2532ca8c 100644
+--- a/middleware/hostauthorization/hostauthorization.go
++++ b/middleware/hostauthorization/hostauthorization.go
+@@ -5,9 +5,9 @@ import (
+ 	"strings"
+ 
+ 	"github.com/gofiber/fiber/v3"
++	"github.com/gofiber/fiber/v3/internal/idnafold"
+ 	"github.com/gofiber/utils/v2"
+ 	utilsstrings "github.com/gofiber/utils/v2/strings"
+-	"golang.org/x/net/idna"
+ )
+ 
+ // RFC 1035 length limits.
+@@ -87,7 +87,7 @@ func normalizeHost(host string) string {
+ 	if host != "" && host[0] != '[' && strings.IndexByte(host, ':') < 0 {
+ 		host = trimOneTrailingDot(host)
+ 		host = utilsstrings.ToLower(host)
+-		return toPunycode(host)
++		return idnafold.ToASCII(host)
+ 	}
+ 
+ 	if h, _, ok := utils.SplitHostPort(host); ok {
+@@ -99,7 +99,7 @@ func normalizeHost(host string) string {
+ 
+ 	host = trimOneTrailingDot(host)
+ 	host = utilsstrings.ToLower(host)
+-	return toPunycode(host)
++	return idnafold.ToASCII(host)
+ }
+ 
+ func trimOneTrailingDot(host string) string {
+@@ -110,18 +110,6 @@ func trimOneTrailingDot(host string) string {
+ 	return host
+ }
+ 
+-func toPunycode(host string) string {
+-	if host == "" || strings.IndexByte(host, ':') >= 0 || utils.IsASCII(host) {
+-		return host
+-	}
+-	if ascii, err := idna.Lookup.ToASCII(host); err == nil {
+-		return ascii
+-	}
+-	// Non-convertible input falls through; it won't match any Punycode entry,
+-	// which is the correct security default.
+-	return host
+-}
+-
+ func parseNormalizedAuthority(authority string) (string, bool) {
+ 	authority = utils.TrimSpace(authority)
+ 	if authority == "" {
+diff --git a/middleware/proxy/proxy.go b/middleware/proxy/proxy.go
+index 3b416fb254c..c78d25b9f64 100644
+--- a/middleware/proxy/proxy.go
++++ b/middleware/proxy/proxy.go
+@@ -16,6 +16,8 @@ import (
+ 
+ 	"github.com/gofiber/fiber/v3/internal/fieldname"
+ 	"github.com/gofiber/fiber/v3/internal/headerlookup"
++	"github.com/gofiber/fiber/v3/internal/idnafold"
++	utilsstrings "github.com/gofiber/utils/v2/strings"
+ 	"github.com/valyala/fasthttp"
+ )
+ 
+@@ -568,6 +570,19 @@ func selectClient(globalClient *fasthttp.Client, clients ...*fasthttp.Client) (*
+ // when AllowPrivateIPs is false the dispatching client's dial-time guard
+ // re-validates the resolved IP at connect time — so a rebinding-capable
+ // resolver cannot reach a private address through this handler.
++
++// foldHostnameLabel returns hostname with its host label folded to lowercase
++// Punycode, preserving an explicit port unchanged. It is the construction-time
++// counterpart to hostWithoutPort: that strips a port from the per-request wire
++// value, this normalizes the configured value once so the two sides compare
++// correctly regardless of how the operator spelled the domain.
++func foldHostnameLabel(hostname string) string {
++	if host, port, ok := utils.SplitHostPort(hostname); ok {
++		return idnafold.ToASCII(utilsstrings.ToLower(host)) + ":" + port
++	}
++	return idnafold.ToASCII(utilsstrings.ToLower(hostname))
++}
++
+ // hostWithoutPort strips the port from a Host header value, keeping a bracketed IPv6 literal.
+ func hostWithoutPort(host string) string {
+ 	if strings.HasPrefix(host, "[") {
+@@ -587,6 +602,11 @@ func DomainForward(hostname, addr string, clients ...*fasthttp.Client) fiber.Han
+ 	if err != nil {
+ 		panic(err)
+ 	}
++	// A Unicode hostname literal — entirely natural to write for a non-ASCII
++	// domain — never appears on the wire: a conforming client always sends
++	// the Punycode form (RFC 5891), so folding once here, rather than on
++	// every request, is what makes the two sides comparable at all.
++	hostname = foldHostnameLabel(hostname)
+ 	return func(c fiber.Ctx) error {
+ 		// Host names are case-insensitive (RFC 9110 §4.2.3) and fasthttp
+ 		// does not case-fold the raw Host header, so compare with

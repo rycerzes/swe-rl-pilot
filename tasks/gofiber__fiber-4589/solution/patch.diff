@@ -1,0 +1,18 @@
+diff --git a/middleware/cache/cache.go b/middleware/cache/cache.go
+index 3edf4b4ee86..a93fcaa04bf 100644
+--- a/middleware/cache/cache.go
++++ b/middleware/cache/cache.go
+@@ -411,6 +411,13 @@ func New(config ...Config) fiber.Handler {
+ 					return c.SendStatus(fiber.StatusGatewayTimeout)
+ 				}
+ 				return c.Next()
++			case entryHasExpiration && hasAuthorization && !e.shareable && reqDirectives.onlyIfCached:
++				if cfg.Storage != nil {
++					manager.release(e)
++				}
++				unlock()
++				c.Set(cfg.CacheHeader, cacheUnreachable)
++				return c.SendStatus(fiber.StatusGatewayTimeout)
+ 			case entryHasExpiration && !requestNoCache:
+ 				servedStale = entryExpired
+ 				if hasAuthorization && !e.shareable {

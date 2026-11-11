@@ -1,0 +1,1084 @@
+diff --git a/app.go b/app.go
+index 98eaaa074f5..141c76359c6 100644
+--- a/app.go
++++ b/app.go
+@@ -97,6 +97,9 @@ type App struct {
+ 	state *State
+ 	// shared state management (prefork-safe, storage-backed)
+ 	sharedState *SharedState
++	// headerHook is the HeaderReceived callback hookHeaderReceived installed, kept
++	// to tell it from one set since
++	headerHook func(*fasthttp.RequestHeader) fasthttp.RequestConfig
+ 	// Route stack divided by HTTP methods
+ 	stack [][]*Route
+ 	// customConstraints is a list of external constraints
+@@ -116,12 +119,12 @@ type App struct {
+ 	// pointer so a rebuild publishes each method's tree in one store.
+ 	treeIndex []*routeTree
+ 	// Precomputed unmatched-route indexes, rebuilt with the tree (router_skip.go)
+-	skip skipRouteIndex
+-	// sendfilesMutex is a mutex used for sendfile operations
+-	sendfilesMutex   sync.RWMutex
+-	mutex            sync.Mutex
++	skip             skipRouteIndex
+ 	autoHeadRouteID  uint64
+ 	autoHeadStackLen int
++	// sendfilesMutex is a mutex used for sendfile operations
++	sendfilesMutex sync.RWMutex
++	mutex          sync.Mutex
+ 	// Amount of registered handlers
+ 	handlersCount uint32
+ 	// contains the information if the route stack has been changed to build the optimized tree
+@@ -356,10 +359,11 @@ type Config struct { //nolint:govet // Aligning the struct fields is not necessa
+ 	// Default: ""
+ 	ProxyHeader string `json:"proxy_header"`
+ 
+-	// GETOnly rejects all non-GET requests if set to true.
++	// GETOnly rejects every method except GET and HEAD if set to true.
+ 	// This option is useful as anti-DoS protection for servers
+ 	// accepting only GET requests. The request size is limited
+-	// by ReadBufferSize if GETOnly is set.
++	// by ReadBufferSize if GETOnly is set. A rejected request gets 405 with
++	// "Allow: GET, HEAD".
+ 	//
+ 	// Default: false
+ 	GETOnly bool `json:"get_only"`
+@@ -1500,6 +1504,7 @@ func (app *App) Test(req *http.Request, config ...TestConfig) (*http.Response, e
+ 	}
+ 	// prepare the server for the start
+ 	app.startupProcess()
++	app.hookHeaderReceived()
+ 
+ 	// Serve conn to server
+ 	channel := make(chan error, 1)
+@@ -1714,6 +1719,18 @@ func (app *App) ErrorHandler(ctx Ctx, err error) error {
+ 	return app.config.ErrorHandler(ctx, err)
+ }
+ 
++const (
++	// getOnlyAllow is the Allow value of the 405 that Config.GETOnly produces.
++	getOnlyAllow = MethodGet + ", " + MethodHead
++
++	// unsupportedTransferCodingMarker precedes the quoted coding in fasthttp's
++	// error. The ErrUnsupportedTransferEncoding sentinel is not matched: it also
++	// covers HTTP/1.0 and repeated fields, which are framing errors and stay 400,
++	// and with Server.SecureErrorLogMessage it stands for every fault, the
++	// coding included, which then stays 400 as well.
++	unsupportedTransferCodingMarker = `unsupported transfer-encoding: "`
++)
++
+ // serverErrorHandler is a wrapper around the application's error handler method
+ // user for the fasthttp server configuration. It maps a set of fasthttp errors to fiber
+ // errors before calling the application's error handler method.
+@@ -1749,8 +1766,13 @@ func (app *App) serverErrorHandler(fctx *fasthttp.RequestCtx, err error) {
+ 		err = ErrRequestEntityTooLarge
+ 	case errors.Is(err, fasthttp.ErrGetOnly):
+ 		err = ErrMethodNotAllowed
++		// A 405 must carry Allow (RFC 9110 §15.5.6).
++		c.Set(HeaderAllow, getOnlyAllow)
+ 	case strings.Contains(errMessage, "unsupported http request method"):
+ 		err = ErrNotImplemented
++	case strings.Contains(errMessage, unsupportedTransferCodingMarker):
++		// An unknown transfer coding is a 501, not a 400 (RFC 9112 §6.1).
++		err = ErrNotImplemented
+ 	case strings.Contains(errMessage, "timeout"):
+ 		err = ErrRequestTimeout
+ 	default:
+@@ -1839,6 +1861,35 @@ func (app *App) hookConnState() {
+ 	}
+ }
+ 
++// hookHeaderReceived makes the server close the connection after a request that
++// carries both Content-Length and Transfer-Encoding (RFC 9112 §6.1), keeping a
++// user HeaderReceived callback. It must run before the body is decoded: after that
++// fasthttp has replaced the length and dropped the Content-Length value. Call it
++// right before the server serves: it wraps the callback set by then, in
++// ListenConfig.BeforeServeFunc too, and one replaced since an earlier start. Its
++// own hook is left alone: Test and a listener run on one server at the same time,
++// and the connections they serve read the callback.
++func (app *App) hookHeaderReceived() {
++	app.mutex.Lock()
++	defer app.mutex.Unlock()
++
++	if app.server == nil || sameFunc(app.server.HeaderReceived, app.headerHook) {
++		return
++	}
++	user := app.server.HeaderReceived
++	app.headerHook = func(header *fasthttp.RequestHeader) fasthttp.RequestConfig {
++		if bothFramingFields(header) {
++			header.SetConnectionClose()
++		}
++		if user != nil {
++			return user(header)
++		}
++		// The zero value keeps the server's own limits and timeouts.
++		return fasthttp.RequestConfig{}
++	}
++	app.server.HeaderReceived = app.headerHook
++}
++
+ // Run onListen hooks. If they return an error, panic.
+ func (app *App) runOnListenHooks(listenData *ListenData) {
+ 	if err := app.hooks.executeOnListenHooks(listenData); err != nil {
+diff --git a/ctx.go b/ctx.go
+index 0728bd066c1..2e3df4fd745 100644
+--- a/ctx.go
++++ b/ctx.go
+@@ -709,8 +709,10 @@ func (*DefaultCtx) Error(status int, message ...string) error {
+ 
+ // Status sets the HTTP status for the response.
+ // This method is chainable.
++//
++// A status outside 100 to 999 is logged and replaced by 500.
+ func (c *DefaultCtx) Status(status int) Ctx {
+-	c.fasthttp.Response.SetStatusCode(status)
++	c.fasthttp.Response.SetStatusCode(validStatus(status))
+ 	return c
+ }
+ 
+diff --git a/ctx_interface_gen.go b/ctx_interface_gen.go
+index d3425343e92..b9f45c4ea75 100644
+--- a/ctx_interface_gen.go
++++ b/ctx_interface_gen.go
+@@ -173,6 +173,8 @@ type Ctx interface {
+ 	Error(status int, message ...string) error
+ 	// Status sets the HTTP status for the response.
+ 	// This method is chainable.
++	//
++	// A status outside 100 to 999 is logged and replaced by 500.
+ 	Status(status int) Ctx
+ 	// ID returns the connection-unique identifier fasthttp assigned to this request,
+ 	// unlike RequestID, which reads a header. It is not unique across processes or
+@@ -289,6 +291,10 @@ type Ctx interface {
+ 	// AcceptsCharsets checks if the specified charset is acceptable.
+ 	AcceptsCharsets(offers ...string) string
+ 	// AcceptsEncodings checks if the specified encoding is acceptable.
++	//
++	// Per RFC 9110 §12.5.3, a missing Accept-Encoding accepts any coding (the first
++	// offer wins), an empty one only "identity", and "identity" is acceptable unless
++	// the field excludes it with q=0.
+ 	AcceptsEncodings(offers ...string) string
+ 	// AcceptsLanguages checks if the specified language is acceptable using
+ 	// RFC 4647 Basic Filtering.
+diff --git a/docs/api/ctx.md b/docs/api/ctx.md
+index 69ec77d77c4..7ba8a17e1c5 100644
+--- a/docs/api/ctx.md
++++ b/docs/api/ctx.md
+@@ -1075,6 +1075,24 @@ app.Get("/", func(c fiber.Ctx) error {
+ })
+ ```
+ 
++For `Accept-Encoding`, [RFC 9110 §12.5.3](https://www.rfc-editor.org/rfc/rfc9110#section-12.5.3) adds three rules to the weights:
++
++- A request without the header accepts any coding, so the first offer is returned.
++- A request whose header is present but empty wants no content coding, so only an `identity` offer matches.
++- `identity` (no coding) is acceptable even when the header does not list it, unless the header excludes it with `identity;q=0`, or with `*;q=0` and no entry of its own for `identity`. An unlisted `identity` ranks below every coding the header does list.
++
++```go title="Example 5"
++// Accept-Encoding: gzip
++c.AcceptsEncodings("gzip", "identity") // "gzip"
++c.AcceptsEncodings("br", "identity")   // "identity": br is not listed, identity is acceptable unless excluded
++
++// Accept-Encoding: gzip, identity;q=0
++c.AcceptsEncodings("br", "identity")   // "": identity is excluded
++
++// Accept-Encoding: (present, empty)
++c.AcceptsEncodings("gzip", "identity") // "identity": the client wants no coding
++```
++
+ ### AcceptsEventStream
+ 
+ Returns `true` when the `Accept` header allows `text/event-stream`.
+@@ -3161,6 +3179,12 @@ app.Get("/", func(c fiber.Ctx) error {
+ })
+ ```
+ 
++:::caution Cookie values
++The grammar of [RFC 6265 §4.1.1](https://www.rfc-editor.org/rfc/rfc6265#section-4.1.1) allows visible ASCII in a cookie value, without the double quote, the comma, the semicolon, the backslash and whitespace. A `Value` that holds a character outside the grammar is not altered: the cookie is not set, as with an invalid name or `Domain`. The exceptions are the space and the comma, which many applications use: a value with either is written inside double quotes, as `net/http` does (`Value: "hello world"` is sent as `n="hello world"`), and so is a value that already starts and ends with a double quote. The quotes frame the value and are not part of it, so `GetCookie` and the `Cookies` of the request that carries the cookie back return `hello world`.
++
++Quoted spaces and commas are widely accepted but are not strictly what the grammar allows. A strict parser can drop them, so percent-encode a value that has to travel through one, for example with `url.QueryEscape`, and decode it when you read it.
++:::
++
+ :::info
+ When setting a cookie with `SameSite=None`, Fiber automatically sets `Secure=true` as required by RFC 6265bis and modern browsers. This ensures compliance with the "None" SameSite policy which mandates that cookies must be sent over secure connections.
+ 
+@@ -3778,7 +3802,8 @@ type SendFile struct {
+   // Optional. Default: false
+   Compress bool `json:"compress"`
+ 
+-  // When set to true, enables byte range requests.
++  // When set to true, enables byte range requests. A request for several
++  // ranges, or whose If-Range does not match, gets the whole file.
+   //
+   // Optional. Default: false
+   ByteRange bool `json:"byte_range"`
+@@ -3845,6 +3870,15 @@ app.Get("/files/:name", func(c fiber.Ctx) error {
+ 
+ :::
+ 
++:::info Byte ranges
++With `ByteRange` on, the file server answers one range of a `GET` request: `Range: bytes=0-499`, `bytes=500-` or `bytes=-500`, with `206 Partial Content`, `Content-Range` and `Accept-Ranges: bytes`. [RFC 9110 §13.1.5 and §14.2](https://www.rfc-editor.org/rfc/rfc9110#section-14.2) say what else a server does with the field, and Fiber applies it around that single range:
++
++- The unit is case-insensitive, so `Range: Bytes=0-499` is a range.
++- A request for **several ranges** (`bytes=0-499,1000-1499`), with a **unit the server does not know**, or with a method other than `GET` (`HEAD` included) is answered with the whole file, as if it carried no `Range`. Several ranges used to be refused with `416`, a status that is for ranges that cannot be satisfied.
++- **`If-Range`** makes the range conditional on the file being the one the client holds. The range is served only when the date it carries is exactly the file's `Last-Modified`, and that time is at least two seconds old (the header has whole-second resolution, and a younger file may still change within the second it names); when the file has changed, the whole file is sent instead of a piece that would be spliced onto the client's stale copy. An entity-tag matches only an `ETag` your handler set before calling `SendFile`: the file server sends none. A date cannot tell apart two versions written within the same second, so a file that is replaced in place while clients resume it should carry a strong `ETag`.
++- A range that cannot be satisfied is answered with `416 Range Not Satisfiable`, and with `Content-Range: bytes */<size>` for `SendFile`.
++:::
++
+ :::info
+ You can set the `CacheDuration` config property to `-1` to disable caching.
+ :::
+@@ -3931,6 +3965,10 @@ If the provided stream implements `io.Closer`, it will be automatically closed b
+ the response is fully sent or if an error occurs.
+ :::
+ 
++:::caution HTTP/1.0 clients
++A stream of unknown size is sent with chunked framing, which a server must not do in response to a request older than HTTP/1.1 ([RFC 9112 §6.1](https://www.rfc-editor.org/rfc/rfc9112#section-6.1)). Fiber does it on purpose: the RFC's alternative, ending the body by closing the connection ([§6.3](https://www.rfc-editor.org/rfc/rfc9112#section-6.3)), is not something fasthttp offers, and reading the stream to its end before replying would hold the handler for as long as the stream lasts, with no way to tell that the client left. Proxies that speak HTTP/1.0 to their upstream, such as nginx before 1.29.7 unless `proxy_http_version 1.1` is set, are the usual source of such requests. Pass the size when you know it: a stream of known size is sent with a `Content-Length` as it is read, whatever the HTTP version.
++:::
++
+ :::caution
+ When passing `fiber.Ctx` as a `context.Context` to libraries that spawn goroutines (e.g., for streaming operations),
+ those goroutines may attempt to access the context after the handler returns. Since `fiber.Ctx` is recycled and
+@@ -3994,6 +4032,10 @@ on the provided writer. Otherwise, the buffered stream flushes after
+ `streamWriter` returns.
+ :::
+ 
++:::caution HTTP/1.0 clients
++The response is chunked, even for a request older than HTTP/1.1, for the reasons given under [`SendStream`](#sendstream). A client that cannot read a chunked response cannot be sent a stream of unknown size.
++:::
++
+ :::note
+ `w.Flush()` will return an error if the client disconnects before `streamWriter` finishes writing a response.
+ :::
+@@ -4068,6 +4110,10 @@ Sets the HTTP status for the response.
+ This method is **chainable**.
+ :::
+ 
++:::caution Status codes outside 100 to 999
++A status line carries three digits ([RFC 9112 §4](https://www.rfc-editor.org/rfc/rfc9112#section-4)), so a code below `100` or above `999` cannot be sent: `99` and `1000` would be malformed status lines that clients refuse, and `0` or a negative number would go out as `200 OK`, reporting a failure as a success. `Status` answers `500 Internal Server Error` for such a code and logs it, which also covers [`SendStatus`](#sendstatus), `Redirect().Status` and an error created with `fiber.NewError`. Codes from `600` to `999` are sent as given, although [RFC 9110 §15](https://www.rfc-editor.org/rfc/rfc9110#section-15) defines only `100` to `599` and clients treat the rest as a `5xx`.
++:::
++
+ ```go title="Signature"
+ func (c fiber.Ctx) Status(status int) fiber.Ctx
+ func (r fiber.Res) Status(status int) fiber.Ctx
+diff --git a/docs/api/fiber.md b/docs/api/fiber.md
+index 76e5678feba..2da395958d7 100644
+--- a/docs/api/fiber.md
++++ b/docs/api/fiber.md
+@@ -62,7 +62,7 @@ app := fiber.New(fiber.Config{
+ | <Reference id="enableipvalidation">EnableIPValidation</Reference>                     | `bool`                                                          | If set to true, `c.IP()` and `c.IPs()` will validate IP addresses before returning them. Also, `c.IP()` will return a single validated IP rather than the raw header value, which for `X-Forwarded-For` may be a comma-separated chain: when `TrustProxyConfig` names proxy IPs or ranges (`Proxies`, `Loopback`, `Private` or `LinkLocal`), the chain is walked from right to left and those proxies are skipped; otherwise, including when only `UnixSocket` is trusted, the first valid IP from the left is returned (see [`Ctx.IP`](ctx.md#ip)). Enable it whenever `c.IP()` is used as a single client identifier and the header can carry a chain, for example by the [limiter](../middleware/limiter.md) middleware or an IP allowlist.<br /><br />**WARNING:** There is a small performance cost to doing this validation. It is not needed when your reverse proxy overwrites this header with a single client IP or you use a single-IP header such as `X-Real-IP`; keep it disabled there if speed is your main concern.                                                                                                                                                                                                                                                                                                                                                                         | `false`                                                                |
+ | <Reference id="enablesplittingonparsers">EnableSplittingOnParsers</Reference>         | `bool`                                                          | Splits query, body, and header parameters on commas when enabled.<br /><br />For example, `/api?foo=bar,baz` becomes `foo[]=bar&foo[]=baz`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `false`                                                                |
+ | <Reference id="errorhandler">ErrorHandler</Reference>                                 | `ErrorHandler`                                                  | ErrorHandler is executed when an error is returned from fiber.Handler. Mounted fiber error handlers are retained by the top-level app and applied on prefix associated requests.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `DefaultErrorHandler`                                                  |
+-| <Reference id="getonly">GETOnly</Reference>                                           | `bool`                                                          | Rejects all non-GET requests if set to true. This option is useful as anti-DoS protection for servers accepting only GET requests. The request size is limited by ReadBufferSize if GETOnly is set.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | `false`                                                                |
++| <Reference id="getonly">GETOnly</Reference>                                           | `bool`                                                          | Rejects every method except GET and HEAD if set to true. This option is useful as anti-DoS protection for servers accepting only GET requests. The request size is limited by ReadBufferSize if GETOnly is set. A rejected request is answered `405 Method Not Allowed` with `Allow: GET, HEAD`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `false`                                                                |
+ | <Reference id="idletimeout">IdleTimeout</Reference>                                   | `time.Duration`                                                 | The maximum amount of time to wait for the next request when keep-alive is enabled. If IdleTimeout is zero, the value of ReadTimeout is used.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `0`                                                                    |
+ | <Reference id="immutable">Immutable</Reference>                                       | `bool`                                                          | When enabled, all values returned by context methods are immutable. By default, they are valid until you return from the handler; see issue [\#185](https://github.com/gofiber/fiber/issues/185).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | `false`                                                                |
+ | <Reference id="jsondecoder">JSONDecoder</Reference>                                   | `utils.JSONUnmarshal`                                           | Allowing for flexibility in using another json library for decoding.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `json.Unmarshal`                                                       |
+diff --git a/docs/middleware/static.md b/docs/middleware/static.md
+index 7b243ff1594..dc44ccbdd1c 100644
+--- a/docs/middleware/static.md
++++ b/docs/middleware/static.md
+@@ -160,7 +160,7 @@ The file server opens the name the router matched, so it is only as strict as th
+ | Next       | `func(fiber.Ctx) bool` | Next defines a function to skip this middleware when it returns true.                                                                              | `nil`                  |
+ | FS       | `fs.FS` | FS is the file system to serve the static files from.<br /><br />You can use interfaces compatible with fs.FS like embed.FS, os.DirFS etc.                                                 | `nil`                  |
+ | Compress       | `bool` | When set to true, the server tries minimizing CPU usage by caching compressed files. The middleware will compress the response using `gzip`, `brotli`, or `zstd` compression depending on the [Accept-Encoding](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Accept-Encoding) header. <br /><br />This works differently than the github.com/gofiber/compression middleware.                                                                              | `false`                  |
+-| ByteRange       | `bool` | When set to true, enables byte range requests.                                                                             | `false`                  |
++| ByteRange       | `bool` | When set to true, enables byte range requests. A request for several ranges, or whose `If-Range` does not match, gets the whole file. | `false`                  |
+ | Browse       | `bool` | When set to true, enables directory browsing.                                                                             | `false`                  |
+ | Download       | `bool` | When set to true, enables direct download.                                                                             | `false`                  |
+ | IndexNames       | `[]string` | The names of the index files for serving a directory.                                                                             | `[]string{"index.html"}`                  |
+diff --git a/docs/middleware/timeout.md b/docs/middleware/timeout.md
+index 35542ac78bd..dcd014e2c94 100644
+--- a/docs/middleware/timeout.md
++++ b/docs/middleware/timeout.md
+@@ -6,7 +6,7 @@ id: timeout
+ 
+ The timeout middleware enforces a deadline on handler execution. It wraps handlers with
+ `context.WithTimeout`, exposes the derived context through `c.Context()`, and
+-returns `408 Request Timeout` when the deadline is exceeded.
++returns `503 Service Unavailable` when the deadline is exceeded.
+ 
+ ## How It Works
+ 
+@@ -14,7 +14,7 @@ When a timeout occurs, the middleware **returns immediately** without waiting fo
+ handler to finish. This is achieved through Fiber's **Abandon mechanism**:
+ 
+ 1. The handler runs in a goroutine with a timeout context
+-2. On timeout, the middleware marks the context as "abandoned" and returns `408` immediately
++2. On timeout, the middleware marks the context as "abandoned" and returns `503` immediately
+ 3. The handler goroutine can continue safely (e.g., for cleanup) without blocking the response
+ 4. A background cleanup goroutine waits for the handler to finish and performs context cleanup
+ 
+@@ -23,9 +23,22 @@ This is the recommended pattern for cooperative cancellation.
+ 
+ If a handler panics, the middleware catches it and returns `500 Internal Server Error`.
+ 
++## Why 503
++
++A handler that outlives its deadline is slow on the server's side: the request arrived complete. `408 Request Timeout` means the server did not receive a complete request in time ([RFC 9110 §15.5.9](https://www.rfc-editor.org/rfc/rfc9110#section-15.5.9)), and it tells the client that it may send the request again, while the timed-out handler can still be running and may finish its work. The default is therefore `503 Service Unavailable` ([§15.6.4](https://www.rfc-editor.org/rfc/rfc9110#section-15.6.4)). Use `504 Gateway Timeout` ([§15.6.5](https://www.rfc-editor.org/rfc/rfc9110#section-15.6.5)) when the handler stands in front of an upstream that did not answer in time, and return it from `OnTimeout`:
++
++```go
++timeout.Config{
++    Timeout: 5 * time.Second,
++    OnTimeout: func(c fiber.Ctx) error {
++        return fiber.ErrGatewayTimeout
++    },
++}
++```
++
+ ## Known limitations
+ 
+-- The timed-out handler keeps running in its own goroutine while the middleware returns `fiber.ErrRequestTimeout` (or runs `OnTimeout`). A handler must stop using the context once `c.Context()` is done: one that keeps writing the response races with `OnTimeout`.
++- The timed-out handler keeps running in its own goroutine while the middleware returns `fiber.ErrServiceUnavailable` (or runs `OnTimeout`). A handler must stop using the context once `c.Context()` is done: one that keeps writing the response races with `OnTimeout`.
+ 
+ - The error is returned to the outer middleware, but the app's `ErrorHandler` is not run for a timed-out request: fasthttp already holds the response it will send, so the handler could not change it, and the timed-out handler may still be writing to the context.
+ 
+@@ -102,7 +115,7 @@ Use these requests to see the middleware in action:
+ 
+ ```bash
+ curl -i http://localhost:3000/sleep/1000   # finishes within the timeout
+-curl -i http://localhost:3000/sleep/3000   # returns 408 Request Timeout
++curl -i http://localhost:3000/sleep/3000   # returns 503 Service Unavailable
+ ```
+ 
+ ## Config
+@@ -111,7 +124,7 @@ curl -i http://localhost:3000/sleep/3000   # returns 408 Request Timeout
+ |:------------|:-------------------|:---------------------------------------------------------------------|:-------|
+ | Next        | `func(fiber.Ctx) bool` | Function to skip this middleware when it returns `true`.            | `nil`  |
+ | Timeout     | `time.Duration`    | Timeout duration for requests. `0` or a negative value disables the timeout. | `0`    |
+-| OnTimeout   | `fiber.Handler`    | Handler executed when a timeout occurs. It may write the response itself or return a `*fiber.Error`, whose status and message then form the response; otherwise the default 408 is sent. Defaults to returning `fiber.ErrRequestTimeout`. | `nil`  |
++| OnTimeout   | `fiber.Handler`    | Handler executed when a timeout occurs. It may write the response itself or return a `*fiber.Error`, whose status and message then form the response; otherwise the default 503 is sent. Defaults to returning `fiber.ErrServiceUnavailable`. | `nil`  |
+ | Errors      | `[]error`          | Custom errors treated as timeout errors.                            | `nil`  |
+ 
+ ### Use with a custom error
+diff --git a/docs/whats_new.md b/docs/whats_new.md
+index 47b53275f27..77c8b14358f 100644
+--- a/docs/whats_new.md
++++ b/docs/whats_new.md
+@@ -222,6 +222,14 @@ app.Listen(":444", fiber.ListenConfig{
+ 
+ `MIMEApplicationJavaScript` and `MIMEApplicationJavaScriptCharsetUTF8` are deprecated. Use `MIMETextJavaScript` and `MIMETextJavaScriptCharsetUTF8` instead.
+ 
++### Protocol error responses
++
++Requests that the server refuses before routing, because of how they are framed or which method they use, are answered as [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110) and [RFC 9112](https://www.rfc-editor.org/rfc/rfc9112) ask:
++
++- **`GETOnly`**: the `405 Method Not Allowed` sent for any other method now carries `Allow: GET, HEAD`, as every 405 must.
++- **Unknown transfer coding**: a request whose `Transfer-Encoding` names a coding the server cannot decode (`gzip, chunked`, say) is answered `501 Not Implemented`; it used to be `400 Bad Request`, and the body no longer repeats the start of the request. A malformed message, such as a repeated `Transfer-Encoding` field or the field on an HTTP/1.0 request, is still `400`, and so is every one of these when `app.Server().SecureErrorLogMessage` is set, because fasthttp then no longer says which coding it saw.
++- **`Content-Length` together with `Transfer-Encoding`**: the request is processed as before, by its `Transfer-Encoding` or, when the field says `identity`, which fasthttp ignores, by its `Content-Length`, and the connection is now closed after the response (`Connection: close`). The two fields are how a request-smuggling message looks, and the bytes behind it on the connection may belong to a request that another recipient framed differently. Fiber installs this check right before the server it starts begins to serve (`Listen`, `Listener`, `Test`), and keeps the `HeaderReceived` callback you set on `app.Server()` up to then, in `ListenConfig.BeforeServeFunc` too. A callback you set again between two starts is wrapped at the next one. A `fasthttp.Server` of your own that serves `app.Handler()` needs the same check in its own `HeaderReceived` callback.
++
+ ## 🎣 Hooks
+ 
+ We have made several changes to the Fiber hooks, including:
+@@ -804,6 +812,31 @@ for the response. The response cookies are `c.Res().GetCookies()`, named apart f
+   fasthttp emits for a declared length; neither line is sent now. `205 Reset Content` still sends
+   `Content-Length: 0`, which [Section 15.3.6](https://www.rfc-editor.org/rfc/rfc9110#section-15.3.6) requires.
+   Unlike the two above, this applies under the default configuration.
++- **AcceptsEncodings()**: Follows [RFC 9110, Section 12.5.3](https://www.rfc-editor.org/rfc/rfc9110#section-12.5.3).
++  `identity`, the absence of a coding, is now acceptable when the `Accept-Encoding` header does not list it, unless
++  the header excludes it with `identity;q=0` or `*;q=0`: `c.AcceptsEncodings("br", "identity")` answers `"identity"`
++  for `Accept-Encoding: gzip`, where it answered `""`. An unlisted `identity` ranks below every coding the header does
++  list. A header that is present but empty now accepts only `identity`; it used to read as absent, which accepts the
++  first offer.
++- **Status()**: A code outside `100` to `999` cannot be written as a status line
++  ([RFC 9112, Section 4](https://www.rfc-editor.org/rfc/rfc9112#section-4)). `c.Status(99)` and `c.Status(1000)` used to
++  put a malformed line on the wire that clients refuse, and `c.Status(0)` or a negative code put `200 OK` there. They
++  now answer `500 Internal Server Error` and log the code. `SendStatus`, `Redirect().Status` and an error built with
++  `fiber.NewError` go through `Status`, so they follow. Codes from `600` to `999` are still sent as given.
++- **Cookie()**: A value with a space or a comma is now written in double quotes, as `net/http` does, because neither is
++  a `cookie-octet` ([RFC 6265, Section 4.1.1](https://www.rfc-editor.org/rfc/rfc6265#section-4.1.1)).
++  `c.Cookie(&fiber.Cookie{Name: "n", Value: "hello world"})` used to send `n=hello world` and sends `n="hello world"`
++  now; the quotes frame the value, and `Cookies` and `GetCookie` return `hello world`. A value that already starts and
++  ends with a double quote is accepted and written quoted instead of being dropped as invalid. Values with a semicolon,
++  an inner double quote, a backslash, a control character or a non-ASCII character are still refused. Percent-encode a
++  value that has to pass through a strict parser.
++- **SendFile() and the static middleware, with `ByteRange`**: The file server answered one byte range and nothing
++  else. Fiber now applies the rest of [RFC 9110, Section 13.1.5 and Section 14.2](https://www.rfc-editor.org/rfc/rfc9110#section-14.2)
++  around it. A request for several ranges used to get `416`; it gets the whole file, as does one with a range unit the
++  server does not know and one with a method other than `GET` (a `HEAD` or `POST` with a `Range` used to get `206`).
++  The unit is case-insensitive (`Bytes=0-4` used to get `416`). `If-Range` was ignored, so a resumed download was
++  spliced onto a file that had changed; the range is now served only when the date in `If-Range` is exactly the file's
++  `Last-Modified` (and at least two seconds old), and the whole file is sent otherwise.
+ - **Context()**: Renamed to `RequestCtx()` to access the underlying `fasthttp.RequestCtx`.
+ - **IP()**: When `EnableIPValidation` is `true` and `TrustProxyConfig` is set, `c.IP()` now walks the `X-Forwarded-For` chain from right to left and returns the first non-trusted IP, instead of the leftmost syntactically valid IP. This closes an IP-spoofing vector where an attacker could prepend a fake address and have it returned by `c.IP()`. Apps with `EnableIPValidation = false` (the default) are unaffected. See [`Ctx.IP`](./api/ctx.md#ip) and the [reverse proxy guide](./guide/reverse-proxy.md#getting-the-real-client-ip-address) for details.
+ 
+@@ -1868,6 +1901,7 @@ The timeout middleware is now configurable. A new `Config` struct allows customi
+ 
+ **Behavioral changes:**
+ 
++- **Status**: The default response for a timed-out handler is `503 Service Unavailable`, not `408 Request Timeout`. The request arrived complete and the handler is what is slow, whereas `408` means the server did not receive a complete request in time ([RFC 9110, Section 15.5.9](https://www.rfc-editor.org/rfc/rfc9110#section-15.5.9)) and tells the client it may send the request again, while the timed-out handler can still be running. Return `fiber.ErrRequestTimeout` (or `fiber.ErrGatewayTimeout` for a handler that waits on an upstream) from `OnTimeout` to keep or choose another status.
+ - **Immediate return on timeout**: The middleware now returns immediately when a timeout occurs, without waiting for the handler to finish. This is achieved through the new **Abandon mechanism** which marks the context as abandoned so it won't be returned to the pool while the handler is still running.
+ - **Context propagation**: The timeout context is properly propagated to the handler. Handlers can detect timeouts by listening on `c.Context().Done()` and return early.
+ - **Panic handling**: Panics in the handler are caught and converted to `500 Internal Server Error` responses.
+diff --git a/helpers.go b/helpers.go
+index 4e475c88a73..56903fea243 100644
+--- a/helpers.go
++++ b/helpers.go
+@@ -540,12 +540,14 @@ type joinedHeaderValue struct {
+ 	key      string
+ 	combined []byte
+ 	multi    bool
++	seen     bool
+ }
+ 
+ func (j *joinedHeaderValue) visit(k, v []byte) {
+ 	if len(k) != len(j.key) || !utils.EqualFold(utils.UnsafeString(k), j.key) {
+ 		return
+ 	}
++	j.seen = true
+ 	j.combined, j.multi = headerlist.JoinNext(j.combined, v, j.multi)
+ }
+ 
+@@ -554,6 +556,13 @@ func (j *joinedHeaderValue) visit(k, v []byte) {
+ // per-call key normalization. Concrete (non-generic) so the visitor stays on
+ // the stack.
+ func peekJoinedRequestHeader(h *fasthttp.RequestHeader, key string) []byte {
++	value, _ := lookupJoinedRequestHeader(h, key)
++	return value
++}
++
++// lookupJoinedRequestHeader is peekJoinedRequestHeader that also reports whether
++// the request has a field line for key, which an empty value does not tell.
++func lookupJoinedRequestHeader(h *fasthttp.RequestHeader, key string) ([]byte, bool) {
+ 	j := joinedHeaderValue{key: key}
+ 	// VisitAll (not the replacement All) keeps this zero-alloc: All returns
+ 	// an iterator closure that escapes to the heap on every call. The SA1019
+@@ -565,7 +574,7 @@ func peekJoinedRequestHeader(h *fasthttp.RequestHeader, key string) []byte {
+ 	// preserves the relative order of repeated field lines sharing a key,
+ 	// which is all this helper needs; it only reorders across distinct keys.
+ 	h.VisitAll(j.visit)
+-	return j.combined
++	return j.combined, j.seen
+ }
+ 
+ // peekJoinedResponseHeader is peekJoinedRequestHeader for response headers.
+@@ -878,6 +887,43 @@ func sortAcceptedTypes(at []acceptedType) {
+ 	}
+ }
+ 
++// getEncodingOffer is getOffer for Accept-Encoding, where "identity" is also
++// acceptable unless the field excludes it (RFC 9110 §12.5.3). An unlisted
++// identity ranks below every coding the field lists.
++func getEncodingOffer(header []byte, offers []string) string {
++	if offer := getOffer(header, acceptsOffer, offers...); offer != "" {
++		return offer
++	}
++	// getOffer has already weighed an identity the field mentions.
++	if identity := identityOffer(offers); identity != "" && !identityListed(header) {
++		return identity
++	}
++	return ""
++}
++
++// identityOffer returns the offer naming no content coding, or "".
++func identityOffer(offers []string) string {
++	for _, offer := range offers {
++		// The length check first: EqualFold is a call, and most offers are not identity.
++		if len(offer) == len(StrIdentity) && utils.EqualFold(offer, StrIdentity) {
++			return offer
++		}
++	}
++	return ""
++}
++
++// identityListed reports whether the field mentions identity or the "*" wildcard.
++func identityListed(header []byte) bool {
++	for element := range headerlist.All(utils.UnsafeString(header)) {
++		coding, _, _ := utils.CutByte(element, ';')
++		coding = utils.TrimSpace(coding)
++		if coding == "*" || utils.EqualFold(coding, StrIdentity) {
++			return true
++		}
++	}
++	return false
++}
++
+ // isEtagStale reports whether a response with the given ETag would be considered
+ // stale when presented with the raw If-None-Match header value. Comparison is
+ // weak as defined by RFC 9110 §8.8.3.2.
+@@ -975,6 +1021,46 @@ func matchNoCacheToken(s string, i int) bool {
+ 		(b[7]|asciiCaseFold) == 'e'
+ }
+ 
++// sameFunc reports whether a is the non-nil callback b, which == cannot say for
++// funcs: it compares the closure each value points to.
++func sameFunc(a, b func(*fasthttp.RequestHeader) fasthttp.RequestConfig) bool {
++	return a != nil && *(*unsafe.Pointer)(unsafe.Pointer(&a)) == *(*unsafe.Pointer)(unsafe.Pointer(&b)) //nolint:gosec // funcs are only comparable to nil
++}
++
++// bothFramingFields reports whether a request carries Content-Length and
++// Transfer-Encoding (RFC 9112 §6.1). fasthttp keeps no trace of the second one in
++// the length it reports: chunked wins and the Content-Length value is dropped, and
++// "identity" is ignored, leaving the Content-Length framing.
++func bothFramingFields(h *fasthttp.RequestHeader) bool {
++	switch length := h.ContentLength(); {
++	case length == -1: // chunked
++		return hasHeaderField(h.RawHeaders(), HeaderContentLength)
++	case length >= 0: // framed by Content-Length
++		return hasHeaderField(h.RawHeaders(), HeaderTransferEncoding)
++	}
++	return false // -2: neither field
++}
++
++// hasHeaderField reports whether raw, a request's header block, has a line for the
++// field name, which is the only place left to look for what fasthttp drops or
++// ignores. Whitespace before the colon is not matched: fasthttp rejects that
++// request.
++func hasHeaderField(raw []byte, name string) bool {
++	for len(raw) > 0 {
++		line := raw
++		if i := bytes.IndexByte(raw, '\n'); i >= 0 {
++			line, raw = raw[:i], raw[i+1:]
++		} else {
++			raw = nil
++		}
++		if len(line) > len(name) && line[len(name)] == ':' &&
++			utils.EqualFold(utils.UnsafeString(line[:len(name)]), name) {
++			return true
++		}
++	}
++	return false
++}
++
+ var errTestConnClosed = errors.New("testConn is closed")
+ 
+ type testConn struct {
+@@ -1087,6 +1173,31 @@ func (app *App) method(methodInt int) string {
+ 	return app.config.RequestMethods[methodInt]
+ }
+ 
++// The status line carries three digits (RFC 9112 §4). RFC 9110 §15 only defines
++// 100..599, but 600..999 is still well-formed, so it is let through.
++const (
++	minStatusCode = 100
++	maxStatusCode = 999
++)
++
++// validStatus returns status if it fits a status line, else 500. fasthttp would
++// write 99 or 1000 as a malformed line and 0 as a 200.
++func validStatus(status int) int {
++	if status < minStatusCode || status > maxStatusCode {
++		return invalidStatus(status)
++	}
++	return status
++}
++
++// invalidStatus logs the status and returns the one sent instead. It stays out of
++// line so that validStatus, and Status with it, can be inlined.
++//
++//go:noinline
++func invalidStatus(status int) int {
++	log.Errorf("fiber: status code %d is not a three-digit HTTP status, sending %d instead", status, StatusInternalServerError)
++	return StatusInternalServerError
++}
++
+ // IsMethodSafe reports whether the HTTP method is considered safe.
+ // See https://datatracker.ietf.org/doc/html/rfc9110#section-9.2.1
+ func IsMethodSafe(m string) bool {
+diff --git a/internal/byterange/byterange.go b/internal/byterange/byterange.go
+new file mode 100644
+index 00000000000..f650cc16726
+--- /dev/null
++++ b/internal/byterange/byterange.go
+@@ -0,0 +1,204 @@
++// Package byterange adds the Range and If-Range rules (RFC 9110 §13.1.5, §14.2)
++// that fasthttp's file server lacks: it refuses several ranges with 416, takes
++// only a lower-case "bytes" unit, applies Range to HEAD and ignores If-Range.
++// It is shared by Ctx.SendFile and the static middleware.
++package byterange
++
++import (
++	"bytes"
++	"strings"
++	"time"
++
++	"github.com/gofiber/utils/v2"
++	"github.com/valyala/fasthttp"
++)
++
++const (
++	// unitBytes is the only unit the file server knows. Units are
++	// case-insensitive (RFC 9110 §14.1), its parser is not.
++	unitBytes = "bytes"
++
++	weakPrefix = "W/"
++
++	// A Last-Modified time is implicitly weak unless the server knows the file did
++	// not change twice within that second (§8.8.2.2), which it cannot. Two seconds
++	// of age only rules out a file still being written; one rewritten within the
++	// second a client fetched it in still matches that client's date.
++	strongAfter = 2 * time.Second
++)
++
++// verdict is what to do with a Range field before the file server sees it.
++type verdict int
++
++const (
++	pass    verdict = iota // as is; the file server rejects what it cannot parse
++	rewrite                // spelled the way the file server parses it
++	ignore                 // without the field, so the whole file is sent
++)
++
++// plan is what to do with a Range field; for rewrite, canonical is the field to use.
++type plan struct {
++	canonical []byte
++	verdict   verdict
++}
++
++// classify decides what to do with a Range field, building a rewrite in dst.
++func classify(dst, field []byte) plan {
++	unit, set, found := utils.CutByte(field, '=')
++	unit = utils.TrimSpace(unit)
++	if !found || len(unit) == 0 {
++		return plan{verdict: pass}
++	}
++	// A Range with an unknown unit must be ignored (§14.2).
++	if !utils.EqualFold(utils.UnsafeString(unit), unitBytes) {
++		return plan{verdict: ignore}
++	}
++
++	// The file server answers one range. Several are ignored, which §14.2 allows,
++	// rather than refused with a 416.
++	var spec []byte
++	for set != nil {
++		var element []byte
++		element, set, found = utils.CutByte(set, ',')
++		if !found {
++			set = nil
++		}
++		// Empty list elements are ignored (§5.6.1.2).
++		element = utils.TrimSpace(element)
++		if len(element) == 0 {
++			continue
++		}
++		if spec != nil {
++			return plan{verdict: ignore}
++		}
++		spec = element
++	}
++	if spec == nil {
++		return plan{verdict: pass}
++	}
++
++	canonical := append(append(dst[:0], unitBytes...), '=')
++	canonical = append(canonical, spec...)
++	if bytes.Equal(canonical, field) {
++		return plan{verdict: pass}
++	}
++	return plan{canonical: canonical, verdict: rewrite}
++}
++
++// Wrap returns handler, a fasthttp file server with byte ranges enabled, with the
++// Range field handled as RFC 9110 asks. The field is ignored, and the whole file
++// sent, for a non-GET request, a unit other than "bytes", several ranges, or an
++// If-Range that does not match the Last-Modified the file server sent.
++func Wrap(handler fasthttp.RequestHandler) fasthttp.RequestHandler {
++	return func(ctx *fasthttp.RequestCtx) {
++		serveAt(ctx, handler, time.Now)
++	}
++}
++
++// serveAt is the handler Wrap returns, with the clock that ages a Last-Modified given.
++func serveAt(ctx *fasthttp.RequestCtx, handler fasthttp.RequestHandler, now func() time.Time) {
++	header := &ctx.Request.Header
++	field := header.Peek(fasthttp.HeaderRange)
++	if len(field) == 0 {
++		handler(ctx)
++		return
++	}
++
++	// Only GET has range semantics (§14.2).
++	var buf [64]byte
++	p := plan{verdict: ignore}
++	if ctx.IsGet() {
++		p = classify(buf[:0], field)
++	}
++
++	ifRange := header.Peek(fasthttp.HeaderIfRange)
++	if len(ifRange) == 0 || p.verdict == ignore {
++		p.serve(ctx, handler)
++		return
++	}
++	// The value is copied because serving rearranges the request header's storage.
++	serveConditional(ctx, handler, p, utils.CopyBytes(ifRange), now)
++}
++
++// serve runs handler for the Range field as the plan has it.
++func (p plan) serve(ctx *fasthttp.RequestCtx, handler fasthttp.RequestHandler) {
++	switch p.verdict {
++	case pass:
++		handler(ctx)
++	case rewrite:
++		serveWithField(ctx, handler, p.canonical)
++	default:
++		serveWithField(ctx, handler, nil)
++	}
++}
++
++// serveWithField runs handler with the Range field set to value, or removed when
++// value is nil, and puts the original back for the rest of the chain.
++func serveWithField(ctx *fasthttp.RequestCtx, handler fasthttp.RequestHandler, value []byte) {
++	header := &ctx.Request.Header
++	original := utils.CopyBytes(header.Peek(fasthttp.HeaderRange))
++	defer header.SetBytesV(fasthttp.HeaderRange, original)
++
++	if value == nil {
++		header.Del(fasthttp.HeaderRange)
++	} else {
++		header.SetBytesV(fasthttp.HeaderRange, value)
++	}
++	handler(ctx)
++}
++
++// serveConditional serves a Range that comes with an If-Range. Only the response
++// has the validators to judge it by, so when they do not match, the whole file is
++// served in its place.
++func serveConditional(ctx *fasthttp.RequestCtx, handler fasthttp.RequestHandler, p plan, ifRange []byte, now func() time.Time) {
++	// A refusal wipes the response, so the headers the caller had set are kept to
++	// start the second attempt from.
++	callerHeader := &fasthttp.ResponseHeader{}
++	ctx.Response.Header.CopyTo(callerHeader)
++
++	p.serve(ctx, handler)
++
++	switch ctx.Response.StatusCode() {
++	case fasthttp.StatusPartialContent:
++		if !ifRangeMatches(ifRange, &ctx.Response, now()) {
++			serveWhole(ctx, handler, callerHeader)
++		}
++	case fasthttp.StatusRequestedRangeNotSatisfiable:
++		// The 416 has no validators. The whole file has, and is the answer when
++		// If-Range does not match.
++		serveWhole(ctx, handler, callerHeader)
++		if ctx.Response.StatusCode() == fasthttp.StatusOK && ifRangeMatches(ifRange, &ctx.Response, now()) {
++			ctx.Error("Range Not Satisfiable", fasthttp.StatusRequestedRangeNotSatisfiable)
++		}
++	}
++}
++
++// serveWhole discards the response and has handler send the whole file, from the
++// headers the caller had set.
++func serveWhole(ctx *fasthttp.RequestCtx, handler fasthttp.RequestHandler, callerHeader *fasthttp.ResponseHeader) {
++	ctx.Response.ResetBody()
++	callerHeader.CopyTo(&ctx.Response.Header)
++	serveWithField(ctx, handler, nil)
++}
++
++// ifRangeMatches evaluates If-Range against the file server's response (§13.1.5):
++// an entity-tag must equal a strong ETag, a date the exact, strong Last-Modified,
++// judged at now. The file server sends no ETag of its own, and a weak tag never matches.
++func ifRangeMatches(ifRange []byte, resp *fasthttp.Response, now time.Time) bool {
++	ifRange = utils.TrimSpace(ifRange)
++	if len(ifRange) == 0 {
++		return false
++	}
++
++	if ifRange[0] == '"' || strings.HasPrefix(utils.UnsafeString(ifRange), weakPrefix) {
++		etag := resp.Header.Peek(fasthttp.HeaderETag)
++		return ifRange[0] == '"' && len(etag) > 0 && etag[0] == '"' && bytes.Equal(etag, ifRange)
++	}
++
++	lastModified := resp.Header.Peek(fasthttp.HeaderLastModified)
++	if !bytes.Equal(lastModified, ifRange) {
++		return false
++	}
++	modified, err := fasthttp.ParseHTTPDate(lastModified)
++	return err == nil && now.Sub(modified) >= strongAfter
++}
+diff --git a/listen.go b/listen.go
+index 0c03d4a9cbb..4e3705c0c4e 100644
+--- a/listen.go
++++ b/listen.go
+@@ -322,6 +322,7 @@ func (app *App) Listen(addr string, config ...ListenConfig) error {
+ 			return err
+ 		}
+ 	}
++	app.hookHeaderReceived()
+ 
+ 	served = true
+ 	return app.server.Serve(ln)
+@@ -458,6 +459,7 @@ func (app *App) Listener(ln net.Listener, config ...ListenConfig) error {
+ 	if cfg.EnablePrefork {
+ 		log.Warn("Prefork isn't supported for custom listeners.")
+ 	}
++	app.hookHeaderReceived()
+ 
+ 	return app.server.Serve(ln)
+ }
+diff --git a/middleware/static/config.go b/middleware/static/config.go
+index 7a6489ed4e7..e471ea40d71 100644
+--- a/middleware/static/config.go
++++ b/middleware/static/config.go
+@@ -53,7 +53,8 @@ type Config struct {
+ 	// Optional. Default: false
+ 	Compress bool `json:"compress"`
+ 
+-	// When set to true, enables byte range requests.
++	// When set to true, enables byte range requests. A request for several
++	// ranges, or whose If-Range does not match, gets the whole file.
+ 	//
+ 	// Optional. Default: false
+ 	ByteRange bool `json:"byte_range"`
+diff --git a/middleware/static/static.go b/middleware/static/static.go
+index b5d27e19a52..4261b94862f 100644
+--- a/middleware/static/static.go
++++ b/middleware/static/static.go
+@@ -16,6 +16,7 @@ import (
+ 	"github.com/valyala/fasthttp"
+ 
+ 	"github.com/gofiber/fiber/v3"
++	"github.com/gofiber/fiber/v3/internal/byterange"
+ )
+ 
+ var ErrInvalidPath = errors.New("invalid path")
+@@ -339,8 +340,13 @@ func New(root string, cfg ...Config) fiber.Handler {
+ 			return []byte(invalidPathSentinel)
+ 		}
+ 
++		handler := files.NewRequestHandler()
++		if config.ByteRange {
++			handler = byterange.Wrap(handler)
++		}
++
+ 		return &fileServer{
+-			handler:       files.NewRequestHandler(),
++			handler:       handler,
+ 			fsys:          config.FS,
+ 			root:          root,
+ 			fsRootPrefix:  fsRootPrefix,
+diff --git a/middleware/timeout/config.go b/middleware/timeout/config.go
+index e7a92a79255..e1624d7f05a 100644
+--- a/middleware/timeout/config.go
++++ b/middleware/timeout/config.go
+@@ -13,9 +13,9 @@ type Config struct {
+ 	Next func(c fiber.Ctx) bool
+ 
+ 	// OnTimeout is executed when a timeout occurs. It may write the response or
+-	// return a *fiber.Error that shapes it; otherwise the default 408 is sent.
++	// return a *fiber.Error that shapes it; otherwise the default 503 is sent.
+ 	// The timed-out handler may still be running and must stop using the context.
+-	// Optional. Default: nil (return fiber.ErrRequestTimeout)
++	// Optional. Default: nil (return fiber.ErrServiceUnavailable)
+ 	OnTimeout fiber.Handler
+ 
+ 	// Errors defines custom errors that are treated as timeouts.
+diff --git a/middleware/timeout/timeout.go b/middleware/timeout/timeout.go
+index 47c099749fc..2a2c00b3bd6 100644
+--- a/middleware/timeout/timeout.go
++++ b/middleware/timeout/timeout.go
+@@ -16,8 +16,10 @@ import (
+ // c.Context(). Handlers can detect the timeout by listening on c.Context().Done()
+ // and return early.
+ //
+-// When a timeout occurs, the middleware returns immediately with fiber.ErrRequestTimeout
+-// (or the result of OnTimeout if configured). The handler goroutine can continue
++// When a timeout occurs, the middleware returns immediately with fiber.ErrServiceUnavailable
++// (or the result of OnTimeout if configured). The status is 503, not 408: a slow handler
++// is a server-side delay, and 408 (RFC 9110 §15.5.9) invites the client to resend a
++// request whose handler may still be running. The handler goroutine can continue
+ // safely, and resources are recycled when it finishes via the Abandon/ForceRelease
+ // mechanism.
+ func New(h fiber.Handler, config ...Config) fiber.Handler {
+@@ -114,8 +116,8 @@ func handleTimeout(
+ 		// application data there, so reusing it could disclose partial output.
+ 		// TimeoutErrorWithCode constructs a fresh fasthttp.Response internally, so
+ 		// the active RequestCtx response is never read.
+-		ctx.RequestCtx().TimeoutErrorWithCode(fiber.ErrRequestTimeout.Message, fiber.StatusRequestTimeout)
+-		timeoutErr = fiber.ErrRequestTimeout
++		ctx.RequestCtx().TimeoutErrorWithCode(fiber.ErrServiceUnavailable.Message, fiber.StatusServiceUnavailable)
++		timeoutErr = fiber.ErrServiceUnavailable
+ 	} else {
+ 		// Prepare the timeout response before marking the RequestCtx as timed out so
+ 		// custom OnTimeout handlers can shape the response body.
+@@ -129,7 +131,7 @@ func handleTimeout(
+ 		if resp.StatusCode() == fiber.StatusOK && timeoutResponseUnwritten(resp) {
+ 			resp.ResetBody()
+ 			// An error OnTimeout returned is the response the client will see.
+-			status, message := fiber.StatusRequestTimeout, fiber.ErrRequestTimeout.Message
++			status, message := fiber.StatusServiceUnavailable, fiber.ErrServiceUnavailable.Message
+ 			var fiberErr *fiber.Error
+ 			if errors.As(timeoutErr, &fiberErr) && fiberErr != nil {
+ 				status, message = fiberErr.Code, fiberErr.Message
+@@ -188,7 +190,7 @@ func invokeOnTimeout(ctx fiber.Ctx, cfg Config) error {
+ 	if cfg.OnTimeout != nil {
+ 		return cfg.OnTimeout(ctx)
+ 	}
+-	return fiber.ErrRequestTimeout
++	return fiber.ErrServiceUnavailable
+ }
+ 
+ // isTimeoutError checks if err is a timeout-like error (context.DeadlineExceeded
+diff --git a/prefork.go b/prefork.go
+index 83133f9a600..52424369a85 100644
+--- a/prefork.go
++++ b/prefork.go
+@@ -78,6 +78,7 @@ func (app *App) prefork(addr string, tlsConfig *tls.Config, cfg *ListenConfig) e
+ 
+ 		// prepare the server for the start
+ 		app.startupProcess()
++		app.hookHeaderReceived()
+ 
+ 		if cfg.ListenerAddrFunc != nil {
+ 			cfg.ListenerAddrFunc(ln.Addr())
+diff --git a/req.go b/req.go
+index 1f3d863929c..dceabbf0c07 100644
+--- a/req.go
++++ b/req.go
+@@ -64,9 +64,20 @@ func (r *DefaultReq) AcceptsCharsets(offers ...string) string {
+ }
+ 
+ // AcceptsEncodings checks if the specified encoding is acceptable.
++//
++// Per RFC 9110 §12.5.3, a missing Accept-Encoding accepts any coding (the first
++// offer wins), an empty one only "identity", and "identity" is acceptable unless
++// the field excludes it with q=0.
+ func (r *DefaultReq) AcceptsEncodings(offers ...string) string {
+-	header := peekJoinedRequestHeader(&r.c.fasthttp.Request.Header, HeaderAcceptEncoding)
+-	return getOffer(header, acceptsOffer, offers...)
++	header, present := lookupJoinedRequestHeader(&r.c.fasthttp.Request.Header, HeaderAcceptEncoding)
++	if len(header) == 0 && len(offers) > 0 {
++		// Nothing to weigh, but an absent field and a present, empty one differ.
++		if !present {
++			return offers[0]
++		}
++		return identityOffer(offers)
++	}
++	return getEncodingOffer(header, offers)
+ }
+ 
+ // AcceptsLanguages checks if the specified language is acceptable using
+diff --git a/req_interface_gen.go b/req_interface_gen.go
+index 7ca6291a03a..a5b5f35457f 100644
+--- a/req_interface_gen.go
++++ b/req_interface_gen.go
+@@ -17,6 +17,10 @@ type Req interface {
+ 	// AcceptsCharsets checks if the specified charset is acceptable.
+ 	AcceptsCharsets(offers ...string) string
+ 	// AcceptsEncodings checks if the specified encoding is acceptable.
++	//
++	// Per RFC 9110 §12.5.3, a missing Accept-Encoding accepts any coding (the first
++	// offer wins), an empty one only "identity", and "identity" is acceptable unless
++	// the field excludes it with q=0.
+ 	AcceptsEncodings(offers ...string) string
+ 	// AcceptsLanguages checks if the specified language is acceptable using
+ 	// RFC 4647 Basic Filtering.
+diff --git a/res.go b/res.go
+index 7af6cac4144..64f52864b77 100644
+--- a/res.go
++++ b/res.go
+@@ -18,6 +18,7 @@ import (
+ 	"unicode"
+ 	"unicode/utf8"
+ 
++	"github.com/gofiber/fiber/v3/internal/byterange"
+ 	internalcookie "github.com/gofiber/fiber/v3/internal/cookie"
+ 	"github.com/gofiber/fiber/v3/internal/fieldname"
+ 	"github.com/gofiber/fiber/v3/internal/headerlist"
+@@ -43,7 +44,8 @@ type SendFile struct {
+ 	// Optional. Default: false
+ 	Compress bool `json:"compress"`
+ 
+-	// When set to true, enables byte range requests.
++	// When set to true, enables byte range requests. A request for several
++	// ranges, or whose If-Range does not match, gets the whole file.
+ 	//
+ 	// Optional. Default: false
+ 	ByteRange bool `json:"byte_range"`
+@@ -354,11 +356,14 @@ func (r *DefaultRes) Cookie(cookie *Cookie) {
+ 		c.Secure = true
+ 	}
+ 
++	// Surrounding double quotes frame the value (RFC 6265 §4.1.1); they are not part of it.
++	value, quoted := unquoteCookieValue(c.Value)
++
+ 	// Validate before fasthttp's setters can silently replace CR/LF or semicolons;
+ 	// rejection, rather than mutation, is this API's existing contract.
+ 	hc := &http.Cookie{ //nolint:gosec // G124: http.Cookie missing or has insecure Secure, HttpOnly, or SameSite attribute
+ 		Name:        c.Name,
+-		Value:       c.Value,
++		Value:       value,
+ 		Path:        c.Path,
+ 		Domain:      c.Domain,
+ 		Expires:     c.Expires,
+@@ -377,7 +382,13 @@ func (r *DefaultRes) Cookie(cookie *Cookie) {
+ 	// create fasthttp cookie
+ 	fcookie := fasthttp.AcquireCookie()
+ 	fcookie.SetKey(hc.Name)
+-	fcookie.SetValue(hc.Value)
++	// net/http quotes a value with a space or comma, and so does this, although
++	// RFC 6265 §4.1.1 allows neither even in quotes. fasthttp drops the quotes on read.
++	wireValue := hc.Value
++	if quoted || utils.IndexAny2(wireValue, ' ', ',') >= 0 {
++		wireValue = `"` + wireValue + `"`
++	}
++	fcookie.SetValue(wireValue)
+ 	fcookie.SetPath(hc.Path)
+ 	fcookie.SetDomain(hc.Domain)
+ 
+@@ -398,6 +409,15 @@ func (r *DefaultRes) Cookie(cookie *Cookie) {
+ 	fasthttp.ReleaseCookie(fcookie)
+ }
+ 
++// unquoteCookieValue strips one pair of surrounding double quotes. A lone quote
++// is left for validation to reject.
++func unquoteCookieValue(value string) (string, bool) {
++	if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
++		return value[1 : len(value)-1], true
++	}
++	return value, false
++}
++
+ // GetCookie reads back a cookie this response is set to send, false when the
+ // name is unset or its value does not parse. Names are case-sensitive and a
+ // repeat resolves to the first. Writing the copy back through Cookie stamps
+@@ -1275,9 +1295,13 @@ func (r *DefaultRes) SendFile(file string, config ...SendFile) error {
+ 			},
+ 		}
+ 
++		handler := fasthttpFS.NewRequestHandler()
++		if cfg.ByteRange {
++			handler = byterange.Wrap(handler)
++		}
+ 		sf := &sendFileStore{
+ 			config:  cfg,
+-			handler: fasthttpFS.NewRequestHandler(),
++			handler: handler,
+ 		}
+ 
+ 		maxAge := cfg.MaxAge
+@@ -1447,7 +1471,9 @@ func (r *DefaultRes) NoContent() error {
+ // SendStatus sets the HTTP status code and if the response body is empty,
+ // it sets the correct status message in the body.
+ func (r *DefaultRes) SendStatus(status int) error {
+-	r.Status(status)
++	// Settle the status first so the checks below use the one that is sent.
++	status = validStatus(status)
++	r.c.fasthttp.Response.SetStatusCode(status)
+ 
+ 	if statusDisallowsBody(status) {
+ 		resp := &r.c.fasthttp.Response
+@@ -1512,8 +1538,10 @@ func (r *DefaultRes) setCanonical(key, val string) {
+ 
+ // Status sets the HTTP status for the response.
+ // This method is chainable.
++//
++// A status outside 100 to 999 is logged and replaced by 500.
+ func (r *DefaultRes) Status(status int) Ctx {
+-	r.c.fasthttp.Response.SetStatusCode(status)
++	r.c.fasthttp.Response.SetStatusCode(validStatus(status))
+ 	return r.c
+ }
+ 
+diff --git a/res_interface_gen.go b/res_interface_gen.go
+index d526c88d09f..a4ee12983b3 100644
+--- a/res_interface_gen.go
++++ b/res_interface_gen.go
+@@ -202,6 +202,8 @@ type Res interface {
+ 	setCanonical(key, val string)
+ 	// Status sets the HTTP status for the response.
+ 	// This method is chainable.
++	//
++	// A status outside 100 to 999 is logged and replaced by 500.
+ 	Status(status int) Ctx
+ 	// StatusCode returns the status code set on the response, the read side of
+ 	// Status, and reports 200 until something sets another. After Next it is the

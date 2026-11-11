@@ -1,0 +1,77 @@
+diff --git a/config/allconfig/allconfig.go b/config/allconfig/allconfig.go
+index 37a6611aae9..8c97ff229b1 100644
+--- a/config/allconfig/allconfig.go
++++ b/config/allconfig/allconfig.go
+@@ -326,9 +326,10 @@ func (c *Config) CompileConfig(logger loggers.Logger) error {
+ 	if c.DefaultOutputFormat != "" {
+ 		f, found := outputFormats.GetByName(c.DefaultOutputFormat)
+ 		if !found {
+-			return fmt.Errorf("unknown default output format %q", c.DefaultOutputFormat)
++			transientErr = fmt.Errorf("unknown default output format %q", c.DefaultOutputFormat)
++		} else {
++			defaultOutputFormat = f
+ 		}
+-		defaultOutputFormat = f
+ 	} else {
+ 		c.DefaultOutputFormat = defaultOutputFormat.Name
+ 	}
+diff --git a/config/allconfig/load.go b/config/allconfig/load.go
+index fdb349c293b..64c43c8aab0 100644
+--- a/config/allconfig/load.go
++++ b/config/allconfig/load.go
+@@ -89,7 +89,7 @@ func LoadConfig(d ConfigSourceDescriptor) (configs *Configs, err error) {
+ 			return nil, fmt.Errorf("failed to create config from modules config: %w", err)
+ 		}
+ 		configs.LoadingInfo.ConfigFiles = append(configs.LoadingInfo.ConfigFiles, l.ModulesConfigFiles...)
+-	} else if err := configs.transientErr(); err != nil {
++	} else if err := configs.transientErr(); err != nil && !d.IgnoreModuleDoesNotExist {
+ 		return nil, fmt.Errorf("failed to create config: %w", err)
+ 	}
+ 
+diff --git a/testscripts/commands/mod_init.txt b/testscripts/commands/mod_init.txt
+index 64f775a5867..c32e8e0b9d5 100644
+--- a/testscripts/commands/mod_init.txt
++++ b/testscripts/commands/mod_init.txt
+@@ -1,14 +1,39 @@
+-# Test the hugo init command.
++# Test the hugo mod init command.
+ 
+ hugo mod init testsubmod
+ cmpenv go.mod $WORK/golden/go.mod.testsubmod
+ 
++# Output formats not yet available at init time must not block hugo mod init.
++# See issue 15253.
++cp hugo2.toml hugo.toml
++rm go.mod
++hugo mod init testsubmod
++cmpenv go.mod $WORK/golden/go.mod.testsubmod
++
++cp hugo3.toml hugo.toml
++rm go.mod
++hugo mod init testsubmod
++cmpenv go.mod $WORK/golden/go.mod.testsubmod
++
+ -- hugo.toml --
+ title = "Hugo Modules Test"
+ [module]
+ [[module.imports]]
+ path="github.com/bep/empty-hugo-module"
++-- hugo2.toml --
++title = "Hugo Modules Test"
++[outputs]
++section = ['HTML', 'print']
++[module]
++[[module.imports]]
++path="github.com/bep/empty-hugo-module"
++-- hugo3.toml --
++title = "Hugo Modules Test"
++defaultOutputFormat = 'print'
++[module]
++[[module.imports]]
++path="github.com/bep/empty-hugo-module"
+ -- golden/go.mod.testsubmod --
+ module testsubmod
+ 
+-go ${GOMODVERSION}
+\ No newline at end of file
++go ${GOMODVERSION}

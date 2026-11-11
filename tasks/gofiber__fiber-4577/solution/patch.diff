@@ -1,0 +1,26 @@
+diff --git a/docs/middleware/healthcheck.md b/docs/middleware/healthcheck.md
+index 92968a4d782..93cf87b6c7a 100644
+--- a/docs/middleware/healthcheck.md
++++ b/docs/middleware/healthcheck.md
+@@ -57,7 +57,7 @@ app.Get(healthcheck.StartupEndpoint, healthcheck.New())
+ app.Get("/healthz", healthcheck.New())
+ ```
+ 
+-The middleware responds only to GET. Use `app.All` to expose a probe on every method; other methods fall through to the next handler:
++The middleware responds to GET and HEAD, where HEAD returns the same status code without a body. Use `app.All` to expose a probe on every method; other methods fall through to the next handler:
+ 
+ ```go
+ app.All("/healthz", healthcheck.New())
+diff --git a/middleware/healthcheck/healthcheck.go b/middleware/healthcheck/healthcheck.go
+index 6c99d374b4d..751d3b6d391 100644
+--- a/middleware/healthcheck/healthcheck.go
++++ b/middleware/healthcheck/healthcheck.go
+@@ -20,7 +20,7 @@ func New(config ...Config) fiber.Handler {
+ 			return c.Next()
+ 		}
+ 
+-		if c.Method() != fiber.MethodGet {
++		if c.Method() != fiber.MethodGet && c.Method() != fiber.MethodHead {
+ 			return c.Next()
+ 		}
+ 

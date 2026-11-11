@@ -1,0 +1,835 @@
+diff --git a/.github/workflows/test.yml b/.github/workflows/test.yml
+index 7d77133917f..0d69bae2594 100644
+--- a/.github/workflows/test.yml
++++ b/.github/workflows/test.yml
+@@ -133,7 +133,7 @@ jobs:
+           sass --version;
+           mage -v check;
+         env:
+-          HUGO_BUILD_TAGS: extended,withdeploy
++          HUGO_BUILD_TAGS: withdeploy
+       - if: matrix.os == 'windows-latest'
+         # See issue #11052. We limit the build to regular test (no -race flag) on Windows for now.
+         # The withdeploy tag (cloud SDKs) is tested on Linux.
+diff --git a/common/herrors/errors.go b/common/herrors/errors.go
+index 551e7440167..b7258d700d6 100644
+--- a/common/herrors/errors.go
++++ b/common/herrors/errors.go
+@@ -81,9 +81,6 @@ func IsFeatureNotAvailableError(err error) bool {
+ }
+ 
+ // ErrFeatureNotAvailable denotes that a feature is unavailable.
+-//
+-// We will, at least to begin with, make some Hugo features (SCSS with libsass) optional,
+-// and this error is used to signal those situations.
+ var ErrFeatureNotAvailable = &FeatureNotAvailableError{Cause: errors.New("this feature is not available in your current Hugo version, see https://goo.gl/YMrWcn for more information")}
+ 
+ // FeatureNotAvailableError is an error type used to signal that a feature is not available.
+diff --git a/common/herrors/file_error.go b/common/herrors/file_error.go
+index 62690dec99f..98f205283b1 100644
+--- a/common/herrors/file_error.go
++++ b/common/herrors/file_error.go
+@@ -21,7 +21,6 @@ import (
+ 	"path/filepath"
+ 
+ 	"github.com/bep/godartsass/v2"
+-	"github.com/bep/golibsass/libsass/libsasserrors"
+ 	"github.com/gohugoio/hugo/common/paths"
+ 	"github.com/gohugoio/hugo/common/text"
+ 	"github.com/pelletier/go-toml/v2"
+@@ -151,8 +150,6 @@ func (e *fileError) causeString() string {
+ 	// Avoid repeating the file info in the error message.
+ 	case godartsass.SassError:
+ 		return v.Message
+-	case libsasserrors.Error:
+-		return v.Message
+ 	default:
+ 		return v.Error()
+ 	}
+@@ -337,7 +334,7 @@ func extractFileTypePos(err error) (string, text.Position) {
+ 
+ 	var fileType string
+ 
+-	// LibSass, DartSass
++	// DartSass
+ 	if pos := extractPosition(err); pos.LineNumber > 0 || pos.Offset > 0 {
+ 		_, fileType = paths.FileAndExtNoDelimiter(pos.Filename)
+ 		return fileType, pos
+@@ -426,10 +423,6 @@ func extractPosition(e error) (pos text.Position) {
+ 		pos.Filename = filename
+ 		pos.Offset = start.Offset
+ 		pos.ColumnNumber = start.Column
+-	case libsasserrors.Error:
+-		pos.Filename = v.File
+-		pos.LineNumber = v.Line
+-		pos.ColumnNumber = v.Column
+ 	}
+ 	return
+ }
+diff --git a/common/hugo/hugo.go b/common/hugo/hugo.go
+index 4eebaf656bf..a2cba2263bc 100644
+--- a/common/hugo/hugo.go
++++ b/common/hugo/hugo.go
+@@ -217,13 +217,6 @@ func GetDependencyListNonGo() []string {
+ 		deps = append(deps, formatDep(dep[0], dep[1]))
+ 	}
+ 
+-	if IsExtended {
+-		deps = append(
+-			deps,
+-			formatDep("github.com/sass/libsass", "3.6.6"),
+-		)
+-	}
+-
+ 	if dartSass := dartSassVersion(); dartSass.ProtocolVersion != "" {
+ 		dartSassPath := "github.com/sass/dart-sass-embedded"
+ 		if IsDartSassGeV2() {
+@@ -396,9 +389,6 @@ func BuildVersionString() string {
+ 	if bi.Revision != "" {
+ 		version += "-" + bi.Revision
+ 	}
+-	if IsExtended {
+-		version += "+extended"
+-	}
+ 	if IsWithdeploy {
+ 		version += "+withdeploy"
+ 	}
+diff --git a/common/hugo/vars_extended.go b/common/hugo/vars_extended.go
+deleted file mode 100644
+index ab01e264716..00000000000
+--- a/common/hugo/vars_extended.go
++++ /dev/null
+@@ -1,18 +0,0 @@
+-// Copyright 2018 The Hugo Authors. All rights reserved.
+-//
+-// Licensed under the Apache License, Version 2.0 (the "License");
+-// you may not use this file except in compliance with the License.
+-// You may obtain a copy of the License at
+-// http://www.apache.org/licenses/LICENSE-2.0
+-//
+-// Unless required by applicable law or agreed to in writing, software
+-// distributed under the License is distributed on an "AS IS" BASIS,
+-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-// See the License for the specific language governing permissions and
+-// limitations under the License.
+-
+-//go:build extended
+-
+-package hugo
+-
+-var IsExtended = true
+diff --git a/common/hugo/vars_regular.go b/common/hugo/vars_regular.go
+deleted file mode 100644
+index a78aeb0b661..00000000000
+--- a/common/hugo/vars_regular.go
++++ /dev/null
+@@ -1,18 +0,0 @@
+-// Copyright 2018 The Hugo Authors. All rights reserved.
+-//
+-// Licensed under the Apache License, Version 2.0 (the "License");
+-// you may not use this file except in compliance with the License.
+-// You may obtain a copy of the License at
+-// http://www.apache.org/licenses/LICENSE-2.0
+-//
+-// Unless required by applicable law or agreed to in writing, software
+-// distributed under the License is distributed on an "AS IS" BASIS,
+-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-// See the License for the specific language governing permissions and
+-// limitations under the License.
+-
+-//go:build !extended
+-
+-package hugo
+-
+-var IsExtended = false
+diff --git a/go.mod b/go.mod
+index 6d70234432d..f40aa8e250f 100644
+--- a/go.mod
++++ b/go.mod
+@@ -11,7 +11,6 @@ require (
+ 	github.com/bep/gitmap v1.9.0
+ 	github.com/bep/goat v0.5.0
+ 	github.com/bep/godartsass/v2 v2.5.0
+-	github.com/bep/golibsass v1.2.0
+ 	github.com/bep/golocales v0.2.0
+ 	github.com/bep/goportabletext v0.2.0
+ 	github.com/bep/helpers v0.12.0
+diff --git a/go.sum b/go.sum
+index d3635174de5..96eee6f23e1 100644
+--- a/go.sum
++++ b/go.sum
+@@ -158,8 +158,6 @@ github.com/bep/goat v0.5.0 h1:S8jLXHCVy/EHIoCY+btKkmcxcXFd34a0Q63/0D4TKeA=
+ github.com/bep/goat v0.5.0/go.mod h1:Md9x7gRxiWKs85yHlVTvHQw9rg86Bm+Y4SuYE8CTH7c=
+ github.com/bep/godartsass/v2 v2.5.0 h1:tKRvwVdyjCIr48qgtLa4gHEdtRkPF8H1OeEhJAEv7xg=
+ github.com/bep/godartsass/v2 v2.5.0/go.mod h1:rjsi1YSXAl/UbsGL85RLDEjRKdIKUlMQHr6ChUNYOFU=
+-github.com/bep/golibsass v1.2.0 h1:nyZUkKP/0psr8nT6GR2cnmt99xS93Ji82ZD9AgOK6VI=
+-github.com/bep/golibsass v1.2.0/go.mod h1:DL87K8Un/+pWUS75ggYv41bliGiolxzDKWJAq3eJ1MA=
+ github.com/bep/golocales v0.2.0 h1:4H1H5UPw3ainpj5zykeEfiMRQngyaIC/t+I4Dvn+fvE=
+ github.com/bep/golocales v0.2.0/go.mod h1:Hl78nje8mNL3LzLeJvYN9NsIZgyFJGrGfvgO9r1+mwE=
+ github.com/bep/goportabletext v0.2.0 h1:CZ9f8jADBWqHwBymQiJJPCTSV/tHSA+PYzlUf86Yze0=
+@@ -237,7 +235,6 @@ github.com/felixge/httpsnoop v1.0.4 h1:NFTV2Zj1bL4mc9sqWACXbQFVBBg2W3GPvqp8/ESS2
+ github.com/felixge/httpsnoop v1.0.4/go.mod h1:m8KPJKqk1gH5J9DgRY2ASl2lWCfGKXixSwevea8zH2U=
+ github.com/fortytw2/leaktest v1.3.0 h1:u8491cBMTQ8ft8aeV+adlcytMZylmA5nnwwkRZjI8vw=
+ github.com/fortytw2/leaktest v1.3.0/go.mod h1:jDsjWgpAGjm2CA7WthBh/CdZYEPF31XHquHwclZch5g=
+-github.com/frankban/quicktest v1.7.2/go.mod h1:jaStnuzAqU1AJdCO0l53JDCJrVDKcS03DbaAcR7Ks/o=
+ github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHkI4W8=
+ github.com/frankban/quicktest v1.14.6/go.mod h1:4ptaffx2x8+WTWXmUCuVU6aPUX1/Mz7zb5vbUoiM6w0=
+ github.com/fsnotify/fsnotify v1.10.1 h1:b0/UzAf9yR5rhf3RPm9gf3ehBPpf0oZKIjtpKrx59Ho=
+diff --git a/magefile.go b/magefile.go
+index 3553a3d389b..66bbdcdcf9e 100644
+--- a/magefile.go
++++ b/magefile.go
+@@ -170,7 +170,6 @@ func CleanTest() error {
+ }
+ 
+ // Run tests in 32-bit mode
+-// Note that we don't run with the extended tag. Currently not supported in 32 bit.
+ func Test386() error {
+ 	env := map[string]string{"GOARCH": "386", "GOFLAGS": testGoFlags()}
+ 	return runCmd(env, goexe, "test", "-p", "2", "./...")
+@@ -317,8 +316,6 @@ func buildFlags() []string {
+ }
+ 
+ func buildTags() string {
+-	// To build the extended Hugo SCSS/SASS enabled version, build with
+-	// HUGO_BUILD_TAGS=extended mage install etc.
+ 	// To build with `hugo deploy`, use HUGO_BUILD_TAGS=withdeploy
+ 	if envtags := os.Getenv("HUGO_BUILD_TAGS"); envtags != "" {
+ 		return envtags
+diff --git a/modules/config.go b/modules/config.go
+index 53cd23b38d7..b6f1c80501b 100644
+--- a/modules/config.go
++++ b/modules/config.go
+@@ -341,6 +341,7 @@ type HugoVersion struct {
+ 	Max version.VersionString
+ 
+ 	// Set if the extended version is needed.
++	// Deprecated: The extended edition of Hugo was removed in v0.170.0, and this setting has no effect.
+ 	Extended bool
+ }
+ 
+diff --git a/resources/page/hugoinfo.go b/resources/page/hugoinfo.go
+index 31774734a2c..950102105ea 100644
+--- a/resources/page/hugoinfo.go
++++ b/resources/page/hugoinfo.go
+@@ -81,9 +81,10 @@ func (i HugoInfo) IsServer() bool {
+ 	return i.opts.Conf.Running()
+ }
+ 
+-// IsExtended reports whether the Hugo binary is the extended version.
++// IsExtended always returns false.
++// The extended edition of Hugo was removed in v0.170.0.
+ func (i HugoInfo) IsExtended() bool {
+-	return hugo.IsExtended
++	return false
+ }
+ 
+ // WorkingDir returns the project working directory.
+diff --git a/resources/resource_transformers/tocss/dartsass/transform.go b/resources/resource_transformers/tocss/dartsass/transform.go
+index 1cd672d57b5..40763a9ef33 100644
+--- a/resources/resource_transformers/tocss/dartsass/transform.go
++++ b/resources/resource_transformers/tocss/dartsass/transform.go
+@@ -253,7 +253,7 @@ func (t importResolver) resolveInImportContext(url string) resource.Resource {
+ func (t importResolver) Load(url string) (godartsass.Import, error) {
+ 	if subPath, ok := sass.HugoVarsSubPath(url); ok {
+ 		return godartsass.Import{
+-			Content: sass.CreateVarsStyleSheet(sass.TranspilerDart, sass.ResolveVars(t.vars, subPath)),
++			Content: sass.CreateVarsStyleSheet(sass.ResolveVars(t.vars, subPath)),
+ 		}, nil
+ 	}
+ 
+diff --git a/resources/resource_transformers/tocss/sass/helpers.go b/resources/resource_transformers/tocss/sass/helpers.go
+index 485ad03f7d0..f1ea7d4df63 100644
+--- a/resources/resource_transformers/tocss/sass/helpers.go
++++ b/resources/resource_transformers/tocss/sass/helpers.go
+@@ -33,8 +33,8 @@ const (
+ 	HugoVarsNamespace = "hugo:vars"
+ 	// Transpiler implementation can be controlled from the client by
+ 	// setting the 'transpiler' option.
+-	// Default is currently 'libsass', but that may change.
+-	TranspilerDart    = "dartsass"
++	TranspilerDart = "dartsass"
++	// TranspilerLibSass was removed in Hugo v0.170.0.
+ 	TranspilerLibSass = "libsass"
+ )
+ 
+@@ -104,11 +104,10 @@ func removeMaps(m map[string]any) map[string]any {
+ 	return res
+ }
+ 
+-func CreateVarsStyleSheet(transpiler string, vars map[string]any) string {
++func CreateVarsStyleSheet(vars map[string]any) string {
+ 	if vars == nil {
+ 		return ""
+ 	}
+-	var varsStylesheet string
+ 
+ 	var varsSlice []string
+ 	for k, v := range vars {
+@@ -131,23 +130,13 @@ func CreateVarsStyleSheet(transpiler string, vars map[string]any) string {
+ 				varsSlice = append(varsSlice, fmt.Sprintf("%s%s: %v;", prefix, k, v))
+ 			} else {
+ 				// unquote will preserve quotes around URLs etc. if needed.
+-				if transpiler == TranspilerDart {
+-					varsSlice = append(varsSlice, fmt.Sprintf("%s%s: string.unquote(%q);", prefix, k, v))
+-				} else {
+-					varsSlice = append(varsSlice, fmt.Sprintf("%s%s: unquote(%q);", prefix, k, v))
+-				}
++				varsSlice = append(varsSlice, fmt.Sprintf("%s%s: string.unquote(%q);", prefix, k, v))
+ 			}
+ 		}
+ 	}
+ 	sort.Strings(varsSlice)
+ 
+-	if transpiler == TranspilerDart {
+-		varsStylesheet = `@use "sass:string";` + "\n" + strings.Join(varsSlice, "\n")
+-	} else {
+-		varsStylesheet = strings.Join(varsSlice, "\n")
+-	}
+-
+-	return varsStylesheet
++	return `@use "sass:string";` + "\n" + strings.Join(varsSlice, "\n")
+ }
+ 
+ var (
+diff --git a/resources/resource_transformers/tocss/scss/client.go b/resources/resource_transformers/tocss/scss/client.go
+deleted file mode 100644
+index aead6279b6f..00000000000
+--- a/resources/resource_transformers/tocss/scss/client.go
++++ /dev/null
+@@ -1,93 +0,0 @@
+-// Copyright 2018 The Hugo Authors. All rights reserved.
+-//
+-// Licensed under the Apache License, Version 2.0 (the "License");
+-// you may not use this file except in compliance with the License.
+-// You may obtain a copy of the License at
+-// http://www.apache.org/licenses/LICENSE-2.0
+-//
+-// Unless required by applicable law or agreed to in writing, software
+-// distributed under the License is distributed on an "AS IS" BASIS,
+-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-// See the License for the specific language governing permissions and
+-// limitations under the License.
+-
+-package scss
+-
+-import (
+-	"regexp"
+-
+-	"github.com/gohugoio/hugo/common/paths"
+-	"github.com/gohugoio/hugo/hugolib/filesystems"
+-	"github.com/gohugoio/hugo/resources"
+-	"github.com/spf13/afero"
+-
+-	"github.com/mitchellh/mapstructure"
+-)
+-
+-const transformationName = "tocss"
+-
+-type Client struct {
+-	rs     *resources.Spec
+-	sfs    *filesystems.SourceFilesystem
+-	workFs afero.Fs
+-}
+-
+-func New(fs *filesystems.SourceFilesystem, rs *resources.Spec) (*Client, error) {
+-	return &Client{sfs: fs, workFs: rs.BaseFs.Work, rs: rs}, nil
+-}
+-
+-type Options struct {
+-	// Hugo, will by default, just replace the extension of the source
+-	// to .css, e.g. "scss/main.scss" becomes "scss/main.css". You can
+-	// control this by setting this, e.g. "styles/main.css" will create
+-	// a Resource with that as a base for RelPermalink etc.
+-	TargetPath string
+-
+-	// Hugo automatically adds the entry directories (where the main.scss lives)
+-	// for project and themes to the list of include paths sent to LibSASS.
+-	// Any paths set in this setting will be appended. Note that these will be
+-	// treated as relative to the working dir, i.e. no include paths outside the
+-	// project/themes.
+-	IncludePaths []string
+-
+-	// Default is nested.
+-	// One of nested, expanded, compact, compressed.
+-	OutputStyle string
+-
+-	// Precision of floating point math.
+-	Precision int
+-
+-	// When enabled, Hugo will generate a source map.
+-	EnableSourceMap bool
+-
+-	// Vars will be available in 'hugo:vars', e.g:
+-	//     @import "hugo:vars";
+-	Vars map[string]any
+-}
+-
+-func DecodeOptions(m map[string]any) (opts Options, err error) {
+-	if m == nil {
+-		return
+-	}
+-	err = mapstructure.WeakDecode(m, &opts)
+-
+-	if opts.TargetPath != "" {
+-		opts.TargetPath = paths.ToSlashTrimLeading(opts.TargetPath)
+-	}
+-
+-	return
+-}
+-
+-var (
+-	regularCSSImportTo   = regexp.MustCompile(`.*(@import "(.*\.css)";).*`)
+-	regularCSSImportFrom = regexp.MustCompile(`.*(\/\* HUGO_IMPORT_START (.*) HUGO_IMPORT_END \*\/).*`)
+-)
+-
+-func replaceRegularImportsIn(s string) (string, bool) {
+-	replaced := regularCSSImportTo.ReplaceAllString(s, "/* HUGO_IMPORT_START $2 HUGO_IMPORT_END */")
+-	return replaced, s != replaced
+-}
+-
+-func replaceRegularImportsOut(s string) string {
+-	return regularCSSImportFrom.ReplaceAllString(s, "@import \"$2\";")
+-}
+diff --git a/resources/resource_transformers/tocss/scss/client_extended.go b/resources/resource_transformers/tocss/scss/client_extended.go
+deleted file mode 100644
+index bd2330f6d1f..00000000000
+--- a/resources/resource_transformers/tocss/scss/client_extended.go
++++ /dev/null
+@@ -1,58 +0,0 @@
+-// Copyright 2018 The Hugo Authors. All rights reserved.
+-//
+-// Licensed under the Apache License, Version 2.0 (the "License");
+-// you may not use this file except in compliance with the License.
+-// You may obtain a copy of the License at
+-// http://www.apache.org/licenses/LICENSE-2.0
+-//
+-// Unless required by applicable law or agreed to in writing, software
+-// distributed under the License is distributed on an "AS IS" BASIS,
+-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-// See the License for the specific language governing permissions and
+-// limitations under the License.
+-
+-//go:build extended
+-
+-package scss
+-
+-import (
+-	"github.com/bep/golibsass/libsass"
+-	"github.com/gohugoio/hugo/resources"
+-	"github.com/gohugoio/hugo/resources/internal"
+-	"github.com/gohugoio/hugo/resources/resource"
+-)
+-
+-type options struct {
+-	// The options we receive from the end user.
+-	from Options
+-
+-	// The options we send to the SCSS library.
+-	to libsass.Options
+-}
+-
+-func (c *Client) ToCSS(res resources.ResourceTransformer, opts Options) (resource.Resource, error) {
+-	internalOptions := options{
+-		from: opts,
+-	}
+-
+-	// Transfer values from client.
+-	internalOptions.to.Precision = opts.Precision
+-	internalOptions.to.OutputStyle = libsass.ParseOutputStyle(opts.OutputStyle)
+-
+-	if internalOptions.to.Precision == 0 {
+-		// bootstrap-sass requires 8 digits precision. The libsass default is 5.
+-		// https://github.com/twbs/bootstrap-sass/blob/master/README.md#sass-number-precision
+-		internalOptions.to.Precision = 8
+-	}
+-
+-	return res.Transform(&toCSSTransformation{c: c, options: internalOptions})
+-}
+-
+-type toCSSTransformation struct {
+-	c       *Client
+-	options options
+-}
+-
+-func (t *toCSSTransformation) Key() internal.ResourceTransformationKey {
+-	return internal.NewResourceTransformationKey(transformationName, t.options.from)
+-}
+diff --git a/resources/resource_transformers/tocss/scss/client_notavailable.go b/resources/resource_transformers/tocss/scss/client_notavailable.go
+deleted file mode 100644
+index 783a7d7dbf0..00000000000
+--- a/resources/resource_transformers/tocss/scss/client_notavailable.go
++++ /dev/null
+@@ -1,30 +0,0 @@
+-// Copyright 2020 The Hugo Authors. All rights reserved.
+-//
+-// Licensed under the Apache License, Version 2.0 (the "License");
+-// you may not use this file except in compliance with the License.
+-// You may obtain a copy of the License at
+-// http://www.apache.org/licenses/LICENSE-2.0
+-//
+-// Unless required by applicable law or agreed to in writing, software
+-// distributed under the License is distributed on an "AS IS" BASIS,
+-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-// See the License for the specific language governing permissions and
+-// limitations under the License.
+-
+-//go:build !extended
+-
+-package scss
+-
+-import (
+-	"github.com/gohugoio/hugo/resources"
+-	"github.com/gohugoio/hugo/resources/resource"
+-)
+-
+-func (c *Client) ToCSS(res resources.ResourceTransformer, opts Options) (resource.Resource, error) {
+-	return res.Transform(resources.NewFeatureNotAvailableTransformer(transformationName, opts))
+-}
+-
+-// Used in tests.
+-func Supports() bool {
+-	return false
+-}
+diff --git a/resources/resource_transformers/tocss/scss/tocss.go b/resources/resource_transformers/tocss/scss/tocss.go
+deleted file mode 100644
+index 0779a21c7e3..00000000000
+--- a/resources/resource_transformers/tocss/scss/tocss.go
++++ /dev/null
+@@ -1,231 +0,0 @@
+-// Copyright 2018 The Hugo Authors. All rights reserved.
+-//
+-// Licensed under the Apache License, Version 2.0 (the "License");
+-// you may not use this file except in compliance with the License.
+-// You may obtain a copy of the License at
+-// http://www.apache.org/licenses/LICENSE-2.0
+-//
+-// Unless required by applicable law or agreed to in writing, software
+-// distributed under the License is distributed on an "AS IS" BASIS,
+-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-// See the License for the specific language governing permissions and
+-// limitations under the License.
+-
+-//go:build extended
+-
+-package scss
+-
+-import (
+-	"fmt"
+-	"io"
+-	"path"
+-	"path/filepath"
+-	"strings"
+-
+-	"github.com/bep/golibsass/libsass"
+-	"github.com/bep/golibsass/libsass/libsasserrors"
+-	"github.com/gohugoio/hugo/common/herrors"
+-	"github.com/gohugoio/hugo/helpers"
+-	"github.com/gohugoio/hugo/hugofs"
+-	"github.com/gohugoio/hugo/identity"
+-	"github.com/gohugoio/hugo/media"
+-	"github.com/gohugoio/hugo/resources"
+-	"github.com/gohugoio/hugo/resources/resource_transformers/tocss/sass"
+-)
+-
+-// Used in tests. This feature requires Hugo to be built with the extended tag.
+-func Supports() bool {
+-	return true
+-}
+-
+-func (t *toCSSTransformation) Transform(ctx *resources.ResourceTransformationCtx) error {
+-	ctx.OutMediaType = media.Builtin.CSSType
+-
+-	var outName string
+-	if t.options.from.TargetPath != "" {
+-		ctx.OutPath = t.options.from.TargetPath
+-	} else {
+-		ctx.ReplaceOutPathExtension(".css")
+-	}
+-
+-	outName = path.Base(ctx.OutPath)
+-
+-	options := t.options
+-	baseDir := path.Dir(ctx.SourcePath)
+-	options.to.IncludePaths = t.c.sfs.RealDirs(baseDir)
+-
+-	// Append any workDir relative include paths
+-	for _, ip := range options.from.IncludePaths {
+-		info, err := t.c.workFs.Stat(filepath.Clean(ip))
+-		if err == nil {
+-			filename := info.(hugofs.FileMetaInfo).Meta().Filename
+-			options.to.IncludePaths = append(options.to.IncludePaths, filename)
+-		}
+-	}
+-
+-	varsStylesheet := sass.CreateVarsStyleSheet(sass.TranspilerLibSass, options.from.Vars)
+-
+-	// To allow for overrides of SCSS files anywhere in the project/theme hierarchy, we need
+-	// to help libsass revolve the filename by looking in the composite filesystem first.
+-	// We add the entry directories for both project and themes to the include paths list, but
+-	// that only work for overrides on the top level.
+-	options.to.ImportResolver = func(url string, prev string) (newUrl string, body string, resolved bool) {
+-		if url == sass.HugoVarsNamespace {
+-			return url, varsStylesheet, true
+-		}
+-
+-		// We get URL paths from LibSASS, but we need file paths.
+-		url = filepath.FromSlash(url)
+-		prev = filepath.FromSlash(prev)
+-
+-		var (
+-			prevDir string
+-			inHugo  = true
+-			osDirs  = options.to.IncludePaths
+-		)
+-
+-		if prev == "stdin" {
+-			prevDir = baseDir
+-		} else {
+-			prevDir, inHugo = t.c.sfs.MakePathRelative(filepath.Dir(prev), true)
+-			osDirs = append([]string{filepath.Dir(prev)}, osDirs...)
+-		}
+-
+-		urlDir := filepath.Dir(url)
+-		name := filepath.Base(url)
+-
+-		// Libsass throws an error in cases where you have several possible candidates.
+-		// We make this simpler and pick the first match.
+-		var namePatterns []string
+-		if strings.Contains(name, ".") {
+-			namePatterns = []string{"_%s", "%s"}
+-		} else if strings.HasPrefix(name, "_") {
+-			namePatterns = []string{"_%s.scss", "_%s.sass"}
+-		} else {
+-			namePatterns = []string{
+-				"_%s.scss", "%s.scss",
+-				"_%s.sass", "%s.sass",
+-				"%s/_index.scss", "%s/_index.sass",
+-				"%s/index.scss", "%s/index.sass",
+-			}
+-		}
+-
+-		name = strings.TrimPrefix(name, "_")
+-		names := make([]string, len(namePatterns))
+-		for i, namePattern := range namePatterns {
+-			names[i] = filepath.Join(urlDir, fmt.Sprintf(namePattern, name))
+-		}
+-
+-		if inHugo {
+-			for _, n := range names {
+-				filenameToCheck := filepath.Join(prevDir, n)
+-				fi, err := t.c.sfs.Fs.Stat(filenameToCheck)
+-				if err == nil {
+-					if fim, ok := fi.(hugofs.FileMetaInfo); ok {
+-						ctx.DependencyManager.AddIdentity(identity.CleanStringIdentity(filenameToCheck))
+-						return fim.Meta().Filename, "", true
+-					}
+-				}
+-			}
+-		}
+-
+-		// Not found in Hugo's file systems. LibSASS would now search relative to prev
+-		// and the include paths on its own, so do that here where the result can be checked.
+-		filename, err := sass.FindFile(t.c.rs.ExecHelper, osDirs, names)
+-		if err != nil {
+-			// The resolver cannot return an error, but @error fails the build.
+-			return url, fmt.Sprintf("@error %q;", err.Error()), true
+-		}
+-		if filename != "" {
+-			return filename, "", true
+-		}
+-
+-		// Not found, let LibSASS report it.
+-		return "", "", false
+-	}
+-
+-	if ctx.InMediaType.SubType == media.Builtin.SASSType.SubType {
+-		options.to.SassSyntax = true
+-	}
+-
+-	if options.from.EnableSourceMap {
+-
+-		options.to.SourceMapOptions.Filename = outName + ".map"
+-		options.to.SourceMapOptions.Root = t.c.rs.Cfg.BaseConfig().WorkingDir
+-
+-		// Setting this to the relative input filename will get the source map
+-		// more correct for the main entry path (main.scss typically), but
+-		// it will mess up the import mappings. As a workaround, we do a replacement
+-		// in the source map itself (see below).
+-		// options.InputPath = inputPath
+-		options.to.SourceMapOptions.OutputPath = outName
+-		options.to.SourceMapOptions.Contents = true
+-		options.to.SourceMapOptions.OmitURL = false
+-		options.to.SourceMapOptions.EnableEmbedded = false
+-	}
+-
+-	res, err := t.c.toCSS(options.to, ctx.To, ctx.From)
+-	if err != nil {
+-		if sasserr, ok := err.(libsasserrors.Error); ok {
+-			if sasserr.File == "stdin" && ctx.SourcePath != "" {
+-				sasserr.File = t.c.sfs.RealFilename(ctx.SourcePath)
+-				err = sasserr
+-			}
+-		}
+-		return herrors.NewFileErrorFromFileInErr(err, hugofs.Os, nil)
+-
+-	}
+-
+-	if options.from.EnableSourceMap && res.SourceMapContent != "" {
+-		sourcePath := t.c.sfs.RealFilename(ctx.SourcePath)
+-
+-		if strings.HasPrefix(sourcePath, t.c.rs.Cfg.BaseConfig().WorkingDir) {
+-			sourcePath = strings.TrimPrefix(sourcePath, t.c.rs.Cfg.BaseConfig().WorkingDir+helpers.FilePathSeparator)
+-		}
+-
+-		// This needs to be Unix-style slashes, even on Windows.
+-		// See https://github.com/gohugoio/hugo/issues/4968
+-		sourcePath = filepath.ToSlash(sourcePath)
+-
+-		// This is a workaround for what looks like a bug in Libsass. But
+-		// getting this resolution correct in tools like Chrome Workspaces
+-		// is important enough to go this extra mile.
+-		mapContent := strings.Replace(res.SourceMapContent, `stdin"`, fmt.Sprintf("%s\"", sourcePath), 1)
+-
+-		return ctx.PublishSourceMap([]byte(mapContent))
+-	}
+-	return nil
+-}
+-
+-func (c *Client) toCSS(options libsass.Options, dst io.Writer, src io.Reader) (libsass.Result, error) {
+-	var res libsass.Result
+-
+-	transpiler, err := libsass.New(options)
+-	if err != nil {
+-		return res, err
+-	}
+-
+-	in := helpers.ReaderToString(src)
+-
+-	// See https://github.com/gohugoio/hugo/issues/7059
+-	// We need to preserve the regular CSS imports. This is by far
+-	// a perfect solution, and only works for the main entry file, but
+-	// that should cover many use cases, e.g. using SCSS as a preprocessor
+-	// for Tailwind.
+-	var importsReplaced bool
+-	in, importsReplaced = replaceRegularImportsIn(in)
+-
+-	res, err = transpiler.Execute(in)
+-	if err != nil {
+-		return res, err
+-	}
+-
+-	out := res.CSS
+-	if importsReplaced {
+-		out = replaceRegularImportsOut(out)
+-	}
+-
+-	_, err = io.WriteString(dst, out)
+-
+-	return res, err
+-}
+diff --git a/resources/transform.go b/resources/transform.go
+index 111b1d2150e..19ab22b422b 100644
+--- a/resources/transform.go
++++ b/resources/transform.go
+@@ -629,8 +629,6 @@ func (r *resourceAdapter) transform(key string, publish, setContent bool) (*reso
+ 					errMsg = ". You need to install PostCSS. See https://gohugo.io/functions/css/postcss/"
+ 				case "tailwindcss":
+ 					errMsg = ". You need to install TailwindCSS CLI. See https://gohugo.io/functions/css/tailwindcss/"
+-				case "tocss":
+-					errMsg = ". Check your Hugo installation; you need the extended version to build SCSS/SASS with transpiler set to 'libsass'."
+ 				case "tocss-dart":
+ 					errMsg = ". You need to install Dart Sass, see https://gohugo.io//functions/css/sass/#dart-sass"
+ 				case "babel":
+diff --git a/tpl/css/css.go b/tpl/css/css.go
+index e34ef45b5ac..a6790826db2 100644
+--- a/tpl/css/css.go
++++ b/tpl/css/css.go
+@@ -6,12 +6,9 @@ import (
+ 	"fmt"
+ 	"sync"
+ 
+-	"github.com/bep/logg"
+ 	"github.com/gohugoio/hugo/common/hashing"
+ 	"github.com/gohugoio/hugo/common/hmaps"
+ 	"github.com/gohugoio/hugo/common/hugio"
+-	"github.com/gohugoio/hugo/common/hugo"
+-	"github.com/gohugoio/hugo/common/paths"
+ 	"github.com/gohugoio/hugo/common/types/css"
+ 	"github.com/gohugoio/hugo/deps"
+ 	"github.com/gohugoio/hugo/identity"
+@@ -24,7 +21,6 @@ import (
+ 	jstransform "github.com/gohugoio/hugo/resources/resource_transformers/js"
+ 	"github.com/gohugoio/hugo/resources/resource_transformers/tocss/dartsass"
+ 	"github.com/gohugoio/hugo/resources/resource_transformers/tocss/sass"
+-	"github.com/gohugoio/hugo/resources/resource_transformers/tocss/scss"
+ 	"github.com/gohugoio/hugo/tpl/internal"
+ 	"github.com/gohugoio/hugo/tpl/internal/resourcehelpers"
+ 	"github.com/mitchellh/mapstructure"
+@@ -36,7 +32,6 @@ const name = "css"
+ // Namespace provides template functions for the "css" namespace.
+ type Namespace struct {
+ 	d                 *deps.Deps
+-	scssClientLibSass *scss.Client
+ 	postcssClient     *cssjs.PostCSSClient
+ 	tailwindcssClient *cssjs.TailwindCSSClient
+ 	babelClient       *babel.Client
+@@ -146,7 +141,6 @@ func (ns *Namespace) Sass(args ...any) (resource.Resource, error) {
+ 		targetPath string
+ 		err        error
+ 		ok         bool
+-		transpiler = sass.TranspilerLibSass // Deprecated default. Will be dartsass in future versions. See below.
+ 	)
+ 
+ 	r, targetPath, ok = resourcehelpers.ResolveIfFirstArgIsString(args)
+@@ -162,34 +156,14 @@ func (ns *Namespace) Sass(args ...any) (resource.Resource, error) {
+ 		if t, _, found := hmaps.LookupEqualFold(m, "transpiler"); found {
+ 			switch t {
+ 			case sass.TranspilerDart:
+-				transpiler = cast.ToString(t)
+ 			case sass.TranspilerLibSass:
+-				transpiler = cast.ToString(t)
++				return nil, errors.New("css.Sass: the libsass transpiler was removed in Hugo v0.170.0 (deprecated from v0.153.0); use dartsass instead. See https://gohugo.io/functions/css/sass/#dart-sass")
+ 			default:
+-				return nil, fmt.Errorf("unsupported transpiler %q; valid values are %q or %q", t, sass.TranspilerLibSass, sass.TranspilerDart)
++				return nil, fmt.Errorf("unsupported transpiler %q; valid value is %q", t, sass.TranspilerDart)
+ 			}
+ 		}
+ 	}
+ 
+-	if transpiler == sass.TranspilerLibSass {
+-		// See https://github.com/gohugoio/hugo/issues/15405
+-		// We deprecated this in v0.153.0 but only warned about it if the user explicitly set the transpiler to libsass.
+-		// So, anyone using the default transpiler (which is libsass) without explicitly setting it will not see this warning.
+-		// Given this, we need to stay with the warning for one more version, then ERROR, then remove in v0.170.0.
+-		hugo.DeprecateLevelMax("css.Sass: libsass", "Use dartsass instead. See https://gohugo.io/functions/css/sass/#dart-sass", "v0.153.0", logg.LevelWarn)
+-		var options scss.Options
+-		if targetPath != "" {
+-			options.TargetPath = paths.ToSlashTrimLeading(targetPath)
+-		} else if m != nil {
+-			options, err = scss.DecodeOptions(m)
+-			if err != nil {
+-				return nil, err
+-			}
+-		}
+-
+-		return ns.scssClientLibSass.ToCSS(r, options)
+-	}
+-
+ 	if m == nil {
+ 		m = make(map[string]any)
+ 	}
+@@ -234,13 +208,8 @@ func (ns *Namespace) Build(args ...any) (resource.Resource, error) {
+ 
+ func init() {
+ 	f := func(d *deps.Deps) *internal.TemplateFuncsNamespace {
+-		scssClient, err := scss.New(d.BaseFs.Assets, d.ResourceSpec)
+-		if err != nil {
+-			panic(err)
+-		}
+ 		ctx := &Namespace{
+ 			d:                 d,
+-			scssClientLibSass: scssClient,
+ 			postcssClient:     cssjs.NewPostCSSClient(d.ResourceSpec),
+ 			tailwindcssClient: cssjs.NewTailwindCSSClient(d.ResourceSpec),
+ 			babelClient:       babel.New(d.ResourceSpec),

@@ -1,0 +1,6 @@
+[
+  "Test_JoinNext_EmptyFirstLine",
+  "Test_JoinNext_EmptyFirstLine/nil_then_empty_then_value",
+  "Test_JoinNext_EmptyFirstLine/nil_then_value",
+  "Test_JoinNext_EmptyFirstLine/two_nil_lines"
+]

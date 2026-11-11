@@ -1,0 +1,373 @@
+diff --git a/common/hexec/exec.go b/common/hexec/exec.go
+index a8ef945d752..b2fd9e8689a 100644
+--- a/common/hexec/exec.go
++++ b/common/hexec/exec.go
+@@ -105,6 +105,7 @@ func New(cfg security.Config, workingDir string, log loggers.Logger) *Exec {
+ 		baseEnviron:       baseEnviron,
+ 		nodeRunnerCache:   hmaps.NewCache[string, func(arg ...any) (Runner, error)](),
+ 		nodeSymlinkChecks: hmaps.NewCache[string, bool](),
++		readPathChecks:    hmaps.NewCacheWithOptions[string, bool](hmaps.CacheOptions{Size: 10000}),
+ 	}
+ }
+ 
+@@ -130,6 +131,9 @@ type Exec struct {
+ 
+ 	// Roots already scanned by checkNodeSymlinks, keyed by kind and path.
+ 	nodeSymlinkChecks *hmaps.Cache[string, bool]
++
++	// Filenames already accepted by CheckReadPath.
++	readPathChecks *hmaps.Cache[string, bool]
+ }
+ 
+ // SetNodeReadPaths sets additional absolute paths to allow reading from
+diff --git a/common/hexec/nodesymlinks.go b/common/hexec/nodesymlinks.go
+index 7dad246c969..ba0dfb8fce7 100644
+--- a/common/hexec/nodesymlinks.go
++++ b/common/hexec/nodesymlinks.go
+@@ -32,12 +32,7 @@ func (e *Exec) checkNodeSymlinks(kind string, roots []string) error {
+ 		return nil
+ 	}
+ 
+-	var real []string
+-	for _, r := range roots {
+-		if p, err := filepath.EvalSymlinks(r); err == nil {
+-			real = append(real, p)
+-		}
+-	}
++	real := evalSymlinks(roots)
+ 
+ 	for _, root := range topLevelDirs(real) {
+ 		if _, err := e.nodeSymlinkChecks.GetOrCreate(kind+"|"+root, func() (bool, error) {
+@@ -49,6 +44,38 @@ func (e *Exec) checkNodeSymlinks(kind string, roots []string) error {
+ 	return nil
+ }
+ 
++// CheckReadPath fails if filename resolves outside the allowRead roots.
++// Used by in-process tools (e.g. ESBuild) that read files on their own,
++// so they get the same boundary as the Node.js tools.
++func (e *Exec) CheckReadPath(filename string) error {
++	_, err := e.readPathChecks.GetOrCreate(filename, func() (bool, error) {
++		roots := e.nodeReadRoots("")
++		if slices.Contains(roots, "*") {
++			return true, nil
++		}
++		target, err := filepath.EvalSymlinks(filename)
++		if err != nil {
++			return false, err
++		}
++		if !isBelowAny(target, evalSymlinks(roots)) {
++			return false, fmt.Errorf("%q resolves to %q outside the project; only files below the working directory or the paths in security.node.permissions.allowRead can be imported", filename, target)
++		}
++		return true, nil
++	})
++	return err
++}
++
++// evalSymlinks resolves paths, dropping the ones that cannot be resolved.
++func evalSymlinks(paths []string) []string {
++	var real []string
++	for _, p := range paths {
++		if p, err := filepath.EvalSymlinks(p); err == nil {
++			real = append(real, p)
++		}
++	}
++	return real
++}
++
+ func walkSymlinks(root string, allowed []string, kind string) error {
+ 	return filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+ 		if err != nil {
+diff --git a/docs/content/en/configuration/security.md b/docs/content/en/configuration/security.md
+index bcfadb509a4..33cfadf44ae 100644
+--- a/docs/content/en/configuration/security.md
++++ b/docs/content/en/configuration/security.md
+@@ -64,6 +64,8 @@ This is the default security configuration:
+ : {{< new-in 0.161.0 />}}
+ : (`[]string`) A slice of file system paths that Node.js tools are allowed to read (`--allow-fs-read`). Paths are relative to the working directory; `"."` means the working directory itself. Use `"*"` to allow all paths.
+ 
++  The same paths bound what `js.Build`, `js.Batch`, `css.Build` and `css.Sass` may import from outside the `assets` directory, e.g. from `node_modules`. This check does not depend on `node.permissions.disable`.
++
+   Node.js follows symbolic links even when they point outside the allowed paths. Hugo therefore fails the build if any allowed path contains a symbolic link whose target resolves outside the allowed set. To permit such a link, add its target to the list. The check runs once per build; if you also grant write access to an allowed path, a Node.js tool can create links at build time that escape this check.
+ 
+ `node.permissions.allowWorker`
+diff --git a/internal/js/esbuild/resolve.go b/internal/js/esbuild/resolve.go
+index a0db7874d0e..d8143bb5040 100644
+--- a/internal/js/esbuild/resolve.go
++++ b/internal/js/esbuild/resolve.go
+@@ -308,6 +308,16 @@ func createBuildPlugins(rs *resources.Spec, assetsResolver *fsResolver, depsMana
+ 				func(args api.OnResolveArgs) (api.OnResolveResult, error) {
+ 					return resolveImport(args)
+ 				})
++			// Files not found in /assets are resolved and read by ESBuild, which follows
++			// symlinks and knows nothing about the project boundary.
++			build.OnLoad(api.OnLoadOptions{Filter: `.*`, Namespace: "file"},
++				func(args api.OnLoadArgs) (api.OnLoadResult, error) {
++					if err := rs.ExecHelper.CheckReadPath(args.Path); err != nil {
++						return api.OnLoadResult{}, err
++					}
++					// Let ESBuild load it.
++					return api.OnLoadResult{}, nil
++				})
+ 			build.OnLoad(api.OnLoadOptions{Filter: `.*`, Namespace: NsHugoImport},
+ 				func(args api.OnLoadArgs) (api.OnLoadResult, error) {
+ 					b, err := os.ReadFile(args.Path)
+diff --git a/resources/resource_transformers/tocss/dartsass/transform.go b/resources/resource_transformers/tocss/dartsass/transform.go
+index 680301b20d0..1cd672d57b5 100644
+--- a/resources/resource_transformers/tocss/dartsass/transform.go
++++ b/resources/resource_transformers/tocss/dartsass/transform.go
+@@ -87,11 +87,21 @@ func (t *transform) Transform(ctx *resources.ResourceTransformationCtx) error {
+ 		ic = resource.NewCachedResourceGetter(opts.ImportContext)
+ 	}
+ 
++	// Dart Sass gets no load paths; the import resolver handles these so
++	// all file reads go through Hugo.
++	osDirs := t.c.sfs.RealDirs(baseDir)
++	for _, ip := range opts.IncludePaths {
++		info, err := t.c.workFs.Stat(filepath.Clean(ip))
++		if err == nil {
++			osDirs = append(osDirs, info.(hugofs.FileMetaInfo).Meta().Filename)
++		}
++	}
++
+ 	args := godartsass.Args{
+-		URL:          filename,
+-		IncludePaths: t.c.sfs.RealDirs(baseDir),
++		URL: filename,
+ 		ImportResolver: importResolver{
+ 			baseDir:           baseDir,
++			osDirs:            osDirs,
+ 			c:                 t.c,
+ 			dependencyManager: ctx.DependencyManager,
+ 			importContext:     ic,
+@@ -106,15 +116,6 @@ func (t *transform) Transform(ctx *resources.ResourceTransformationCtx) error {
+ 		SilenceDependencyDeprecations: opts.SilenceDependencyDeprecations,
+ 	}
+ 
+-	// Append any workDir relative include paths
+-	for _, ip := range opts.IncludePaths {
+-		info, err := t.c.workFs.Stat(filepath.Clean(ip))
+-		if err == nil {
+-			filename := info.(hugofs.FileMetaInfo).Meta().Filename
+-			args.IncludePaths = append(args.IncludePaths, filename)
+-		}
+-	}
+-
+ 	if ctx.InMediaType.SubType == media.Builtin.SASSType.SubType {
+ 		args.SourceSyntax = godartsass.SourceSyntaxSASS
+ 	}
+@@ -142,7 +143,9 @@ func (t *transform) Transform(ctx *resources.ResourceTransformationCtx) error {
+ }
+ 
+ type importResolver struct {
+-	baseDir           string
++	baseDir string
++	// Real dirs of baseDir and the include paths.
++	osDirs            []string
+ 	c                 *Client
+ 	dependencyManager identity.Manager
+ 	importContext     resource.ResourceGetter
+@@ -161,41 +164,53 @@ func (t importResolver) CanonicalizeURL(url string) (string, error) {
+ 	}
+ 
+ 	filePath, isURL := paths.UrlStringToFilename(url)
+-	var prevDir string
+-	var pathDir string
++	var (
++		prevDir string
++		pathDir string
++		inHugo  = true
++		osDirs  []string
++	)
+ 	if isURL {
+-		var found bool
+-		prevDir, found = t.c.sfs.MakePathRelative(filepath.Dir(filePath), true)
+-
+-		if !found {
+-			// Not a member of this filesystem, let Dart Sass handle it.
+-			return "", nil
+-		}
++		// Relative to the importing file.
++		prevDir, inHugo = t.c.sfs.MakePathRelative(filepath.Dir(filePath), true)
++		osDirs = []string{filepath.Dir(filePath)}
+ 	} else {
++		// Relative to the entry file or the include paths.
+ 		prevDir = t.baseDir
+ 		pathDir = path.Dir(url)
++		osDirs = t.osDirs
+ 	}
+ 
+-	basePath := filepath.Join(prevDir, pathDir)
+ 	name := filepath.Base(filePath)
+-
+-	// Pick the first match.
+ 	namePatterns := sassNamePatterns(name)
+ 	name = strings.TrimPrefix(name, "_")
++	names := make([]string, len(namePatterns))
++	for i, namePattern := range namePatterns {
++		names[i] = filepath.Join(pathDir, fmt.Sprintf(namePattern, name))
++	}
+ 
+-	for _, namePattern := range namePatterns {
+-		filenameToCheck := filepath.Join(basePath, fmt.Sprintf(namePattern, name))
+-		fi, err := t.c.sfs.Fs.Stat(filenameToCheck)
+-		if err == nil {
+-			if fim, ok := fi.(hugofs.FileMetaInfo); ok {
+-				t.dependencyManager.AddIdentity(identity.CleanStringIdentity(filenameToCheck))
+-				return "file://" + filepath.ToSlash(fim.Meta().Filename), nil
++	if inHugo {
++		// Pick the first match.
++		for _, n := range names {
++			filenameToCheck := filepath.Join(prevDir, n)
++			fi, err := t.c.sfs.Fs.Stat(filenameToCheck)
++			if err == nil {
++				if fim, ok := fi.(hugofs.FileMetaInfo); ok {
++					t.dependencyManager.AddIdentity(identity.CleanStringIdentity(filenameToCheck))
++					return "file://" + filepath.ToSlash(fim.Meta().Filename), nil
++				}
+ 			}
+ 		}
+ 	}
+ 
+-	// Not found, let Dart Sass handle it
+-	return "", nil
++	// Not found in Hugo's file systems. Dart Sass gets no load paths of its own, so
++	// this is the only way to reach the include paths and files hidden from Hugo's file
++	// systems (e.g. symlinks); FindFile keeps it inside the allowed paths.
++	filename, err := sass.FindFile(t.c.rs.ExecHelper, osDirs, names)
++	if err != nil || filename == "" {
++		return "", err
++	}
++	return "file://" + filepath.ToSlash(filename), nil
+ }
+ 
+ func sassNamePatterns(name string) []string {
+diff --git a/resources/resource_transformers/tocss/sass/helpers.go b/resources/resource_transformers/tocss/sass/helpers.go
+index cb8cabd075e..485ad03f7d0 100644
+--- a/resources/resource_transformers/tocss/sass/helpers.go
++++ b/resources/resource_transformers/tocss/sass/helpers.go
+@@ -16,14 +16,17 @@ package sass
+ import (
+ 	"fmt"
+ 	"maps"
++	"path/filepath"
+ 	"regexp"
+ 	"sort"
+ 	"strings"
+ 
++	"github.com/gohugoio/hugo/common/hexec"
+ 	"github.com/gohugoio/hugo/common/hmaps"
+ 	"github.com/gohugoio/hugo/common/hreflect"
+ 	"github.com/gohugoio/hugo/common/hstrings"
+ 	"github.com/gohugoio/hugo/common/types/css"
++	"github.com/gohugoio/hugo/hugofs"
+ )
+ 
+ const (
+@@ -174,3 +177,27 @@ func isTypedCSSValue(v any) bool {
+ 
+ 	return false
+ }
++
++// FindFile returns the first of names found below one of dirs on the OS file system,
++// or "" if none. Absolute names are checked as is. This is the lookup the Sass
++// compilers would do on their own for imports not found in Hugo's file systems,
++// but the match must be inside the paths exec allows to read.
++func FindFile(exec *hexec.Exec, dirs, names []string) (string, error) {
++	for _, dir := range dirs {
++		for _, name := range names {
++			filename := name
++			if !filepath.IsAbs(filename) {
++				filename = filepath.Join(dir, name)
++			}
++			fi, err := hugofs.Os.Stat(filename)
++			if err != nil || fi.IsDir() {
++				continue
++			}
++			if err := exec.CheckReadPath(filename); err != nil {
++				return "", err
++			}
++			return filename, nil
++		}
++	}
++	return "", nil
++}
+diff --git a/resources/resource_transformers/tocss/scss/tocss.go b/resources/resource_transformers/tocss/scss/tocss.go
+index ea86171405e..0779a21c7e3 100644
+--- a/resources/resource_transformers/tocss/scss/tocss.go
++++ b/resources/resource_transformers/tocss/scss/tocss.go
+@@ -78,22 +78,20 @@ func (t *toCSSTransformation) Transform(ctx *resources.ResourceTransformationCtx
+ 		url = filepath.FromSlash(url)
+ 		prev = filepath.FromSlash(prev)
+ 
+-		var basePath string
+-		urlDir := filepath.Dir(url)
+-		var prevDir string
++		var (
++			prevDir string
++			inHugo  = true
++			osDirs  = options.to.IncludePaths
++		)
+ 
+ 		if prev == "stdin" {
+ 			prevDir = baseDir
+ 		} else {
+-			prevDir, _ = t.c.sfs.MakePathRelative(filepath.Dir(prev), true)
+-
+-			if prevDir == "" {
+-				// Not a member of this filesystem. Let LibSASS handle it.
+-				return "", "", false
+-			}
++			prevDir, inHugo = t.c.sfs.MakePathRelative(filepath.Dir(prev), true)
++			osDirs = append([]string{filepath.Dir(prev)}, osDirs...)
+ 		}
+ 
+-		basePath = filepath.Join(prevDir, urlDir)
++		urlDir := filepath.Dir(url)
+ 		name := filepath.Base(url)
+ 
+ 		// Libsass throws an error in cases where you have several possible candidates.
+@@ -113,19 +111,36 @@ func (t *toCSSTransformation) Transform(ctx *resources.ResourceTransformationCtx
+ 		}
+ 
+ 		name = strings.TrimPrefix(name, "_")
++		names := make([]string, len(namePatterns))
++		for i, namePattern := range namePatterns {
++			names[i] = filepath.Join(urlDir, fmt.Sprintf(namePattern, name))
++		}
+ 
+-		for _, namePattern := range namePatterns {
+-			filenameToCheck := filepath.Join(basePath, fmt.Sprintf(namePattern, name))
+-			fi, err := t.c.sfs.Fs.Stat(filenameToCheck)
+-			if err == nil {
+-				if fim, ok := fi.(hugofs.FileMetaInfo); ok {
+-					ctx.DependencyManager.AddIdentity(identity.CleanStringIdentity(filenameToCheck))
+-					return fim.Meta().Filename, "", true
++		if inHugo {
++			for _, n := range names {
++				filenameToCheck := filepath.Join(prevDir, n)
++				fi, err := t.c.sfs.Fs.Stat(filenameToCheck)
++				if err == nil {
++					if fim, ok := fi.(hugofs.FileMetaInfo); ok {
++						ctx.DependencyManager.AddIdentity(identity.CleanStringIdentity(filenameToCheck))
++						return fim.Meta().Filename, "", true
++					}
+ 				}
+ 			}
+ 		}
+ 
+-		// Not found, let LibSASS handle it
++		// Not found in Hugo's file systems. LibSASS would now search relative to prev
++		// and the include paths on its own, so do that here where the result can be checked.
++		filename, err := sass.FindFile(t.c.rs.ExecHelper, osDirs, names)
++		if err != nil {
++			// The resolver cannot return an error, but @error fails the build.
++			return url, fmt.Sprintf("@error %q;", err.Error()), true
++		}
++		if filename != "" {
++			return filename, "", true
++		}
++
++		// Not found, let LibSASS report it.
+ 		return "", "", false
+ 	}
+ 

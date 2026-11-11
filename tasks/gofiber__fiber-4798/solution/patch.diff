@@ -1,0 +1,642 @@
+diff --git a/docs/middleware/cors.md b/docs/middleware/cors.md
+index 9de87e08a9d..8af662fe644 100644
+--- a/docs/middleware/cors.md
++++ b/docs/middleware/cors.md
+@@ -10,7 +10,7 @@ It adds CORS headers to responses, listing allowed origins, methods, and headers
+ 
+ Use the `AllowOrigins` option to define which origins may send cross-origin requests. It accepts single origins, lists, subdomain patterns, wildcards, and supports dynamic validation with `AllowOriginsFunc`.
+ 
+-The middleware normalizes `AllowOrigins` (the scheme and host are lowercased and a trailing slash is stripped) and panics on an entry that is not a bare origin: the entry needs a host and may carry no userinfo, path, query, or fragment. Any scheme is accepted, not only HTTP and HTTPS, but the check does not require one: `example.com` panics, while `//example.com` is accepted and stored as `://example.com`, which no browser sends as an `Origin`, so it never matches a request. Always write the scheme out. The panic message redacts the misconfigured origin by default; set `DisableValueRedaction` to `true` if you need the raw value for troubleshooting.
++The middleware normalizes `AllowOrigins` (the scheme and host are lowercased, a trailing slash is stripped, and an IPv6 host is written in the form browsers send, so `http://[0:0:0:0:0:0:0:1]` matches `Origin: http://[::1]`) and panics on an entry that is not a bare origin: the entry needs a host and may carry no userinfo, path, query, or fragment. Any scheme is accepted, not only HTTP and HTTPS, but the check does not require one: `example.com` panics, while `//example.com` is accepted and stored as `://example.com`, which no browser sends as an `Origin`, so it never matches a request. Always write the scheme out. The panic message redacts the misconfigured origin by default; set `DisableValueRedaction` to `true` if you need the raw value for troubleshooting.
+ 
+ Avoid [common pitfalls](#common-pitfalls) such as using wildcard origins with credentials, overly permissive origin lists, or skipping validation with `AllowOriginsFunc`, as misconfiguration can create security risks.
+ 
+diff --git a/docs/middleware/csrf.md b/docs/middleware/csrf.md
+index 92386abb8ce..cb636a7fedb 100644
+--- a/docs/middleware/csrf.md
++++ b/docs/middleware/csrf.md
+@@ -136,7 +136,7 @@ With `csrf.New`, a request from a trusted origin still needs a valid token. Here
+ 
+ Differences from `net/http.CrossOriginProtection`:
+ 
+-- `TrustedOrigins` takes the same values as in `csrf.Config`: entries are normalized (case, trailing slash) but a default port is kept as written and matched exactly, subdomain wildcards are supported, and only `http` and `https` origins are accepted. An entry such as `capacitor://localhost` panics at startup.
++- `TrustedOrigins` takes the same values as in `csrf.Config`: entries are normalized (case, trailing slash, IPv6 spelling) but a default port is kept as written and matched exactly, subdomain wildcards are supported, and only `http` and `https` origins are accepted. An entry such as `capacitor://localhost` panics at startup.
+ - There is no `AddInsecureBypassPattern`. Use `Next` to exempt routes.
+ - A request that repeats the `Sec-Fetch-Site` header, or the `Origin` header where the decision depends on it, is denied.
+ - Rule 4 never applies to a request without a `Host`.
+@@ -263,7 +263,7 @@ app.Use(csrf.New(csrf.Config{
+ 
+ As a crucial second layer of defense, the middleware checks the origin of every unsafe request before it looks at the token.
+ 
+-- If the request has an `Origin` header other than `null`, its scheme and host **must** match the scheme and host of the request or be explicitly allowed in the `TrustedOrigins` list. Default ports are treated as equal only in the comparison with the request (`example.com` and `example.com:443` match on HTTPS). A `TrustedOrigins` entry is matched as written: `https://a.example` does not match `Origin: https://a.example:443`, and `https://a.example:443` does not match an `Origin` without the port. Browsers send `Origin` without a default port, so write entries without one. This applies to HTTP and HTTPS requests alike.
++- If the request has an `Origin` header other than `null`, its scheme and host **must** match the scheme and host of the request or be explicitly allowed in the `TrustedOrigins` list. Default ports are treated as equal only in the comparison with the request (`example.com` and `example.com:443` match on HTTPS). An IPv6 host matches in any spelling, in the comparison with the request and in `TrustedOrigins` alike: `http://[::1]:3000` matches `Host: [0:0:0:0:0:0:0:1]:3000` and the entry `http://[0:0:0:0:0:0:0:1]:3000`. A `TrustedOrigins` entry is matched as written: `https://a.example` does not match `Origin: https://a.example:443`, and `https://a.example:443` does not match an `Origin` without the port. Browsers send `Origin` without a default port, so write entries without one. This applies to HTTP and HTTPS requests alike.
+ - If `Origin` is absent or `null` and the connection is HTTPS, the `Referer` header takes its place: it **must** be present and match in the same way. Over plain HTTP, a request with no `Origin` (or `Origin: null`) has nothing to compare and goes on to token validation.
+ - A repeated `Origin` or `Sec-Fetch-Site` header, and a repeated `Referer` header when it is consulted, is rejected instead of being resolved to one of its lines.
+ - The scheme and host of the request come from `c.Scheme()` and `c.Host()`. Behind a reverse proxy, `X-Forwarded-Proto` and `X-Forwarded-Host` are used only for requests from a proxy that `TrustProxy` and `TrustProxyConfig` trust.
+diff --git a/docs/middleware/hostauthorization.md b/docs/middleware/hostauthorization.md
+index 0d6396a580b..246e10c2bed 100644
+--- a/docs/middleware/hostauthorization.md
++++ b/docs/middleware/hostauthorization.md
+@@ -160,7 +160,7 @@ app.Get("/healthz", healthCheck)
+ |:-----------------|:------------------------------|:--------------------------------------------------------------------------------------------------|:--------|
+ | Next             | `func(fiber.Ctx) bool`        | Defines a function to skip this middleware when returned true.                                     | `nil`   |
+ | AllowedHosts     | `[]string`                    | List of permitted hosts. Supports exact match and subdomain wildcard (`*.example.com`).            | `nil`   |
+-| AllowedHostsFunc | `func(string) bool`           | Dynamic validator called only when no static AllowedHosts rule matches. Receives the normalized hostname: port stripped, trailing dot removed, IPv6 brackets removed, lowercased, IDN converted to Punycode.  | `nil`   |
++| AllowedHostsFunc | `func(string) bool`           | Dynamic validator called only when no static AllowedHosts rule matches. Receives the normalized hostname: port stripped, trailing dot removed, IPv6 brackets removed, lowercased, IDN converted to Punycode, IPv6 written in its canonical form, an IPv4-mapped address as IPv4. The string is only valid during the call; copy it to keep it.  | `nil`   |
+ | ErrorHandler     | `fiber.ErrorHandler`          | Called when a request is rejected. Receives `ErrForbiddenHost` as the error.                      | 403     |
+ 
+ Either `AllowedHosts` or `AllowedHostsFunc` (or both) must be provided. The middleware panics at startup if neither is set.
+@@ -190,15 +190,18 @@ Before matching, the host of each request is normalized, and the `AllowedHosts`
+ - Port is stripped (`example.com:8080` → `example.com`)
+ - Trailing dot removed (`example.com.` → `example.com`)
+ - IPv6 brackets removed (`[::1]` → `::1`)
++- IPv6 addresses written in their RFC 5952 Section 4 form (`[0:0:0:0:0:0:0:1]` → `::1`, `[2001:0db8::0001]` → `2001:db8::1`), so every spelling of one IPv6 address matches. `AllowedHostsFunc` receives this canonical form. An embedded IPv4 part is written in hex (`[64:ff9b::192.0.2.33]` → `64:ff9b::c000:221`), not in the mixed notation RFC 5952 Section 5 recommends
++- An IPv4-mapped address is the IPv4 address it maps (`[::ffff:7f00:1]` → `127.0.0.1`), so it matches an IPv4 entry such as `127.0.0.1` and follows the same rules as that IPv4 host. This applies to entries too: `[::ffff:10.0.0.5]` in `AllowedHosts` admits `10.0.0.5`
++- An IPv6 literal that is not IPv4-mapped never matches a `*.` subdomain rule (an IPv4-mapped one is the IPv4 host and is matched like it)
+ - Lowercased
+ - IDN labels converted to ASCII/Punycode (`münchen.example.com` → `xn--mnchen-3ya.example.com`)
+ - RFC 1035 length limits enforced at startup: ≤253 chars total, ≤63 chars per label (panic on violation)
+ 
+-An entry in the leading-dot form some other tools use (`.myapp.com`) also panics at startup; write `*.myapp.com` instead.
++An entry in the leading-dot form some other tools use (`.myapp.com`) also panics at startup; write `*.myapp.com` instead. So does any other entry no request could match: a URL (`https://myapp.com`, `http://localhost:3000`), a `%` such as a zoned `[fe80::1%25eth0]`, a port that is not numeric (`allowed.com:http`, `example.com:`), brackets around anything but an IPv6 address (`[allowed.com]`, `[127.0.0.1]:80`, `[allowed.com:443]`), another colon that is not part of an IPv6 address (`[2001:db8::g]`, `a:b:c`), and a `*.` entry holding an IP address (`*.127.0.0.1`, `*.[::1]`, `*.[::ffff:1.2.3.4]`).
+ 
+-A request host that is not a well-formed authority is rejected with `ErrorHandler` before matching, so `AllowedHostsFunc` never sees it. That covers an empty or missing `Host`, userinfo in `X-Forwarded-Host` (`allowed.com:443@attacker.example`), a port that is empty, not numeric or above 65535, malformed IPv6 brackets or an IPv6 literal without brackets, a zoned IPv6 address (`fe80::1%eth0`), and a hostname with an empty label (`a..b`), a label that starts or ends with a hyphen or is longer than 63 characters, a name longer than 253 bytes (measured before an IDN is converted to Punycode), or any character besides letters, digits, hyphens and dots (underscores included).
++A request host that is not a well-formed authority is rejected with `ErrorHandler` before matching, so `AllowedHostsFunc` never sees it. That covers an empty or missing `Host`, userinfo in `X-Forwarded-Host` (`allowed.com:443@attacker.example`), a port that is empty, not numeric or above 65535, malformed IPv6 brackets, brackets around anything but an IPv6 address (`[allowed.com:443]`) or an IPv6 literal without brackets, a zoned IPv6 address (`fe80::1%eth0`), and a hostname with an empty label (`a..b`), a label that starts or ends with a hyphen or is longer than 63 characters, a name longer than 253 bytes (measured before an IDN is converted to Punycode), or any character besides letters, digits, hyphens and dots (underscores included).
+ 
+-fasthttp answers some of these requests itself, before routing: an HTTP/1.1 request with a missing or empty `Host`, and any request whose `Host` it cannot parse (for example a space or `/` in the name, a port that is not numeric, unbalanced IPv6 brackets, an IPv6 literal without brackets, an invalid IPv6 address or a zone not written as `%25`), gets `400 Bad Request`. Fiber still runs the `Use` middleware for such a request, so `ErrorHandler` is called, but the app's `ErrorHandler` then writes the final response over it: with the default one the client receives the `400`. The `ErrorHandler` response reaches the client for an HTTP/1.0 request without `Host`, for a `Host` that fasthttp accepts and the middleware rejects (`a..b`, an empty port, a port above 65535, an underscore) and for a malformed `X-Forwarded-Host`.
++fasthttp answers some of these requests itself, before routing: an HTTP/1.1 request with a missing or empty `Host`, and any request whose `Host` it cannot parse (for example a space or `/` in the name, a port that is not numeric, unbalanced IPv6 brackets, an IPv6 literal without brackets, an invalid IPv6 address in brackets that hold no `%25`, or a zone not written as `%25`), gets `400 Bad Request`. Fiber still runs the `Use` middleware for such a request, so `ErrorHandler` is called, but the app's `ErrorHandler` then writes the final response over it: with the default one the client receives the `400`. The `ErrorHandler` response reaches the client for an HTTP/1.0 request without `Host`, for a `Host` that fasthttp accepts and the middleware rejects (`a..b`, an empty port, a port above 65535, an underscore, or any bracketed host holding `%25`, such as `[fe80::1%25eth0]` or `[allowed.com:443%25z]`, since fasthttp does not check those) and for a malformed `X-Forwarded-Host`.
+ 
+ fasthttp removes userinfo from the `Host` header itself, everything up to the last `@`, before the middleware reads it. For that header the middleware matches only what follows the `@`: `Host: allowed.com:443@attacker.example` is checked as `attacker.example`, and `Host: attacker.example@allowed.com` as `allowed.com`.
+ 
+diff --git a/docs/whats_new.md b/docs/whats_new.md
+index 7f6c1b44ea0..a3851f0cafb 100644
+--- a/docs/whats_new.md
++++ b/docs/whats_new.md
+@@ -1698,6 +1698,8 @@ Additionally, the panic for an invalid `AllowOrigins` entry redacts the origin b
+ 
+ When all origins are allowed (the default), `Access-Control-Allow-Origin: *` is also sent on responses to requests without `Origin`, `OPTIONS` excepted, so a cache in front of the middleware cannot hand a response without it to a cross-origin request.
+ 
++An IPv6 host in `AllowOrigins` is written in the form browsers send in `Origin`, so `http://[0:0:0:0:0:0:0:1]:3000` matches `Origin: http://[::1]:3000`.
++
+ ### Compression
+ 
+ - Added support for `zstd` compression alongside `gzip`, `deflate`, and `brotli`.
+@@ -1720,6 +1722,8 @@ The CSRF middleware now validates the [`Sec-Fetch-Site`](https://developer.mozil
+ 
+ `csrf.NewCrossOriginProtection` adds a tokenless alternative that follows Go's [`net/http.CrossOriginProtection`](https://pkg.go.dev/net/http#CrossOriginProtection). It rejects unsafe cross-origin browser requests by their `Sec-Fetch-Site` and `Origin` headers and needs no cookie, token, or storage. See [Cross-Origin Protection Without Tokens](./middleware/csrf.md#cross-origin-protection-without-tokens) for the rules and the differences from `net/http`.
+ 
++An IPv6 host matches in any spelling, in `TrustedOrigins`, in the `Origin` and `Referer` comparison with the request, and in `Redirect().Back()`: `http://[::1]:3000` matches `Host: [0:0:0:0:0:0:0:1]:3000`.
++
+ ### Idempotency
+ 
+ Unchanged response header lines from middleware registered before idempotency are no longer stored. CORS and request ID middleware registered there produce fresh values on each request without cached copies being appended. Headers added or changed downstream still replay, including those from route-level CORS. Existing cache entries keep their previously stored headers until expiration; this change does not invalidate idempotency keys. See [Behavior](./middleware/idempotency.md#behavior) for middleware ordering.
+@@ -1772,6 +1776,12 @@ The healthcheck middleware has been simplified into a single generic probe handl
+ 
+ Refer to the [healthcheck middleware migration guide](./middleware/healthcheck.md) or the [general migration guide](#-migration-guide) to review the changes.
+ 
++### HostAuthorization
++
++IPv6 hosts are compared in their RFC 5952 Section 4 form, and an IPv4-mapped address as the IPv4 address it maps, in requests and in `AllowedHosts` alike: `[0:0:0:0:0:0:0:1]` matches `[::1]`, and `[::ffff:127.0.0.1]` and `127.0.0.1` match each other. `AllowedHostsFunc` receives that form too, so `[::ffff:127.0.0.1]` arrives as `127.0.0.1` and `[64:ff9b::192.0.2.33]` as `64:ff9b::c000:221`. A request host with brackets around anything but an IPv6 address, such as `[allowed.com]`, is refused.
++
++An `AllowedHosts` entry no request could match now panics in `New()` instead of loading as a rule that never matches: a URL (`http://localhost:3000`), a `%` such as a zoned `[fe80::1%25eth0]`, a port that is not numeric, brackets around anything but an IPv6 address, another colon that is not part of an IPv6 address, and a `*.` entry holding an IP address (`*.127.0.0.1`). Write an entry as `host`, `host:port` or `[IPv6]:port`. See [Host Normalization](./middleware/hostauthorization.md#host-normalization).
++
+ ### KeyAuth
+ 
+ The keyauth middleware was updated to introduce a configurable `Realm` field for the `WWW-Authenticate` header.
+diff --git a/internal/ipv6host/ipv6host.go b/internal/ipv6host/ipv6host.go
+new file mode 100644
+index 00000000000..743d4045a8f
+--- /dev/null
++++ b/internal/ipv6host/ipv6host.go
+@@ -0,0 +1,61 @@
++// Package ipv6host writes IPv6 hosts in the one form browsers serialize them
++// in, so that every spelling of an address (RFC 4291 Section 2.2) compares equal.
++package ipv6host
++
++import (
++	"net/netip"
++	"strconv"
++	"strings"
++
++	"github.com/gofiber/utils/v2"
++)
++
++// Parse parses an IPv6 address written without brackets. A zone is refused:
++// netip copies it, and Unmap would drop it.
++func Parse(s string) (netip.Addr, bool) {
++	if strings.IndexByte(s, '%') >= 0 {
++		return netip.Addr{}, false
++	}
++	return utils.ParseIPv6(s)
++}
++
++// String writes addr as the WHATWG URL serializer does: RFC 5952 Section 4, and
++// an IPv4-mapped tail in hex ("::ffff:7f00:1"). raw is returned when it already
++// is that form, so the common case does not allocate.
++func String(addr netip.Addr, raw string) string {
++	var buf [len("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff")]byte
++	b := buf[:0]
++	if addr.Is4In6() {
++		a := addr.As16()
++		b = append(b, "::ffff:"...)
++		b = strconv.AppendUint(b, uint64(a[12])<<8|uint64(a[13]), 16)
++		b = append(b, ':')
++		b = strconv.AppendUint(b, uint64(a[14])<<8|uint64(a[15]), 16)
++	} else {
++		b = addr.AppendTo(b)
++	}
++	if string(b) == raw {
++		return raw
++	}
++	return string(b)
++}
++
++// Canonical rewrites the bracketed IPv6 address that host starts with, as in
++// "[0:0:0:0:0:0:0:1]:3000", and returns anything else unchanged.
++func Canonical(host string) string {
++	if host == "" || host[0] != '[' {
++		return host
++	}
++	end := strings.IndexByte(host, ']')
++	if end < 0 {
++		return host
++	}
++	addr, ok := Parse(host[1:end])
++	if !ok {
++		return host
++	}
++	if canonical := String(addr, host[1:end]); canonical != host[1:end] {
++		return "[" + canonical + host[end:]
++	}
++	return host
++}
+diff --git a/internal/origin/origin.go b/internal/origin/origin.go
+index 323a3070ef8..385811c05ef 100644
+--- a/internal/origin/origin.go
++++ b/internal/origin/origin.go
+@@ -25,6 +25,7 @@ import (
+ 	"net/url"
+ 	"strings"
+ 
++	"github.com/gofiber/fiber/v3/internal/ipv6host"
+ 	"github.com/gofiber/utils/v2"
+ 	utilsstrings "github.com/gofiber/utils/v2/strings"
+ )
+@@ -90,8 +91,11 @@ func Normalize(raw string, policy SchemePolicy) (string, bool) {
+ // outside the caller's policy still yields a string. That string is only safe
+ // to compare against an [AllowList], whose entries are all valid origins, so an
+ // invalid one can match nothing there.
++//
++// An IPv6 host is written as a browser serializes it, so "[0:0:0:0:0:0:0:1]"
++// matches the "[::1]" an Origin header carries.
+ func FromURL(u *url.URL) string {
+-	return utilsstrings.ToLower(u.Scheme) + schemeSep + utilsstrings.ToLower(u.Host)
++	return utilsstrings.ToLower(u.Scheme) + schemeSep + ipv6host.Canonical(utilsstrings.ToLower(u.Host))
+ }
+ 
+ // Subdomain is a configured wildcard pattern such as "https://*.example.com",
+diff --git a/internal/schemehost/schemehost.go b/internal/schemehost/schemehost.go
+index f9a7216451b..5bedad602a8 100644
+--- a/internal/schemehost/schemehost.go
++++ b/internal/schemehost/schemehost.go
+@@ -4,9 +4,11 @@
+ package schemehost
+ 
+ import (
++	"net/netip"
+ 	"net/url"
+ 	"strings"
+ 
++	"github.com/gofiber/fiber/v3/internal/ipv6host"
+ 	"github.com/gofiber/utils/v2"
+ 	utilsstrings "github.com/gofiber/utils/v2/strings"
+ )
+@@ -75,7 +77,14 @@ func Match(schemeA, hostA, schemeB, hostB string) bool {
+ 		}
+ 	}
+ 
+-	// Anything unusual (userinfo, percent-encoding, bracketed IPv6, control
++	// Two bracketed IPv6 hosts compare by address, so every spelling matches.
++	if addrA, portA, okA := splitIPv6HostPort(hostA, defaultPort); okA {
++		if addrB, portB, okB := splitIPv6HostPort(hostB, defaultPort); okB {
++			return addrA == addrB && portA == portB
++		}
++	}
++
++	// Anything unusual (userinfo, percent-encoding, an IPv6 zone, control
+ 	// chars, invalid port, ...) takes the legacy normalize-and-compare path.
+ 	return normalizeHostPort(scheme, hostA, defaultPort) == normalizeHostPort(scheme, hostB, defaultPort)
+ }
+@@ -116,6 +125,27 @@ func splitStrictHostPort(s, defaultPort string) (host, port string, ok bool) { /
+ 	}
+ }
+ 
++// splitIPv6HostPort splits "[ipv6]" or "[ipv6]:port" into the address and the
++// port, defaultPort when absent. A zone or anything else makes it not ok.
++func splitIPv6HostPort(s, defaultPort string) (netip.Addr, string, bool) {
++	inner, bracketed := strings.CutPrefix(s, "[")
++	end := strings.IndexByte(inner, ']')
++	if !bracketed || end < 0 {
++		return netip.Addr{}, "", false
++	}
++	addr, ok := ipv6host.Parse(inner[:end])
++	switch rest := inner[end+1:]; {
++	case !ok:
++		return netip.Addr{}, "", false
++	case rest == "":
++		return addr, defaultPort, true
++	case rest[0] == ':' && allDigits(rest[1:]):
++		return addr, rest[1:], true
++	default:
++		return netip.Addr{}, "", false
++	}
++}
++
+ var (
+ 	regNameBytes     = byteSet("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+ 	ipv6LiteralBytes = byteSet("0123456789abcdefABCDEF:.")
+@@ -141,7 +171,7 @@ func onlyBytes(s string, set *[256]bool) bool {
+ // normalizeHostPort lowercases host and appends defaultPort when no explicit
+ // port is present. scheme is only used by the url.Parse fallback.
+ func normalizeHostPort(scheme, host, defaultPort string) string {
+-	host = utilsstrings.ToLower(host)
++	host = ipv6host.Canonical(utilsstrings.ToLower(host))
+ 
+ 	// Clean "host" or "host:port" values (e.g. the clean side of a mixed
+ 	// clean/unclean pair; Match handles the clean/clean case itself) avoid the
+diff --git a/middleware/hostauthorization/config.go b/middleware/hostauthorization/config.go
+index 3ad8b2a68e7..fb15e06b5f1 100644
+--- a/middleware/hostauthorization/config.go
++++ b/middleware/hostauthorization/config.go
+@@ -19,7 +19,10 @@ type Config struct {
+ 
+ 	// AllowedHostsFunc is a dynamic validator called only when no static
+ 	// AllowedHosts rule matches. Receives the normalized hostname: port stripped,
+-	// trailing dot removed, IPv6 brackets removed, lowercased.
++	// trailing dot removed, IPv6 brackets removed, lowercased, IDN converted to
++	// Punycode. An IPv6 address is passed in its RFC 5952 Section 4 form ("::1")
++	// whatever spelling the client sent, an IPv4-mapped one as IPv4 ("127.0.0.1").
++	// The string is only valid during the call; copy it to keep it.
+ 	// Return true to allow.
+ 	//
+ 	// Optional. Default: nil
+@@ -37,8 +40,13 @@ type Config struct {
+ 	//   - Subdomain: "*.myapp.com" (matches any subdomain, NOT the bare domain — list both for apex+subdomains)
+ 	//
+ 	// Entries are normalized at startup: port stripped, trailing dot removed,
+-	// lowercased, IDN labels converted to Punycode, RFC 1035 length limits enforced
+-	// (≤253 total / ≤63 per-label).
++	// lowercased, IDN labels converted to Punycode, IPv6 addresses written in
++	// their RFC 5952 Section 4 form, RFC 1035 length limits enforced
++	// (≤253 total / ≤63 per-label). An IPv4-mapped entry is stored as its IPv4
++	// address ("[::ffff:10.0.0.5]" admits "10.0.0.5"). An entry no request could
++	// match panics: a URL, a "%", a port that is not numeric, brackets around
++	// anything but an IPv6 address, another colon that is not part of an IPv6
++	// address, or a "*." entry holding an IP address.
+ 	//
+ 	// Required if AllowedHostsFunc is nil.
+ 	AllowedHosts []string
+diff --git a/middleware/hostauthorization/hostauthorization.go b/middleware/hostauthorization/hostauthorization.go
+index dc5c33246e3..19b28798bda 100644
+--- a/middleware/hostauthorization/hostauthorization.go
++++ b/middleware/hostauthorization/hostauthorization.go
+@@ -2,10 +2,12 @@ package hostauthorization
+ 
+ import (
+ 	"fmt"
++	"net/netip"
+ 	"strings"
+ 
+ 	"github.com/gofiber/fiber/v3"
+ 	"github.com/gofiber/fiber/v3/internal/idnafold"
++	"github.com/gofiber/fiber/v3/internal/ipv6host"
+ 	"github.com/gofiber/utils/v2"
+ 	utilsstrings "github.com/gofiber/utils/v2/strings"
+ )
+@@ -17,7 +19,9 @@ const (
+ )
+ 
+ type parsedHosts struct {
+-	exact            map[string]struct{}
++	exact map[string]struct{}
++	// ips holds the exact IP entries again, so a bracketed host matches without being formatted.
++	ips              map[netip.Addr]struct{}
+ 	wildcardSuffixes []string
+ }
+ 
+@@ -27,6 +31,7 @@ type parsedHosts struct {
+ func parseAllowedHosts(hosts []string) parsedHosts {
+ 	parsed := parsedHosts{
+ 		exact: make(map[string]struct{}, len(hosts)),
++		ips:   make(map[netip.Addr]struct{}),
+ 	}
+ 
+ 	for _, h := range hosts {
+@@ -40,23 +45,32 @@ func parseAllowedHosts(hosts []string) parsedHosts {
+ 			panic("hostauthorization: invalid host " + h + " — subdomain wildcards use the \"*.example.com\" form")
+ 		}
+ 
++		entry := h
+ 		isWildcard := strings.HasPrefix(h, "*.")
+ 		if isWildcard {
+ 			h = h[2:]
+ 		}
+ 
+-		h = normalizeHost(h)
++		var isIP bool
++		h, isIP = normalizeEntry(entry, h)
+ 		if h == "" {
+ 			continue
+ 		}
+-
+-		validateHostLength(h)
++		if isWildcard && isIP {
++			panic(invalidEntry(entry, "subdomain wildcards take a domain name, not an IP address"))
++		}
++		if !isIP {
++			validateHostLength(h)
++		}
+ 
+ 		if isWildcard {
+ 			// Stored with leading dot so the hot-path HasSuffix check stays alloc-free.
+ 			parsed.wildcardSuffixes = append(parsed.wildcardSuffixes, "."+h)
+ 		} else {
+ 			parsed.exact[h] = struct{}{}
++			if isIP {
++				parsed.ips[netip.MustParseAddr(h)] = struct{}{}
++			}
+ 		}
+ 	}
+ 
+@@ -68,10 +82,6 @@ func validateHostLength(host string) {
+ 		panic(fmt.Sprintf("hostauthorization: host %q exceeds RFC 1035 maximum of %d characters (%d chars)",
+ 			host, maxDomainLength, len(host)))
+ 	}
+-	// IPv6 hosts contain colons and aren't dotted labels.
+-	if strings.IndexByte(host, ':') >= 0 {
+-		return
+-	}
+ 	for label := range strings.SplitSeq(host, ".") {
+ 		if len(label) > maxLabelLength {
+ 			panic(fmt.Sprintf("hostauthorization: host %q has label %q exceeding RFC 1035 limit of %d characters (%d chars)",
+@@ -80,26 +90,56 @@ func validateHostLength(host string) {
+ 	}
+ }
+ 
+-// normalizeHost strips port, trailing dot, and IPv6 brackets, lowercases,
+-// and converts IDN labels to Punycode (matching what browsers send).
+-func normalizeHost(host string) string {
+-	// Fast path for plain hostnames — skips the split and the bracket trims.
+-	if host != "" && host[0] != '[' && strings.IndexByte(host, ':') < 0 {
+-		host = trimOneTrailingDot(host)
+-		host = utilsstrings.ToLower(host)
+-		return idnafold.ToASCII(host)
++// normalizeEntry normalizes an AllowedHosts entry without its "*." prefix and
++// reports whether it is an IP address. An entry no request could match panics.
++func normalizeEntry(entry, host string) (string, bool) {
++	switch {
++	case strings.Contains(host, "://"):
++		panic(invalidEntry(entry, "write host[:port], not a URL"))
++	case strings.IndexByte(host, '%') >= 0:
++		panic(invalidEntry(entry, "IPv6 zones and percent-encoding are not supported"))
++	case strings.ContainsAny(host, "[]"):
++		// Same rule as for a request: brackets hold an IPv6 address only.
++		if h, ok := parseNormalizedAuthority(host); ok {
++			return h, true
++		}
++		panic(invalidEntry(entry, "brackets must hold an IPv6 address, optionally followed by a valid port"))
+ 	}
+ 
+-	if h, _, ok := utils.SplitHostPort(host); ok {
+-		host = h
+-	} else {
+-		host = utils.TrimLeft(host, '[')
+-		host = utils.TrimRight(host, ']')
++	if h, ok := canonicalIPv6(host); ok {
++		return h, true
+ 	}
++	name, port, hasPort := utils.SplitHostPort(host)
++	switch {
++	case !hasPort && strings.IndexByte(host, ':') >= 0:
++		panic(invalidEntry(entry, "not a valid IPv6 address"))
++	case !hasPort:
++		name = host
++	case !isValidPort(port):
++		panic(invalidEntry(entry, fmt.Sprintf("invalid port %q", port)))
++	}
++	name = normalizeName(name)
++	return name, utils.IsIPv4(name)
++}
+ 
+-	host = trimOneTrailingDot(host)
+-	host = utilsstrings.ToLower(host)
+-	return idnafold.ToASCII(host)
++func invalidEntry(entry, reason string) string {
++	return "hostauthorization: invalid host " + entry + ": " + reason
++}
++
++// normalizeName drops one trailing dot, lowercases, and converts IDN labels to
++// Punycode, matching what browsers send.
++func normalizeName(host string) string {
++	return idnafold.ToASCII(utilsstrings.ToLower(trimOneTrailingDot(host)))
++}
++
++// canonicalIPv6 writes an IPv6 address in the form browsers send (see ipv6host),
++// and an IPv4-mapped one as the IPv4 host, as in isTrustedProxyIP.
++func canonicalIPv6(host string) (string, bool) {
++	addr, ok := ipv6host.Parse(host)
++	if !ok {
++		return "", false
++	}
++	return ipv6host.String(addr.Unmap(), host), true
+ }
+ 
+ func trimOneTrailingDot(host string) string {
+@@ -116,53 +156,33 @@ func parseNormalizedAuthority(authority string) (string, bool) {
+ 		return "", false
+ 	}
+ 
+-	host := authority
+ 	if authority[0] == '[' {
+-		idx := -1
+-		for i := 1; i < len(authority); i++ {
+-			switch authority[i] {
+-			case '@', '[':
+-				return "", false
+-			case ']':
+-				idx = i
+-				i = len(authority)
+-			default:
+-			}
+-		}
+-		if idx <= 1 {
++		addr, interior, ok := parseBracketed(authority)
++		if !ok {
+ 			return "", false
+ 		}
++		return ipv6host.String(addr, interior), true
++	}
+ 
+-		host = authority[1:idx]
+-		rest := authority[idx+1:]
+-		if rest != "" {
+-			if rest[0] != ':' {
+-				return "", false
+-			}
+-			if !isValidPort(rest[1:]) {
+-				return "", false
+-			}
+-		}
+-	} else {
+-		colonIdx := -1
+-		for i := 0; i < len(authority); i++ {
+-			switch authority[i] {
+-			case '@', '[', ']':
++	host := authority
++	colonIdx := -1
++	for i := 0; i < len(authority); i++ {
++		switch authority[i] {
++		case '@', '[', ']':
++			return "", false
++		case ':':
++			if colonIdx != -1 {
+ 				return "", false
+-			case ':':
+-				if colonIdx != -1 {
+-					return "", false
+-				}
+-				colonIdx = i
+-			default:
+ 			}
++			colonIdx = i
++		default:
+ 		}
++	}
+ 
+-		if colonIdx != -1 {
+-			host = authority[:colonIdx]
+-			if !isValidPort(authority[colonIdx+1:]) {
+-				return "", false
+-			}
++	if colonIdx != -1 {
++		host = authority[:colonIdx]
++		if !isValidPort(authority[colonIdx+1:]) {
++			return "", false
+ 		}
+ 	}
+ 
+@@ -171,7 +191,7 @@ func parseNormalizedAuthority(authority string) (string, bool) {
+ 		return "", false
+ 	}
+ 
+-	host = normalizeHost(host)
++	host = normalizeName(host)
+ 	if host == "" {
+ 		return "", false
+ 	}
+@@ -183,23 +203,42 @@ func parseNormalizedAuthority(authority string) (string, bool) {
+ 	return host, true
+ }
+ 
++// parseBracketed parses an authority that starts with "[" and returns its address,
++// unmapped, and the text between the brackets.
++func parseBracketed(authority string) (netip.Addr, string, bool) {
++	idx := -1
++	for i := 1; i < len(authority); i++ {
++		switch authority[i] {
++		case '@', '[':
++			return netip.Addr{}, "", false
++		case ']':
++			idx = i
++			i = len(authority)
++		default:
++		}
++	}
++	if idx <= 1 {
++		return netip.Addr{}, "", false
++	}
++
++	rest := authority[idx+1:]
++	if rest != "" && (rest[0] != ':' || !isValidPort(rest[1:])) {
++		return netip.Addr{}, "", false
++	}
++
++	// Brackets hold an IPv6 address only; "[allowed.com:443]" must not pass as allowed.com.
++	addr, ok := ipv6host.Parse(authority[1:idx])
++	if !ok {
++		return netip.Addr{}, "", false
++	}
++	return addr.Unmap(), authority[1:idx], true
++}
++
+ func isValidHostSyntax(host string) bool {
+ 	if host == "" {
+ 		return false
+ 	}
+ 
+-	// A colon only appears in IPv6 literals; validate those with
+-	// utils.ParseIPv6. Screening out zoned addresses first makes the
+-	// acceptance identical to net.ParseIP (netip.ParseAddr minus zones)
+-	// without its net.IP slice allocation on this per-request path.
+-	if strings.IndexByte(host, ':') >= 0 {
+-		if strings.IndexByte(host, '%') >= 0 {
+-			return false
+-		}
+-		_, ok := utils.ParseIPv6(host)
+-		return ok
+-	}
+-
+ 	// Validate dotted DNS labels in a single pass without allocating.
+ 	labelLen := 0
+ 	for i := 0; i < len(host); i++ {
+@@ -265,6 +304,7 @@ func matchHost(host string, parsed parsedHosts, allowedHostsFunc func(string) bo
+ 		return true
+ 	}
+ 
++	// A canonical IPv6 host holds no dot, so it never matches a suffix here.
+ 	for _, suffix := range parsed.wildcardSuffixes {
+ 		if strings.HasSuffix(host, suffix) {
+ 			return true
+@@ -278,6 +318,28 @@ func matchHost(host string, parsed parsedHosts, allowedHostsFunc func(string) bo
+ 	return false
+ }
+ 
++// isAllowed reports whether authority is a well-formed host that matches a rule.
++func isAllowed(authority string, parsed parsedHosts, allowedHostsFunc func(string) bool) bool {
++	authority = utils.TrimSpace(authority)
++	if authority == "" || authority[0] != '[' {
++		host, ok := parseNormalizedAuthority(authority)
++		return ok && matchHost(host, parsed, allowedHostsFunc)
++	}
++
++	addr, interior, ok := parseBracketed(authority)
++	if !ok {
++		return false
++	}
++	if _, ok := parsed.ips[addr]; ok {
++		return true
++	}
++	// Nothing else can match, so skip formatting the host.
++	if len(parsed.wildcardSuffixes) == 0 && allowedHostsFunc == nil {
++		return false
++	}
++	return matchHost(ipv6host.String(addr, interior), parsed, allowedHostsFunc)
++}
++
+ // New creates a new host authorization middleware handler.
+ func New(config ...Config) fiber.Handler {
+ 	cfg := configDefault(config...)
+@@ -288,12 +350,7 @@ func New(config ...Config) fiber.Handler {
+ 			return c.Next()
+ 		}
+ 
+-		host, ok := parseNormalizedAuthority(c.Host())
+-		if !ok {
+-			return cfg.ErrorHandler(c, ErrForbiddenHost)
+-		}
+-
+-		if matchHost(host, parsed, cfg.AllowedHostsFunc) {
++		if isAllowed(c.Host(), parsed, cfg.AllowedHostsFunc) {
+ 			return c.Next()
+ 		}
+ 

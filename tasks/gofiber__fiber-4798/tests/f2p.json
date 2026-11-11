@@ -1,0 +1,13 @@
+[
+  "Test_CORS_AllowOriginsAndAllowOriginsFunc_AllUseCases",
+  "Test_CORS_AllowOriginsAndAllowOriginsFunc_AllUseCases/IPv6/entry_spelled_out",
+  "Test_CORS_AllowOriginsAndAllowOriginsFunc_AllUseCases/IPv6/ipv4-mapped_entry",
+  "Test_CSRF_TrustedOrigins",
+  "Test_CSRF_TrustedOrigins/Trusted_Origin_ipv6_entry_spelled_out",
+  "Test_CSRF_TrustedOrigins/Trusted_Referer_ipv6_entry_spelled_out",
+  "Test_CSRF_TrustedOrigins/same-origin_ipv6_Host_spelled_out",
+  "Test_FromURL",
+  "Test_FromURL/http://[0:0:0:0:0:0:0:1]:8080/x",
+  "Test_FromURL/http://[2001:DB8:0:0:0:0:0:1]",
+  "Test_FromURL/http://[::ffff:127.0.0.1]"
+]

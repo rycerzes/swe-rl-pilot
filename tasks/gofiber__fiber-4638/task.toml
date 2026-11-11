@@ -1,0 +1,370 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gofiber__fiber-4638"
+description = "🔥 feat: expand context, response and request helpers"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "fiber",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gofiber/fiber"
+ref = "a9981a7db37dca1a3310fd7c924eb60262f31df8"
+reference = "https://github.com/gofiber/fiber/pull/4638"
+source_access = "auto"
+built_at = "2026-11-10T23:29:57.414233+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:45afce294ffb55786cb671e7a0dc370338f9202111cb3cbe87c86f94a617a119"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gofiber/fiber/pull/4638"
+pr_merged_at = "2026-08-31T12:21:09Z"
+base_commit = "a9981a7db37dca1a3310fd7c924eb60262f31df8"
+fail_to_pass = [
+    "Test_CORS_OriginWithoutHeaderNormalizing",
+    "Test_CORS_PreflightSplitRequestHeaders",
+    "Test_CORS_PreflightWithoutHeaderNormalizing",
+    "Test_Del_TerminatesOnNonCanonicalNameInNormalizingStore",
+    "Test_Del_TerminatesOnSynthesizedContentType",
+    "Test_ETag_HandlerETagSpellingsWithoutNormalizing",
+    "Test_ETag_HandlerETagSpellingsWithoutNormalizing/ETAG",
+    "Test_ETag_HandlerETagSpellingsWithoutNormalizing/ETag",
+    "Test_ETag_HandlerETagSpellingsWithoutNormalizing/eTaG",
+    "Test_ETag_HandlerETagSpellingsWithoutNormalizing/etag",
+    "Test_ETag_HandlerETagWithoutNormalizing",
+    "Test_ETag_SplitIfNoneMatch",
+    "Test_Logger_ResBody_DoesNotDrainStream",
+]
+pass_to_pass = [
+    "Test_AppendIntPadded",
+    "Test_CORS_AllowCredentials",
+    "Test_CORS_AllowCredentials/AllowOriginsDefined",
+    "Test_CORS_AllowCredentials/AllowOriginsDefined/UnallowedOrigin",
+    "Test_CORS_AllowCredentials/AllowOriginsFuncDefined",
+    "Test_CORS_AllowCredentials/AllowOriginsFuncNotDefined",
+    "Test_CORS_AllowCredentials/fiber-ghsa-fmg4-x8pw-hjhg-wildcard-credentials",
+    "Test_CORS_AllowOriginHeader_NoMatch",
+    "Test_CORS_AllowOriginScheme",
+    "Test_CORS_AllowOriginsAndAllowOriginsFunc",
+    "Test_CORS_AllowOriginsAndAllowOriginsFunc_AllUseCases",
+    "Test_CORS_AllowOriginsAndAllowOriginsFunc_AllUseCases/AllowOriginsDefined/AllowOriginsFuncReturnsFalse/OriginAllowed",
+    "Test_CORS_AllowOriginsAndAllowOriginsFunc_AllUseCases/AllowOriginsDefined/AllowOriginsFuncReturnsFalse/OriginNotAllowed",
+    "Test_CORS_AllowOriginsAndAllowOriginsFunc_AllUseCases/AllowOriginsDefined/AllowOriginsFuncReturnsTrue/OriginAllowed",
+    "Test_CORS_AllowOriginsAndAllowOriginsFunc_AllUseCases/AllowOriginsDefined/AllowOriginsFuncReturnsTrue/OriginNotAllowed",
+    "Test_CORS_AllowOriginsAndAllowOriginsFunc_AllUseCases/AllowOriginsDefined/AllowOriginsFuncUndefined/MultipleOrigins/OriginAllowed",
+    "Test_CORS_AllowOriginsAndAllowOriginsFunc_AllUseCases/AllowOriginsDefined/AllowOriginsFuncUndefined/MultipleOrigins/OriginNotAllowed",
+    "Test_CORS_AllowOriginsAndAllowOriginsFunc_AllUseCases/AllowOriginsDefined/AllowOriginsFuncUndefined/MultipleOrigins/Whitespace/OriginAllowed",
+    "Test_CORS_AllowOriginsAndAllowOriginsFunc_AllUseCases/AllowOriginsDefined/AllowOriginsFuncUndefined/OriginAllowed",
+    "Test_CORS_AllowOriginsAndAllowOriginsFunc_AllUseCases/AllowOriginsDefined/AllowOriginsFuncUndefined/OriginNotAllowed",
+    "Test_CORS_AllowOriginsAndAllowOriginsFunc_AllUseCases/AllowOriginsEmpty/AllowOriginsFuncReturnsFalse/OriginNotAllowed",
+    "Test_CORS_AllowOriginsAndAllowOriginsFunc_AllUseCases/AllowOriginsEmpty/AllowOriginsFuncReturnsTrue/OriginAllowed",
+    "Test_CORS_AllowOriginsAndAllowOriginsFunc_AllUseCases/AllowOriginsEmpty/AllowOriginsFuncUndefined/OriginAllowed",
+    "Test_CORS_AllowOriginsFunc",
+    "Test_CORS_AllowOriginsFuncRejectsNonSerializedOrigins",
+    "Test_CORS_AllowOriginsFuncRejectsNonSerializedOrigins/FragmentPresent",
+    "Test_CORS_AllowOriginsFuncRejectsNonSerializedOrigins/NullOriginLowercase",
+    "Test_CORS_AllowOriginsFuncRejectsNonSerializedOrigins/NullOriginMixedCase",
+    "Test_CORS_AllowOriginsFuncRejectsNonSerializedOrigins/NullOriginUppercase",
+    "Test_CORS_AllowOriginsFuncRejectsNonSerializedOrigins/PathPresent",
+    "Test_CORS_AllowOriginsFuncRejectsNonSerializedOrigins/QueryPresent",
+    "Test_CORS_AllowOriginsFuncRejectsNonSerializedOrigins/StandaloneWildcard",
+    "Test_CORS_AllowOriginsFuncRejectsNonSerializedOrigins/UserInfoPresent",
+    "Test_CORS_AllowOriginsFuncRejectsNonSerializedOrigins/WildcardHost",
+    "Test_CORS_AllowOrigins_NormalizedExactLookup",
+    "Test_CORS_AllowOrigins_Vary",
+    "Test_CORS_AllowPrivateNetwork",
+    "Test_CORS_Defaults",
+    "Test_CORS_DisableValueRedaction",
+    "Test_CORS_Empty_Config",
+    "Test_CORS_Headers_BasedOnRequestType",
+    "Test_CORS_Headers_BasedOnRequestType/Non-preflight_request_with_origin",
+    "Test_CORS_Headers_BasedOnRequestType/Preflight_request_with_origin_and_Access-Control-Request-Method_headers",
+    "Test_CORS_Headers_BasedOnRequestType/Preflight_with_Access-Control-Request-Headers",
+    "Test_CORS_Headers_BasedOnRequestType/Without_origin",
+    "Test_CORS_Invalid_Origins_Panic",
+    "Test_CORS_MatchSubdomainOrigin",
+    "Test_CORS_MatchSubdomainOrigin/empty_slice_never_matches",
+    "Test_CORS_MatchSubdomainOrigin/matches_first_pattern",
+    "Test_CORS_MatchSubdomainOrigin/matches_later_pattern",
+    "Test_CORS_MatchSubdomainOrigin/nil_slice_never_matches",
+    "Test_CORS_MatchSubdomainOrigin/rejects_invalid_origin_once",
+    "Test_CORS_MatchSubdomainOrigin/rejects_non-normalized_origin",
+    "Test_CORS_MatchSubdomainOrigin/rejects_unmatched_origin",
+    "Test_CORS_MaxAge_NotSetOnSimpleRequest",
+    "Test_CORS_Negative_MaxAge",
+    "Test_CORS_Next",
+    "Test_CORS_Origin_AllowCredentials",
+    "Test_CORS_Preserve_Origin_Case",
+    "Test_CORS_Query_RequiresPreflight",
+    "Test_CORS_Query_RequiresPreflight/QUERY_preflight_is_answered_with_QUERY_allowed",
+    "Test_CORS_Query_RequiresPreflight/actual_QUERY_request_is_a_simple_response,_not_safelisted",
+    "Test_CORS_Security_CredentialsSimpleRequest",
+    "Test_CORS_Security_CredentialsWithSubdomainWildcard",
+    "Test_CORS_Security_CredentialsWithSubdomainWildcard/apex_domain_does_not_match_wildcard",
+    "Test_CORS_Security_CredentialsWithSubdomainWildcard/matching_subdomain_reflected_with_credentials",
+    "Test_CORS_Security_CredentialsWithSubdomainWildcard/non-matching_origin_gets_nothing",
+    "Test_CORS_Security_CredentialsWithSubdomainWildcard/scheme_downgrade_does_not_match",
+    "Test_CORS_Security_NoOriginReflectionForDisallowed",
+    "Test_CORS_Subdomain",
+    "Test_CORS_SubdomainMatch",
+    "Test_CORS_SubdomainMatch/match_with_different_scheme",
+    "Test_CORS_SubdomainMatch/match_with_different_scheme#01",
+    "Test_CORS_SubdomainMatch/match_with_valid_nested_subdomain",
+    "Test_CORS_SubdomainMatch/match_with_valid_subdomain",
+    "Test_CORS_SubdomainMatch/no_match_with_empty_host_label",
+    "Test_CORS_SubdomainMatch/no_match_with_empty_label_before_suffix",
+    "Test_CORS_SubdomainMatch/no_match_with_empty_origin",
+    "Test_CORS_SubdomainMatch/no_match_with_invalid_prefix",
+    "Test_CORS_SubdomainMatch/no_match_with_invalid_suffix",
+    "Test_CORS_SubdomainMatch/no_match_with_malformed_host_label",
+    "Test_CORS_SubdomainMatch/no_match_with_malformed_origin_port_before_suffix",
+    "Test_CORS_SubdomainMatch/no_match_with_malformed_subdomain",
+    "Test_CORS_SubdomainMatch/no_match_with_non-normalized_origin",
+    "Test_CORS_SubdomainMatch/no_match_with_userinfo_in_origin",
+    "Test_CORS_SubdomainMatch/partial_match_not_considered_a_match",
+    "Test_CORS_Warn_AllowAllOrigins_WithFunc",
+    "Test_CORS_Wildcard",
+    "Test_CORS_WildcardHeaders",
+    "Test_CORS_Wildcard_AllowCredentials_Panic",
+    "Test_CORS_setPreflightHeaders_NilConfig",
+    "Test_CORS_setSimpleHeaders_NilConfig",
+    "Test_CORS_setSimpleHeaders_WildcardWithCredentials",
+    "Test_CustomTags",
+    "Test_Del_RemovesEverySpelling",
+    "Test_ETag_CustomEtag",
+    "Test_ETag_CustomEtag/with_HeaderIfNoneMatch_and_matched",
+    "Test_ETag_CustomEtag/with_HeaderIfNoneMatch_and_not_matched",
+    "Test_ETag_CustomEtag/without_HeaderIfNoneMatch",
+    "Test_ETag_CustomEtagPut",
+    "Test_ETag_HandlerETagSpellingsWithoutNormalizing/Etag",
+    "Test_ETag_NewEtag",
+    "Test_ETag_NewEtag/with_HeaderIfNoneMatch_and_matched",
+    "Test_ETag_NewEtag/with_HeaderIfNoneMatch_and_not_matched",
+    "Test_ETag_NewEtag/without_HeaderIfNoneMatch",
+    "Test_ETag_Next",
+    "Test_ETag_NoBody",
+    "Test_ETag_NotStatusOK",
+    "Test_ETag_SSE",
+    "Test_ETag_SSE_Stream",
+    "Test_ETag_SkipError",
+    "Test_ETag_WeakComparison",
+    "Test_ETag_WeakComparison/match_in_list_after_weak_tag",
+    "Test_ETag_WeakComparison/no_match_in_list",
+    "Test_ETag_WeakComparison/strong_client_tag_matches_weak_server_tag",
+    "Test_ETag_WeakComparison/unquoted_tag_never_matches",
+    "Test_ETag_WeakComparison/weak_client_tag_matches_strong_server_tag",
+    "Test_ETag_WeakComparison/weak_match_in_list",
+    "Test_ETag_WeakComparison/wildcard",
+    "Test_ETag_WeakEtag",
+    "Test_ETag_WeakEtag/with_HeaderIfNoneMatch_and_matched",
+    "Test_ETag_WeakEtag/with_HeaderIfNoneMatch_and_not_matched",
+    "Test_ETag_WeakEtag/without_HeaderIfNoneMatch",
+    "Test_First_EmptyLineDoesNotHideTheValue",
+    "Test_First_EmptyLineDoesNotHideTheValue/absent",
+    "Test_First_EmptyLineDoesNotHideTheValue/another_spelling_alone",
+    "Test_First_EmptyLineDoesNotHideTheValue/empty_line_ahead_of_another_spelling",
+    "Test_First_EmptyLineDoesNotHideTheValue/empty_line_ahead_of_the_value",
+    "Test_First_EmptyLineDoesNotHideTheValue/only_an_empty_line",
+    "Test_First_EmptyLineDoesNotHideTheValue/the_ordinary_single_line",
+    "Test_First_EmptyLineIsNotNil",
+    "Test_Logger",
+    "Test_Logger_All",
+    "Test_Logger_ByteSent_Streaming",
+    "Test_Logger_CLF_Format",
+    "Test_Logger_Combined_CLF_Format",
+    "Test_Logger_CustomTagOverridesRegisteredTag",
+    "Test_Logger_DataLegacyTemplateChains",
+    "Test_Logger_Data_Race",
+    "Test_Logger_DefaultFormat_ColoredError",
+    "Test_Logger_DefaultFormat_MethodColors",
+    "Test_Logger_DefaultFormat_MethodColors/DELETE",
+    "Test_Logger_DefaultFormat_MethodColors/GET",
+    "Test_Logger_DefaultFormat_MethodColors/HEAD",
+    "Test_Logger_DefaultFormat_MethodColors/OPTIONS",
+    "Test_Logger_DefaultFormat_MethodColors/PATCH",
+    "Test_Logger_DefaultFormat_MethodColors/POST",
+    "Test_Logger_DefaultFormat_MethodColors/PUT",
+    "Test_Logger_DefaultFormat_SanitizesControlBytes",
+    "Test_Logger_DefaultFormat_SanitizesControlBytes/colors=false",
+    "Test_Logger_DefaultFormat_SanitizesControlBytes/colors=true",
+    "Test_Logger_DefaultFormat_StatusColors",
+    "Test_Logger_DefaultFormat_StatusColors/200",
+    "Test_Logger_DefaultFormat_StatusColors/301",
+    "Test_Logger_DefaultFormat_StatusColors/404",
+    "Test_Logger_DefaultFormat_StatusColors/500",
+    "Test_Logger_DefaultFormat_WithoutColor",
+    "Test_Logger_Done",
+    "Test_Logger_ECS_Format",
+    "Test_Logger_EnableColors",
+    "Test_Logger_ErrorOutput",
+    "Test_Logger_ErrorOutput_TemplateFailure",
+    "Test_Logger_ErrorOutput_WithoutColor",
+    "Test_Logger_ErrorTimeZone",
+    "Test_Logger_Filter",
+    "Test_Logger_Filter/Always_Skip",
+    "Test_Logger_Filter/Never_Skip",
+    "Test_Logger_Filter/Skip_/healthz",
+    "Test_Logger_Filter/Test_Not_Found",
+    "Test_Logger_Filter/Test_OK",
+    "Test_Logger_ForceColors",
+    "Test_Logger_IPs_RepeatedFieldLines",
+    "Test_Logger_IPs_WithoutHeaderNormalizing",
+    "Test_Logger_IPs_WithoutHeaderNormalizing/normalized,_one_line",
+    "Test_Logger_IPs_WithoutHeaderNormalizing/normalized,_two_lines",
+    "Test_Logger_IPs_WithoutHeaderNormalizing/raw,_lower-case_name",
+    "Test_Logger_IPs_WithoutHeaderNormalizing/raw,_mixed-case_names",
+    "Test_Logger_Json_Format",
+    "Test_Logger_LoggerToWriter",
+    "Test_Logger_LoggerToWriter/0",
+    "Test_Logger_LoggerToWriter/1",
+    "Test_Logger_LoggerToWriter/2",
+    "Test_Logger_LoggerToWriter/3",
+    "Test_Logger_LoggerToWriter/4",
+    "Test_Logger_MustRegisterTagPanicsOnInvalidInput",
+    "Test_Logger_New_TimeDoneUpdater",
+    "Test_Logger_Next",
+    "Test_Logger_PreRegisteredMiddlewareTag",
+    "Test_Logger_RegisterContextTag_Sanitizes",
+    "Test_Logger_RegisterTagRejectsInvalidInput",
+    "Test_Logger_RegisteredTag",
+    "Test_Logger_SanitizesControlBytes",
+    "Test_Logger_SanitizesControlBytes/body",
+    "Test_Logger_SanitizesControlBytes/query",
+    "Test_Logger_SanitizesControlBytes/tab_is_preserved",
+    "Test_Logger_SanitizesLocalsByType",
+    "Test_Logger_SanitizesLocalsByType/bytes",
+    "Test_Logger_SanitizesLocalsByType/nil",
+    "Test_Logger_SanitizesLocalsByType/other",
+    "Test_Logger_SanitizesLocalsByType/string",
+    "Test_Logger_SanitizesPath",
+    "Test_Logger_SharedTimestampState",
+    "Test_Logger_TimeUpdaterStopsOnDone",
+    "Test_Logger_TimeUpdatesAfterInterval",
+    "Test_Logger_TimestampUpdater_StopsImmediatelyWithoutTimeTag",
+    "Test_Logger_UnknownTagPanicsWithTypedError",
+    "Test_Logger_UnknownTagPanicsWithTypedError/bare_tag",
+    "Test_Logger_UnknownTagPanicsWithTypedError/parametric_tag",
+    "Test_Logger_WithLatency",
+    "Test_Logger_WithLatency_DefaultFormat",
+    "Test_Logger_locals",
+    "Test_NormalizeOrigin",
+    "Test_Query_Params",
+    "Test_RegisterContextTag",
+    "Test_RegisterContextTag_EmptyValue",
+    "Test_ReqHeader_Header",
+    "Test_Req_Header",
+    "Test_Request_Body",
+    "Test_Response_Body",
+    "Test_Response_Header",
+    "Test_SanitizeValue",
+    "Test_SanitizeValue/C1_NEL_passes_through",
+    "Test_SanitizeValue/CRLF_is_neutralized",
+    "Test_SanitizeValue/NUL_and_DEL",
+    "Test_SanitizeValue/clean_passes_through",
+    "Test_SanitizeValue/empty",
+    "Test_SanitizeValue/escape_sequence",
+    "Test_SanitizeValue/multibyte_is_untouched",
+    "Test_SanitizeValue/tab_is_preserved",
+    "Test_TagIPs_PropagatesWriteErrors",
+    "Test_TagIPs_PropagatesWriteErrors/the_first_entry_fails",
+    "Test_TagIPs_PropagatesWriteErrors/the_second_entry_fails",
+    "Test_TagIPs_PropagatesWriteErrors/the_separator_fails",
+    "Test_TagIPs_PropagatesWriteErrors/the_whole_chain_is_written",
+    "Test_TranslateBuildError",
+    "Test_UnknownTagErrorIsAndAs",
+    "Test_UnknownTagError_WithHint",
+    "Test_beforeHandlerFunc_StdoutColorSelection",
+    "Test_beforeHandlerFunc_StdoutColorSelection/ForceColors_overrides_both",
+    "Test_beforeHandlerFunc_StdoutColorSelection/NO_COLOR_strips_colors",
+    "Test_beforeHandlerFunc_StdoutColorSelection/colors_disabled_is_left_alone",
+    "Test_beforeHandlerFunc_StdoutColorSelection/custom_stream_is_left_alone",
+    "Test_beforeHandlerFunc_StdoutColorSelection/dumb_terminal_strips_colors",
+    "Test_beforeHandlerFunc_StdoutColorSelection/nil_config",
+    "Test_customLoggerWriter_InvalidLevel",
+    "Test_isOriginSerializedOrNull",
+    "Test_isOriginSerializedOrNull/empty_string",
+    "Test_isOriginSerializedOrNull/invalid_origin",
+    "Test_isOriginSerializedOrNull/literal_null_origin",
+    "Test_isOriginSerializedOrNull/origin_with_path_is_invalid",
+    "Test_isOriginSerializedOrNull/valid_http_origin",
+    "Test_isOriginSerializedOrNull/valid_origin_with_port",
+    "Test_loadTimestamp_Empty",
+    "Test_methodColor_AllMethods",
+    "Test_statusColor_AllRanges",
+    "Test_writeSanitizedColored_PropagatesWriteErrors",
+    "Test_writeSanitizedColored_PropagatesWriteErrors/all_writes_succeed",
+    "Test_writeSanitizedColored_PropagatesWriteErrors/color_write_fails",
+    "Test_writeSanitizedColored_PropagatesWriteErrors/reset_write_fails",
+    "Test_writeSanitizedColored_PropagatesWriteErrors/value_write_fails",
+]
+validation_status = "verified"
+flaky_dropped = 1
+bootstrap_image = "local/r2e-bootstrap/gofiber__fiber:bd83fb46e30e"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "mutants"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 61.547
+measured_overhead_seconds = 2.442
+measured_copy_seconds = 0.045
+run_timeout_sec = 150
+copy_timeout_sec = 120
+runs_per_grading = 2
+verifier_timeout_sec = 780
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 13
+p2p_count = 260
+source_files = 29
+loc_changed = 2582
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:11.358156+00:00"
+inline_recipe_sha256 = "sha256:d576e47b7d97be4abff68b409ee1d2cdaa7004798a73857ad1584e5173629c8a"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 611
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 780.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gofiber__fiber-4638-57a0a019a6da"

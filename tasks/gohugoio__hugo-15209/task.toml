@@ -1,0 +1,105 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15209"
+description = "tpl/resources: Add resources.Publish"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "0805c734a41b75403e3970e0070227916b6845d2"
+reference = "https://github.com/gohugoio/hugo/pull/15209"
+source_access = "auto"
+built_at = "2026-11-11T00:26:12.190071+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:c77c0fadb9259000fdea185398ae4dbdd4b8878265f69083c6179a66881b77dc"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15209"
+pr_merged_at = "2026-08-19T11:13:56Z"
+base_commit = "0805c734a41b75403e3970e0070227916b6845d2"
+fail_to_pass = [
+    "TestPublish",
+]
+pass_to_pass = [
+    "TestCopy",
+    "TestCopyPageShouldFail",
+    "TestGet",
+    "TestGlobalResourcesNotPublishedRegressionIssue12190",
+    "TestGlobalResourcesNotPublishedRegressionIssue12214",
+    "TestPostProcessDeprecated",
+    "TestResourcesGettersShouldNotNormalizePermalinks",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:850f11c060b4"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 63.987
+measured_overhead_seconds = 5.762
+measured_copy_seconds = 0.203
+run_timeout_sec = 150
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 1
+p2p_count = 7
+source_files = 2
+loc_changed = 17
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:09.812396+00:00"
+inline_recipe_sha256 = "sha256:c6484c799ea1216557646f51d98b3f691946f59828ef958abebdd612fc41dea5"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 42
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15209-32d2806f7e63"

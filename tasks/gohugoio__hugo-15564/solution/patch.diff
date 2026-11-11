@@ -1,0 +1,243 @@
+diff --git a/hugofs/nosymlinks_fs.go b/hugofs/nosymlinks_fs.go
+index ff0c8393b85..356ce259baa 100644
+--- a/hugofs/nosymlinks_fs.go
++++ b/hugofs/nosymlinks_fs.go
+@@ -117,3 +117,9 @@ func (fs *DropSymlinksFs) Stat(name string) (os.FileInfo, error) {
+ 	}
+ 	return fi, nil
+ }
++
++// IsSymlinkOrHasSymlinkParent reports whether name is a symlink or has a symlinked parent below base.
++// base itself is not checked.
++func IsSymlinkOrHasSymlinkParent(fs afero.Fs, base, name string) (bool, error) {
++	return newSymlinkChecker(fs).isSymlinkOrHasSymlinkParent(base, name)
++}
+diff --git a/markup/highlight/highlight.go b/markup/highlight/highlight.go
+index 467a4a2a5f0..4d1a83efe32 100644
+--- a/markup/highlight/highlight.go
++++ b/markup/highlight/highlight.go
+@@ -312,7 +312,7 @@ func (s startEnd) End(code bool) string {
+ 
+ func writeDivStart(w hugio.FlexiWriter, attrs []attributes.Attribute, wrapperClass string) {
+ 	w.WriteString(`<div class="`)
+-	w.WriteString(wrapperClass)
++	w.WriteString(gohtml.EscapeString(wrapperClass))
+ 	if attrs != nil {
+ 		for _, attr := range attrs {
+ 			if attr.Name == "class" {
+diff --git a/modules/client.go b/modules/client.go
+index 4645e949b1c..5ef0a986a08 100644
+--- a/modules/client.go
++++ b/modules/client.go
+@@ -884,11 +884,10 @@ func (c *Client) createThemeDirname(modulePath string, isProjectMod bool) (strin
+ 		return "", invalid
+ 	}
+ 
+-	moduleDir := filepath.Join(c.ccfg.ThemesDir, modulePath)
+-	if !isProjectMod && !strings.HasPrefix(moduleDir, c.ccfg.ThemesDir) {
++	if !isProjectMod && !filepath.IsLocal(modulePath) {
+ 		return "", invalid
+ 	}
+-	return moduleDir, nil
++	return filepath.Join(c.ccfg.ThemesDir, modulePath), nil
+ }
+ 
+ // ClientConfig configures the module Client.
+diff --git a/modules/collect.go b/modules/collect.go
+index 04d9c19ad79..2eeb575aa76 100644
+--- a/modules/collect.go
++++ b/modules/collect.go
+@@ -34,6 +34,7 @@ import (
+ 	"github.com/gohugoio/hugo/common/loggers"
+ 	"github.com/gohugoio/hugo/common/paths"
+ 	"github.com/gohugoio/hugo/common/version"
++	"github.com/gohugoio/hugo/hugofs"
+ 	"golang.org/x/mod/module"
+ 
+ 	"github.com/spf13/cast"
+@@ -246,7 +247,7 @@ func (c *collector) getAndCreateModule(owner *moduleAdapter, moduleImport Import
+ 
+ 	var realOwner Module = owner
+ 
+-	if !(c.ccfg.shouldIgnoreVendor(vendorPath)) {
++	if !c.ccfg.shouldIgnoreVendor(vendorPath) {
+ 		if err := c.collectModulesTXT(owner); err != nil {
+ 			return nil, err
+ 		}
+@@ -332,6 +333,12 @@ func (c *collector) getAndCreateModule(owner *moduleAdapter, moduleImport Import
+ 		return nil, nil
+ 	}
+ 
++	if !moduleImport.pathProjectReplaced {
++		if err := c.checkNoSymlinksInOwnerDir(realOwner, moduleDir); err != nil {
++			return nil, err
++		}
++	}
++
+ 	if !strings.HasSuffix(moduleDir, fileSeparator) {
+ 		moduleDir += fileSeparator
+ 	}
+@@ -363,6 +370,30 @@ func (c *collector) getAndCreateModule(owner *moduleAdapter, moduleImport Import
+ 	return ma, nil
+ }
+ 
++// checkNoSymlinksInOwnerDir returns an error if moduleDir lives inside the
++// directory of a non-project owner and moduleDir or any directory between it
++// and the owner's directory is a symlink, which would allow the owner to
++// point the module at arbitrary directories outside of itself.
++func (c *collector) checkNoSymlinksInOwnerDir(owner Module, moduleDir string) error {
++	if ma, ok := owner.(*moduleAdapter); !ok || ma.projectMod {
++		return nil
++	}
++	ownerDir := filepath.Clean(owner.Dir())
++	moduleDir = filepath.Clean(moduleDir)
++	rel, err := filepath.Rel(ownerDir, moduleDir)
++	if err != nil || rel == "." || !filepath.IsLocal(rel) {
++		return nil
++	}
++	symlink, err := hugofs.IsSymlinkOrHasSymlinkParent(c.fs, ownerDir, moduleDir)
++	if err != nil {
++		return err
++	}
++	if symlink {
++		return fmt.Errorf("invalid module dir %q in %q: symlinks are not allowed", rel, owner.Path())
++	}
++	return nil
++}
++
+ func (c *collector) addAndRecurse(owner *moduleAdapter) error {
+ 	moduleConfig := owner.Config()
+ 	if owner.projectMod {
+@@ -631,6 +662,10 @@ func (c *collector) collectModulesTXT(owner Module) error {
+ 		}
+ 		path := parts[0]
+ 
++		if !filepath.IsLocal(path) {
++			return fmt.Errorf("invalid module path %q in %q: must be a local path relative to %q", path, filename, vendord)
++		}
++
+ 		shouldAdd := c.Client.moduleConfig.VendorClosest
+ 
+ 		if !shouldAdd {
+diff --git a/testscripts/commands/hugo__theme_symlink_moduledir.txt b/testscripts/commands/hugo__theme_symlink_moduledir.txt
+new file mode 100644
+index 00000000000..d9103c06e7d
+--- /dev/null
++++ b/testscripts/commands/hugo__theme_symlink_moduledir.txt
+@@ -0,0 +1,16 @@
++# Theme imports a theme path inside itself that is a symlink.
++[windows] skip
++ln $WORK/secret site/themes/evil/link
++cd site
++! hugo
++stderr 'symlinks are not allowed'
++! exists public/index.html
++
++-- secret/layouts/home.html --
++FROMSECRET
++-- site/hugo.toml --
++theme = "evil"
++disableKinds = ["taxonomy","term","rss","sitemap","robotsTXT","page","section"]
++-- site/themes/evil/hugo.toml --
++[[module.imports]]
++path = "evil/link"
+diff --git a/testscripts/commands/hugo__vendor_path_traversal.txt b/testscripts/commands/hugo__vendor_path_traversal.txt
+new file mode 100644
+index 00000000000..1607a7e8874
+--- /dev/null
++++ b/testscripts/commands/hugo__vendor_path_traversal.txt
+@@ -0,0 +1,17 @@
++cd site
++! hugo
++stderr 'invalid module path "../../../..".*must be a local path'
++! exists public/index.html
++
++-- secret/passwd.txt --
++topsecret
++-- site/hugo.toml --
++theme = "evil"
++disableKinds = ["taxonomy","term","rss","sitemap","robotsTXT","page","section"]
++-- site/layouts/home.html --
++SECRET:{{ readFile "secret/passwd.txt" }}
++-- site/themes/evil/hugo.toml --
++[[module.imports]]
++path = "../../../.."
++-- site/themes/evil/_vendor/modules.txt --
++# ../../../.. v0.0.0
+diff --git a/testscripts/commands/hugo__vendor_symlink_moduledir.txt b/testscripts/commands/hugo__vendor_symlink_moduledir.txt
+new file mode 100644
+index 00000000000..2a119bbe003
+--- /dev/null
++++ b/testscripts/commands/hugo__vendor_symlink_moduledir.txt
+@@ -0,0 +1,20 @@
++# Module dir itself is a symlink.
++[windows] skip
++ln $WORK/secret site/themes/evil/_vendor/github.com/foo/bar
++cd site
++! hugo
++stderr 'symlinks are not allowed'
++! exists public/index.html
++
++-- secret/layouts/home.html --
++FROMSECRET
++-- secret/hugo.toml --
++-- site/hugo.toml --
++theme = "evil"
++disableKinds = ["taxonomy","term","rss","sitemap","robotsTXT","page","section"]
++-- site/themes/evil/hugo.toml --
++[[module.imports]]
++path = "github.com/foo/bar"
++-- site/themes/evil/_vendor/modules.txt --
++# github.com/foo/bar v0.0.0
++-- site/themes/evil/_vendor/github.com/foo/.keep --
+diff --git a/testscripts/commands/hugo__vendor_symlink_parent.txt b/testscripts/commands/hugo__vendor_symlink_parent.txt
+new file mode 100644
+index 00000000000..a80d007c721
+--- /dev/null
++++ b/testscripts/commands/hugo__vendor_symlink_parent.txt
+@@ -0,0 +1,20 @@
++# A parent dir inside _vendor is a symlink.
++[windows] skip
++ln $WORK/secretparent site/themes/evil/_vendor/github.com/foo
++cd site
++! hugo
++stderr 'symlinks are not allowed'
++! exists public/index.html
++
++-- secretparent/bar/layouts/home.html --
++FROMSECRET
++-- secretparent/bar/hugo.toml --
++-- site/hugo.toml --
++theme = "evil"
++disableKinds = ["taxonomy","term","rss","sitemap","robotsTXT","page","section"]
++-- site/themes/evil/hugo.toml --
++[[module.imports]]
++path = "github.com/foo/bar"
++-- site/themes/evil/_vendor/modules.txt --
++# github.com/foo/bar v0.0.0
++-- site/themes/evil/_vendor/github.com/.keep --
+diff --git a/testscripts/commands/hugo__vendor_symlink_vendordir.txt b/testscripts/commands/hugo__vendor_symlink_vendordir.txt
+new file mode 100644
+index 00000000000..b39f9f8af71
+--- /dev/null
++++ b/testscripts/commands/hugo__vendor_symlink_vendordir.txt
+@@ -0,0 +1,19 @@
++# _vendor itself is a symlink.
++[windows] skip
++ln $WORK/evilvendor site/themes/evil/_vendor
++cd site
++! hugo
++stderr 'symlinks are not allowed'
++! exists public/index.html
++
++-- evilvendor/github.com/foo/bar/layouts/home.html --
++FROMSECRET
++-- evilvendor/github.com/foo/bar/hugo.toml --
++-- site/hugo.toml --
++theme = "evil"
++disableKinds = ["taxonomy","term","rss","sitemap","robotsTXT","page","section"]
++-- site/themes/evil/hugo.toml --
++[[module.imports]]
++path = "github.com/foo/bar"
++-- evilvendor/modules.txt --
++# github.com/foo/bar v0.0.0

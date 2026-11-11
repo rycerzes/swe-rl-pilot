@@ -1,0 +1,553 @@
+diff --git a/hugolib/hugo_sites.go b/hugolib/hugo_sites.go
+index 69db17d0ce0..4c4ff15233d 100644
+--- a/hugolib/hugo_sites.go
++++ b/hugolib/hugo_sites.go
+@@ -112,6 +112,9 @@ type HugoSites struct {
+ 	printSiteBuildDraftsDeprecationInit sync.Once
+ 	printSiteLanguagesDeprecationInit   sync.Once
+ 
++	// Logged deprecations of reserved front matter fields passed to .Param, keyed by field.
++	pageParamDeprecations sync.Map
++
+ 	// File change events with filename stored in this map will be skipped.
+ 	skipRebuildForFilenamesMu sync.Mutex
+ 	skipRebuildForFilenames   map[string]bool
+diff --git a/hugolib/page.go b/hugolib/page.go
+index 467f6c71d39..5003fef4599 100644
+--- a/hugolib/page.go
++++ b/hugolib/page.go
+@@ -18,6 +18,7 @@ import (
+ 	"fmt"
+ 	"iter"
+ 	"path/filepath"
++	"reflect"
+ 	"slices"
+ 	"strings"
+ 	"sync/atomic"
+@@ -37,6 +38,7 @@ import (
+ 	"github.com/gohugoio/hugo/markup/tableofcontents"
+ 
+ 	"github.com/gohugoio/hugo/common/herrors"
++	"github.com/gohugoio/hugo/common/hreflect"
+ 	"github.com/gohugoio/hugo/common/types"
+ 
+ 	"github.com/gohugoio/hugo/source"
+@@ -170,6 +172,15 @@ func (ps *pageState) GetDependencyManagerForScopesAll() []identity.Manager {
+ //
+ // This method is also implemented on SiteInfo.
+ func (ps *pageState) Param(key any) (any, error) {
++	if keyStr, ok := key.(string); ok {
++		if method, ok := page.ReservedParamMethod(ps, keyStr); ok {
++			keyStr = strings.ToLower(keyStr)
++			if _, loaded := ps.s.h.pageParamDeprecations.LoadOrStore(keyStr, true); !loaded {
++				page.DeprecateReservedParam(ps.s.Log.Logger(), fmt.Sprintf(".Param %q", keyStr), keyStr, "."+method)
++			}
++			return hreflect.CallMethodByName(context.Background(), method, reflect.ValueOf(ps))[0].Interface(), nil
++		}
++	}
+ 	return resource.Param(ps, ps.s.Params(), key)
+ }
+ 
+diff --git a/hugolib/page__meta.go b/hugolib/page__meta.go
+index 088384a8b58..ffe9ac8074f 100644
+--- a/hugolib/page__meta.go
++++ b/hugolib/page__meta.go
+@@ -154,6 +154,9 @@ type pageMeta struct {
+ 	content *cachedContent // The source and the parsed page content.
+ 
+ 	datesOriginal pagemeta.Dates // Original dates for rebuilds.
++
++	// The keys in Params set from a params section, in front matter or in a cascade.
++	userParamKeys map[string]bool
+ }
+ 
+ func (p *pageState) getCascade() *page.PageMatcherParamsConfigs {
+@@ -456,6 +459,25 @@ func (m *pageMeta) Layout() string {
+ 	return m.pageConfig.Layout
+ }
+ 
++func (m *pageMeta) RawSummary() string {
++	return m.pageConfig.Summary
++}
++
++// IsRootParam reports whether key in Params was set from outside of a params section,
++// e.g. from a front matter field such as title, or by Hugo itself.
++// This is for internal use only.
++func (m *pageMeta) IsRootParam(key string) bool {
++	if m.pageConfigSource.IsFromContentAdapter {
++		// Params holds only the params set in the content adapter.
++		return false
++	}
++	if m.userParamKeys[key] {
++		return false
++	}
++	_, found := m.pageConfig.Params[key]
++	return found
++}
++
+ func (m *pageMeta) LinkTitle() string {
+ 	if m.pageConfig.LinkTitle != "" {
+ 		return m.pageConfig.LinkTitle
+@@ -553,6 +575,7 @@ func (ps *pageState) setMetaPost(cascades *page.PageMatcherParamsConfigs) error
+ 	if ps.m.pageConfigSource.IsFromContentAdapter && ps.m.pageConfig.ContentAdapterData == nil {
+ 		ps.m.pageConfig.ContentAdapterData = make(hmaps.Params)
+ 	}
++	ps.m.userParamKeys = make(map[string]bool)
+ 
+ 	// Cascade defined on itself has higher priority than inherited ones.
+ 	allCascades := hiter.Concat(ps.m.cascadeCompiled.All(), cascades.All())
+@@ -565,6 +588,7 @@ func (ps *pageState) setMetaPost(cascades *page.PageMatcherParamsConfigs) error
+ 		for kk, vv := range v.Params {
+ 			if _, found := ps.m.pageConfig.Params[kk]; !found {
+ 				ps.m.pageConfig.Params[kk] = vv
++				ps.m.userParamKeys[kk] = true
+ 			}
+ 		}
+ 		for kk, vv := range v.Fields {
+@@ -838,7 +862,9 @@ params:
+ 	}
+ 
+ 	for k, v := range userParams {
+-		pcfg.Params[strings.ToLower(k)] = v
++		k = strings.ToLower(k)
++		pcfg.Params[k] = v
++		pm.userParamKeys[k] = true
+ 	}
+ 
+ 	if !sitemapSet {
+diff --git a/resources/page/page.go b/resources/page/page.go
+index 211cc5b051e..c2274d4508f 100644
+--- a/resources/page/page.go
++++ b/resources/page/page.go
+@@ -218,6 +218,9 @@ type PageMetaProvider interface {
+ 	// The configured layout to use to render this page. Typically set in front matter.
+ 	Layout() string
+ 
++	// RawSummary returns the summary as set in front matter, without any processing.
++	RawSummary() string
++
+ 	// The title used for links.
+ 	LinkTitle() string
+ 
+@@ -327,6 +330,8 @@ func NamedPageMetaValue(p PageMetaLanguageResource, nameLower string) (any, bool
+ type PageMetaInternalProvider interface {
+ 	// This is for internal use only.
+ 	PathInfo() *paths.Path
++
++	RootParamProvider
+ }
+ 
+ // PageRenderProvider provides a way for a Page to render content.
+diff --git a/resources/page/page_nop.go b/resources/page/page_nop.go
+index 6b7cce237a2..9ac2e531efb 100644
+--- a/resources/page/page_nop.go
++++ b/resources/page/page_nop.go
+@@ -123,6 +123,14 @@ func (p *nopPage) Description() string {
+ 	return ""
+ }
+ 
++func (p *nopPage) RawSummary() string {
++	return ""
++}
++
++func (p *nopPage) IsRootParam(key string) bool {
++	return false
++}
++
+ func (p *nopPage) RefFrom(argsm map[string]any, source any) (string, error) {
+ 	return "", nil
+ }
+diff --git a/resources/page/page_params_redirect.go b/resources/page/page_params_redirect.go
+new file mode 100644
+index 00000000000..bdca2249318
+--- /dev/null
++++ b/resources/page/page_params_redirect.go
+@@ -0,0 +1,107 @@
++// Copyright 2026 The Hugo Authors. All rights reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++// http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package page
++
++import (
++	"fmt"
++	"iter"
++	"strings"
++
++	"github.com/bep/logg"
++	"github.com/gohugoio/hugo/common/hugo"
++)
++
++// RootParamProvider is for internal use only.
++type RootParamProvider interface {
++	// IsRootParam reports whether key in Params was set from outside of a params section,
++	// e.g. from a front matter field such as title, or by Hugo itself.
++	IsRootParam(key string) bool
++}
++
++// reservedParamMethods maps reserved front matter fields that are also stored in Params
++// to the Page method returning the same value.
++var reservedParamMethods = map[string]string{
++	"date":           "Date",
++	"description":    "Description",
++	"draft":          "Draft",
++	"expirydate":     "ExpiryDate",
++	"keywords":       "Keywords",
++	"lastmod":        "Lastmod",
++	"layout":         "Layout",
++	"linktitle":      "LinkTitle",
++	"publishdate":    "PublishDate",
++	"slug":           "Slug",
++	"summary":        "RawSummary",
++	"title":          "Title",
++	"translationkey": "TranslationKey",
++	"type":           "Type",
++	"weight":         "Weight",
++}
++
++// ReservedParamMethod returns the name of the Page method to use instead of
++// looking up key in the Params of v, and whether key should be redirected.
++// A key is only redirected if it was set from a reserved front matter field,
++// so e.g. params.title in front matter is still looked up in Params.
++func ReservedParamMethod(v any, key string) (string, bool) {
++	key = strings.ToLower(key)
++	method, found := reservedParamMethods[key]
++	if !found {
++		return "", false
++	}
++	p, ok := v.(RootParamProvider)
++	if !ok || !p.IsRootParam(key) {
++		return "", false
++	}
++	return method, true
++}
++
++// FindReservedParam returns the first page in pages where key would be
++// redirected by ReservedParamMethod, and the name of the method to use.
++func FindReservedParam(key string, pages iter.Seq[any]) (Page, string, bool) {
++	if _, found := reservedParamMethods[strings.ToLower(key)]; !found {
++		return nil, "", false
++	}
++	for v := range pages {
++		if method, ok := ReservedParamMethod(v, key); ok {
++			if p, ok := v.(Page); ok {
++				return p, method, true
++			}
++		}
++	}
++	return nil, "", false
++}
++
++// DeprecateReservedParam logs that the reserved front matter field key
++// was looked up in Params via usage, e.g. `ByParam "title"`.
++func DeprecateReservedParam(log logg.Logger, usage, key, alternative string) {
++	hugo.DeprecateWithLogger(
++		fmt.Sprintf("Using %s to get the %s front matter field", usage, strings.ToLower(key)),
++		fmt.Sprintf("Use %s instead.", alternative),
++		"0.169.0",
++		log,
++	)
++}
++
++func (p Pages) deprecateReservedParam(usage, key string, alternative func(method string) string) {
++	seq := func(yield func(any) bool) {
++		for _, pp := range p {
++			if !yield(pp) {
++				return
++			}
++		}
++	}
++	if pp, method, ok := FindReservedParam(key, seq); ok {
++		DeprecateReservedParam(pp.Language().Logger(), usage, key, alternative(method))
++	}
++}
+diff --git a/resources/page/pagegroup.go b/resources/page/pagegroup.go
+index d63481d2ead..48d8580ad93 100644
+--- a/resources/page/pagegroup.go
++++ b/resources/page/pagegroup.go
+@@ -192,6 +192,10 @@ func (p Pages) GroupByParam(key string, order ...string) (PagesGroup, error) {
+ 		direction = "desc"
+ 	}
+ 
++	p.deprecateReservedParam(fmt.Sprintf("GroupByParam %q", key), key, func(method string) string {
++		return fmt.Sprintf("GroupBy %q", method)
++	})
++
+ 	var tmp reflect.Value
+ 	var keyt reflect.Type
+ 	for _, e := range p {
+@@ -330,6 +334,15 @@ func (p Pages) GroupByLastmod(format string, order ...string) (PagesGroup, error
+ // Valid values for order is asc, desc, rev and reverse.
+ // For valid format strings, see https://golang.org/pkg/time/#Time.Format
+ func (p Pages) GroupByParamDate(key string, format string, order ...string) (PagesGroup, error) {
++	p.deprecateReservedParam(fmt.Sprintf("GroupByParamDate %q", key), key, func(method string) string {
++		switch method {
++		case "Date", "Lastmod", "PublishDate", "ExpiryDate":
++			return "GroupBy" + method
++		default:
++			return fmt.Sprintf("GroupByParamDate %q with the value explicitly set under params", key)
++		}
++	})
++
+ 	// Cache the dates.
+ 	dates := make(map[Page]time.Time)
+ 
+diff --git a/resources/page/pages_sort.go b/resources/page/pages_sort.go
+index da3386a4746..c0cac02fe32 100644
+--- a/resources/page/pages_sort.go
++++ b/resources/page/pages_sort.go
+@@ -15,6 +15,7 @@ package page
+ 
+ import (
+ 	"context"
++	"fmt"
+ 	"sort"
+ 
+ 	"github.com/gohugoio/hugo/common/collections"
+@@ -407,6 +408,10 @@ func (p Pages) ByParam(paramsKey any) Pages {
+ 	paramsKeyStr := cast.ToString(paramsKey)
+ 	key := "pageSort.ByParam." + paramsKeyStr
+ 
++	p.deprecateReservedParam(fmt.Sprintf("ByParam %q", paramsKeyStr), paramsKeyStr, func(method string) string {
++		return fmt.Sprintf("sort with %q", method)
++	})
++
+ 	stringLess, close := collatorStringLess(p[0])
+ 	defer close()
+ 
+diff --git a/scripts/fork_go_templates/main.go b/scripts/fork_go_templates/main.go
+index 2569ee127ca..7eb50ab1d44 100644
+--- a/scripts/fork_go_templates/main.go
++++ b/scripts/fork_go_templates/main.go
+@@ -69,6 +69,7 @@ var (
+ 		"type state struct", "type stateOld struct",
+ 		"func (s *state) evalFunction", "func (s *state) evalFunctionOld",
+ 		"func (s *state) evalField(", "func (s *state) evalFieldOld(",
++		"func (s *state) evalFieldChain(", "func (s *state) evalFieldChainOld(",
+ 		"func (s *state) evalCall(", "func (s *state) evalCallOld(",
+ 		"func (s *state) walkTemplate(", "func (s *state) walkTemplateOld(",
+ 		"func (s *state) validateType(", "func (s *state) _validateType(",
+diff --git a/tpl/collections/where.go b/tpl/collections/where.go
+index 20e4852d297..0449a181ceb 100644
+--- a/tpl/collections/where.go
++++ b/tpl/collections/where.go
+@@ -24,6 +24,7 @@ import (
+ 	"github.com/gohugoio/hugo/common/hreflect"
+ 	"github.com/gohugoio/hugo/common/hstrings"
+ 	"github.com/gohugoio/hugo/compare"
++	"github.com/gohugoio/hugo/resources/page"
+ )
+ 
+ // Where returns a filtered subset of collection c.
+@@ -555,6 +556,10 @@ func (ns *Namespace) checkWhereArray(ctxv, seqv, kv, mv reflect.Value, path []st
+ 		resolve = ns.newElemResolver(ctxv, seqv.Type().Elem(), path)
+ 	}
+ 
++	if kv.Kind() == reflect.String && len(path) == 2 && strings.EqualFold(path[0], "params") {
++		deprecateReservedParam(seqv, kv.String(), path[1])
++	}
++
+ 	for i := range seqv.Len() {
+ 		var vvv reflect.Value
+ 		rvv := seqv.Index(i)
+@@ -674,3 +679,19 @@ func (ns *Namespace) toTimeUnix(v reflect.Value) int64 {
+ 	}
+ 	return t.Unix()
+ }
++
++// deprecateReservedParam logs a deprecation if key, e.g. Params.title,
++// gets a reserved front matter field from the Params of a page in seqv.
++func deprecateReservedParam(seqv reflect.Value, key, paramKey string) {
++	seq := func(yield func(any) bool) {
++		for i := range seqv.Len() {
++			v := seqv.Index(i)
++			if !v.CanInterface() || !yield(v.Interface()) {
++				return
++			}
++		}
++	}
++	if p, method, ok := page.FindReservedParam(paramKey, seq); ok {
++		page.DeprecateReservedParam(p.Language().Logger(), fmt.Sprintf("where with %q", key), paramKey, fmt.Sprintf("where with %q", method))
++	}
++}
+diff --git a/tpl/internal/go_templates/texttemplate/exec.go b/tpl/internal/go_templates/texttemplate/exec.go
+index dc1512a07fc..2db9e7c1b6a 100644
+--- a/tpl/internal/go_templates/texttemplate/exec.go
++++ b/tpl/internal/go_templates/texttemplate/exec.go
+@@ -657,7 +657,7 @@ func (s *state) evalVariableNode(dot reflect.Value, variable *parse.VariableNode
+ // evalFieldChain evaluates .X.Y.Z possibly followed by arguments.
+ // dot is the environment in which to evaluate arguments, while
+ // receiver is the value being walked along the chain.
+-func (s *state) evalFieldChain(dot, receiver reflect.Value, node parse.Node, ident []string, args []parse.Node, final reflect.Value) reflect.Value {
++func (s *state) evalFieldChainOld(dot, receiver reflect.Value, node parse.Node, ident []string, args []parse.Node, final reflect.Value) reflect.Value {
+ 	n := len(ident)
+ 	for i := 0; i < n-1; i++ {
+ 		receiver = s.evalField(dot, ident[i], node, nil, missingVal, receiver)
+diff --git a/tpl/internal/go_templates/texttemplate/hugo_template.go b/tpl/internal/go_templates/texttemplate/hugo_template.go
+index 05f8830e944..8febfa956d1 100644
+--- a/tpl/internal/go_templates/texttemplate/hugo_template.go
++++ b/tpl/internal/go_templates/texttemplate/hugo_template.go
+@@ -19,6 +19,7 @@ import (
+ 	"io"
+ 	"iter"
+ 	"reflect"
++	"slices"
+ 
+ 	"github.com/gohugoio/hugo/common/herrors"
+ 	"github.com/gohugoio/hugo/common/hmaps"
+@@ -48,6 +49,9 @@ type ExecHelper interface {
+ 	GetFunc(ctx context.Context, tmpl Preparer, name string) (reflect.Value, reflect.Value, bool)
+ 	GetMethod(ctx context.Context, tmpl Preparer, receiver reflect.Value, name string) (method reflect.Value, firstArg reflect.Value)
+ 	GetMapValue(ctx context.Context, tmpl Preparer, receiver, key reflect.Value) (reflect.Value, bool)
++	// RedirectField returns the name of a field or method to evaluate on receiver
++	// instead of the chain receiver.name.next, and whether to redirect.
++	RedirectField(ctx context.Context, tmpl Preparer, receiver reflect.Value, name, next string) (string, bool)
+ 	OnCalled(ctx context.Context, tmpl Preparer, name string, args []reflect.Value, result reflect.Value)
+ }
+ 
+@@ -232,6 +236,27 @@ func (s *state) evalFunction(dot reflect.Value, node *parse.IdentifierNode, cmd
+ // evalField evaluates an expression like (.Field) or (.Field arg1 arg2).
+ // The 'final' argument represents the return value from the preceding
+ // value of the pipeline, if any.
++// evalFieldChain evaluates .X.Y.Z possibly preceded by a non-identifier,
++// allowing the ExecHelper to replace two adjacent identifiers with one.
++func (s *state) evalFieldChain(dot, receiver reflect.Value, node parse.Node, ident []string, args []parse.Node, final reflect.Value) reflect.Value {
++	n := len(ident)
++	for i := 0; i < n-1; i++ {
++		// Added for Hugo.
++		if s.helper != nil {
++			if name, ok := s.helper.RedirectField(s.ctx, s.prep, receiver, ident[i], ident[i+1]); ok {
++				ident = slices.Concat(ident[:i], []string{name}, ident[i+2:])
++				n--
++				if i == n-1 {
++					break
++				}
++			}
++		}
++		receiver = s.evalField(dot, ident[i], node, nil, missingVal, receiver)
++	}
++	// Now if it's a method, it gets the arguments.
++	return s.evalField(dot, ident[n-1], node, args, final, receiver)
++}
++
+ func (s *state) evalField(dot reflect.Value, fieldName string, node parse.Node, args []parse.Node, final, receiver reflect.Value) reflect.Value {
+ 	if !receiver.IsValid() {
+ 		if s.tmpl.option.missingKey == mapError { // Treat invalid value as missing map key.
+diff --git a/tpl/tplimpl/template_funcs.go b/tpl/tplimpl/template_funcs.go
+index f6a72d22a7d..e2ea09a59b0 100644
+--- a/tpl/tplimpl/template_funcs.go
++++ b/tpl/tplimpl/template_funcs.go
+@@ -17,12 +17,16 @@ package tplimpl
+ 
+ import (
+ 	"context"
++	"fmt"
+ 	"reflect"
+ 	"strings"
++	"sync"
+ 
+ 	"github.com/gohugoio/hugo/common/hmaps"
+ 	"github.com/gohugoio/hugo/common/hreflect"
++	"github.com/gohugoio/hugo/common/loggers"
+ 	"github.com/gohugoio/hugo/identity"
++	"github.com/gohugoio/hugo/resources/page"
+ 	"github.com/gohugoio/hugo/tpl"
+ 
+ 	texttemplate "github.com/gohugoio/hugo/tpl/internal/go_templates/texttemplate"
+@@ -35,9 +39,13 @@ var (
+ 
+ type templateExecHelper struct {
+ 	watching   bool // whether we're in server/watch mode.
++	log        loggers.Logger
+ 	site       reflect.Value
+ 	siteParams reflect.Value
+ 	funcs      map[string]reflect.Value
++
++	// Logged deprecations of reserved front matter fields accessed via .Params, keyed by template name and field.
++	paramsDeprecations sync.Map
+ }
+ 
+ func (t *templateExecHelper) GetFunc(ctx context.Context, tmpl texttemplate.Preparer, name string) (fn reflect.Value, firstArg reflect.Value, found bool) {
+@@ -113,6 +121,34 @@ func (t *templateExecHelper) GetMethod(ctx context.Context, tmpl texttemplate.Pr
+ 	return fn, zero
+ }
+ 
++// RedirectField redirects e.g. .Params.title to .Title for pages where
++// title is set from a reserved front matter field and not in params.
++func (t *templateExecHelper) RedirectField(ctx context.Context, tmpl texttemplate.Preparer, receiver reflect.Value, name, next string) (string, bool) {
++	if !strings.EqualFold(name, "params") || !receiver.IsValid() || !receiver.CanInterface() {
++		return "", false
++	}
++	if (receiver.Kind() == reflect.Pointer || receiver.Kind() == reflect.Interface) && receiver.IsNil() {
++		return "", false
++	}
++	method, ok := page.ReservedParamMethod(receiver.Interface(), next)
++	if !ok {
++		return "", false
++	}
++
++	key := strings.ToLower(next)
++	var templateName string
++	if x, ok := tmpl.(interface{ Filename() string }); ok {
++		templateName = x.Filename()
++	} else if x, ok := tmpl.(interface{ Name() string }); ok {
++		templateName = x.Name()
++	}
++	if _, loaded := t.paramsDeprecations.LoadOrStore(templateName+"|"+key, true); !loaded {
++		page.DeprecateReservedParam(t.log.Logger(), fmt.Sprintf(".Params.%s in template %q", key, templateName), key, "."+method)
++	}
++
++	return method, true
++}
++
+ func (t *templateExecHelper) OnCalled(ctx context.Context, tmpl texttemplate.Preparer, name string, args []reflect.Value, result reflect.Value) {
+ 	if !t.watching {
+ 		return
+diff --git a/tpl/tplimpl/templatestore.go b/tpl/tplimpl/templatestore.go
+index 4ccfcd5a52b..d35aa460183 100644
+--- a/tpl/tplimpl/templatestore.go
++++ b/tpl/tplimpl/templatestore.go
+@@ -124,7 +124,7 @@ func NewStore(opts StoreOptions, siteOpts SiteOptions) (*TemplateStore, error) {
+ 		optsOrig:             opts,
+ 		siteOptsOrig:         siteOpts,
+ 		htmlFormat:           html,
+-		storeSite:            configureSiteStorage(siteOpts, opts.Watching),
++		storeSite:            configureSiteStorage(siteOpts, opts.Watching, opts.Log),
+ 		treeMain:             doctree.NewSimpleTree[map[nodeKey]*TemplInfo](),
+ 		treeShortcodes:       doctree.NewSimpleTree[map[string]map[TemplateDescriptor]*TemplInfo](),
+ 		templatesByPath:      hmaps.NewCache[string, *TemplInfo](),
+@@ -843,7 +843,7 @@ func (t *TemplateStore) UnusedTemplates() []*TemplInfo {
+ // but with a different template function execution context.
+ func (s TemplateStore) WithSiteOpts(opts SiteOptions) *TemplateStore {
+ 	s.siteOpts = opts
+-	s.storeSite = configureSiteStorage(opts, s.opts.Watching)
++	s.storeSite = configureSiteStorage(opts, s.opts.Watching, s.opts.Log)
+ 	return &s
+ }
+ 
+@@ -2218,7 +2218,7 @@ func (w weight) isEqualWeights(other weight) bool {
+ 	return w.w1 == other.w1 && w.w2 == other.w2 && w.w3 == other.w3
+ }
+ 
+-func configureSiteStorage(opts SiteOptions, watching bool) *storeSite {
++func configureSiteStorage(opts SiteOptions, watching bool, log loggers.Logger) *storeSite {
+ 	funcsv := make(map[string]reflect.Value)
+ 
+ 	for k, v := range opts.TemplateFuncs {
+@@ -2247,6 +2247,7 @@ func configureSiteStorage(opts SiteOptions, watching bool) *storeSite {
+ 		opts: opts,
+ 		execHelper: &templateExecHelper{
+ 			watching:   watching,
++			log:        log,
+ 			funcs:      funcsv,
+ 			site:       reflect.ValueOf(opts.Site),
+ 			siteParams: reflect.ValueOf(opts.Site.Params()),

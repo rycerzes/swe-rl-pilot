@@ -1,0 +1,10 @@
+[
+  "Test_New_ReplayDownstreamHeaders",
+  "Test_New_ReplayDownstreamHeaders/repeated_identical_lines",
+  "Test_New_ReplayUpstreamAndHandlerCookies",
+  "Test_New_ReplayUpstreamHeaders",
+  "Test_New_ReplayUpstreamHeaders/origin=",
+  "Test_New_ReplayUpstreamHeaders/origin=https://denied.example",
+  "Test_New_ReplayUpstreamHeaders/origin=https://first.example",
+  "Test_New_ReplayUpstreamHeaders/origin=https://second.example"
+]

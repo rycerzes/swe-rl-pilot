@@ -1,0 +1,26 @@
+diff --git a/docs/middleware/adaptor.md b/docs/middleware/adaptor.md
+index c612baf79a0..59c1c4aed9f 100644
+--- a/docs/middleware/adaptor.md
++++ b/docs/middleware/adaptor.md
+@@ -50,7 +50,7 @@ or `FiberApp`, the adaptor enforces the app's configured `BodyLimit`. The app's
+ 
+ ---
+ 
+-## Usage Examples
++## Examples
+ 
+ ### 1. Using `net/http` handlers in Fiber (`HTTPHandler`, `HTTPHandlerFunc`)
+ 
+diff --git a/docs/middleware/rewrite.md b/docs/middleware/rewrite.md
+index ad868d8e4e9..ca9dfea0d1d 100644
+--- a/docs/middleware/rewrite.md
++++ b/docs/middleware/rewrite.md
+@@ -23,7 +23,7 @@ func New(config ...Config) fiber.Handler
+ Rules are stored in a map, so iteration order is undefined. Avoid overlapping patterns if precedence matters.
+ :::
+ 
+-### Examples
++## Examples
+ 
+ ```go
+ package main

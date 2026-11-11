@@ -1,0 +1,178 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15386"
+description = "tpl: Avoid reflect.Value.Call for common signatures"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "8bac4de7a173977489ddd82d6e782a577c140f88"
+reference = "https://github.com/gohugoio/hugo/pull/15386"
+source_access = "auto"
+built_at = "2026-11-10T23:40:15.158870+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:ba3dc4d02701a5fb5c1ae98c4576b936768dc552e0d7eedb8e434d52e92b7612"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15386"
+pr_merged_at = "2026-09-26T19:17:33Z"
+base_commit = "8bac4de7a173977489ddd82d6e782a577c140f88"
+fail_to_pass = [
+    "TestSafeCallFastPaths",
+    "TestSafeCallFastPaths/any",
+    "TestSafeCallFastPaths/any_any_bool_error",
+    "TestSafeCallFastPaths/any_string_error",
+    "TestSafeCallFastPaths/any_variadic_any_error",
+    "TestSafeCallFastPaths/any_variadic_bool",
+    "TestSafeCallFastPaths/bool",
+    "TestSafeCallFastPaths/ctx_string_variadic",
+    "TestSafeCallFastPaths/ctx_variadic_any_error",
+    "TestSafeCallFastPaths/ctx_variadic_error",
+    "TestSafeCallFastPaths/ctx_variadic_nil",
+    "TestSafeCallFastPaths/map",
+    "TestSafeCallFastPaths/params",
+    "TestSafeCallFastPaths/reflect_value_bool",
+    "TestSafeCallFastPaths/string",
+    "TestSafeCallFastPaths/string_variadic",
+    "TestSafeCallFastPaths/variadic_map_error",
+    "TestSafeCallFastPaths/variadic_string",
+]
+pass_to_pass = [
+    "ExampleTemplate",
+    "ExampleTemplate_block",
+    "ExampleTemplate_func",
+    "ExampleTemplate_funcs",
+    "ExampleTemplate_glob",
+    "ExampleTemplate_helpers",
+    "ExampleTemplate_if",
+    "ExampleTemplate_share",
+    "TestAddParseTree",
+    "TestAddParseTreeToUnparsedTemplate",
+    "TestAddToZeroTemplate",
+    "TestAddrOfIndex",
+    "TestBadFuncNames",
+    "TestBlock",
+    "TestClone",
+    "TestComparison",
+    "TestDelims",
+    "TestEmptyTemplate",
+    "TestEmptyTemplateCloneCrash",
+    "TestEvalFieldErrors",
+    "TestEvalFieldErrors/ExistingFieldOnNil",
+    "TestEvalFieldErrors/MissingFieldOnNil",
+    "TestEvalFieldErrors/MissingFieldOnNonNil",
+    "TestEvalFieldErrors/MissingKeyOnMapPtrToNil",
+    "TestEvalFieldErrors/MissingKeyOnNilMap",
+    "TestEvalFieldErrors/MissingKeyOnNilMapPtr",
+    "TestExecError",
+    "TestExecError_CustomError",
+    "TestExecute",
+    "TestExecuteError",
+    "TestExecuteGivesExecError",
+    "TestExecuteOnNewTemplate",
+    "TestExecutePanicDuringCall",
+    "TestFinalForPrintf",
+    "TestFunctionCheckDuringCall",
+    "TestGoodFuncNames",
+    "TestInterfaceValues",
+    "TestIsTrue",
+    "TestIssue19294",
+    "TestIssue31810",
+    "TestIssue39807",
+    "TestIssue43065",
+    "TestIssue48215",
+    "TestJSEscaping",
+    "TestMaxExecDepth",
+    "TestMessageForExecuteEmpty",
+    "TestMissingMapKey",
+    "TestMultiExecute",
+    "TestMultiParse",
+    "TestNew",
+    "TestParse",
+    "TestParseFS",
+    "TestParseFiles",
+    "TestParseFilesWithData",
+    "TestParseGlob",
+    "TestParseGlobWithData",
+    "TestRedefinition",
+    "TestSafeCallFastPaths/panic",
+    "TestSafeCallFastPaths/slow_path",
+    "TestTemplateExecutor",
+    "TestTemplateLookUp",
+    "TestTree",
+    "TestUnterminatedStringError",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:ec69d0e64931"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 16.635
+measured_overhead_seconds = 4.608
+measured_copy_seconds = 0.212
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 18
+p2p_count = 63
+source_files = 3
+loc_changed = 120
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:10.163410+00:00"
+inline_recipe_sha256 = "sha256:02957beb7c8f8ed7e41df32c3981c77eac34b9df38c7df2a3f470e514887af2a"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 192
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15386-a40d1aa2e2f9"

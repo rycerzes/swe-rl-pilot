@@ -1,0 +1,167 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15483"
+description = "js: Fix js.Build with browser-disabled extensionless requires"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "ed22b85c192dd750cf0bdfb2d2005d31ab3bc0a7"
+reference = "https://github.com/gohugoio/hugo/pull/15483"
+source_access = "auto"
+built_at = "2026-11-10T23:48:03.610241+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:7fe3933efff80f6e13a257be95a404cc55ec956374b2964dd864c846c06bd33e"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15483"
+pr_merged_at = "2026-10-24T10:37:00Z"
+base_commit = "ed22b85c192dd750cf0bdfb2d2005d31ab3bc0a7"
+fail_to_pass = [
+    "TestBuildBrowserDisabledModuleExtensionless",
+    "TestCheckReadPath",
+]
+pass_to_pass = [
+    "TestBuildCharset",
+    "TestBuildDataArtifacts",
+    "TestBuildError",
+    "TestBuildError/Import_from_import_not_found",
+    "TestBuildError/Import_from_main_not_found",
+    "TestBuildErrorStack",
+    "TestBuildImportOutsideProject",
+    "TestBuildImportOutsideProject/Relative_import",
+    "TestBuildImportOutsideProject/Relative_import,_target_in_allowRead",
+    "TestBuildImportOutsideProject/Symlink_in_theme",
+    "TestBuildVariants",
+    "TestBuildVariants/Basic",
+    "TestBuildVariants/Edit_Import",
+    "TestBuildVariants/Edit_Import_Nested",
+    "TestCheckNodeSymlinks",
+    "TestCheckNodeSymlinks/Empty_write_set",
+    "TestCheckNodeSymlinks/Relative_and_dangling_symlinks_inside",
+    "TestCheckNodeSymlinks/Symlink_outside",
+    "TestCheckNodeSymlinks/Target_added_to_allowRead",
+    "TestCheckNodeSymlinks/Wildcard",
+    "TestExternalsInAssets",
+    "TestExtractNodeEntryPointRegex",
+    "TestExtractNodeEntryPointRegex/No_match",
+    "TestExtractNodeEntryPointRegex/cmd_babel",
+    "TestExtractNodeEntryPointRegex/cmd_babel_global",
+    "TestExtractNodeEntryPointRegex/cmd_postcss",
+    "TestExtractNodeEntryPointRegex/cmd_postcss_global",
+    "TestExtractNodeEntryPointRegex/cmd_postcss_no_ext",
+    "TestExtractNodeEntryPointRegex/shell_babel",
+    "TestExtractNodeEntryPointRegex/shell_postcss",
+    "TestExtractNodeEntryPointRegex/shell_postcss_global",
+    "TestExtractNodeEntryPointRegex/shell_postcss_no_ext",
+    "TestExtractNodeEntryPointRegex/shell_tailwind_mjs",
+    "TestImportHugoVsESBuild",
+    "TestImportHugoVsESBuild/assets",
+    "TestImportHugoVsESBuild/node_modules",
+    "TestNodePermissionArgs",
+    "TestNodePermissionArgs/Default_config_postcss",
+    "TestNodePermissionArgs/Default_config_tailwindcss",
+    "TestNodePermissionArgs/Disabled",
+    "TestNodePermissionArgs/Global_install_script_path",
+    "TestNodePermissionArgs/Multiple_paths",
+    "TestNodePermissionArgs/No_fs_flags",
+    "TestNodePermissionArgs/Read_only",
+    "TestNodePermissionArgs/Wildcard",
+    "TestNodePermissionArgs/With_additional_read_paths",
+    "TestNodeScriptReadPath",
+    "TestPreserveLegalComments",
+    "TestResolveNodeBin",
+    "TestResolveNodeBin/Cmd_wrapper",
+    "TestResolveNodeBin/Cmd_wrapper_scoped_package",
+    "TestResolveNodeBin/Native_binary",
+    "TestResolveNodeBin/Node_script_with_shebang",
+    "TestResolveNodeBin/Nonexistent_file",
+    "TestResolveNodeBin/Shell_wrapper",
+    "TestResolveNodeBin/Symlink_to_JS_file",
+    "TestResolveNodeBin/Symlink_to_scoped_package",
+    "TestResolveNodeBin/Wrapper_with_missing_target",
+    "TestResolveNodeBinWindows",
+    "TestResolveNodeBinWindows/cmd_wrapper_resolves_to_JS",
+    "TestResolveNodeBinWindows/cmd_wrapper_resolves_to_extensionless_script",
+    "TestResolveNodeBinWindows/global_cmd_wrapper_resolves_to_JS",
+    "TestResolveNodeBinWindows/global_cmd_wrapper_scoped_package",
+    "TestResolveNodeBinWindows/global_sh_wrapper_resolves_to_JS",
+    "TestResolveNodeBinWindows/sh_wrapper_resolves_to_JS",
+    "TestResolveNodeBinWindows/sh_wrapper_resolves_to_extensionless_script",
+    "TestTopLevelDirs",
+    "TestTypeScriptExperimentalDecorators",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:8502b60066b1"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 109.068
+measured_overhead_seconds = 5.072
+measured_copy_seconds = 0.131
+run_timeout_sec = 240
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 2
+p2p_count = 68
+source_files = 1
+loc_changed = 11
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:10.547522+00:00"
+inline_recipe_sha256 = "sha256:90f3b94fa0f56f2ea81476dfe02acf36df357fa908f67e1b232212f950569ff0"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 573
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15483-48edec432de6"

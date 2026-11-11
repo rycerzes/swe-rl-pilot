@@ -1,0 +1,165 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gofiber__fiber-4802"
+description = "🐛 bug: honor repeated and quoted response Cache-Control lines in compress"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "fiber",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gofiber/fiber"
+ref = "f6b465f535492d10683e53ca91172b72df45a69b"
+reference = "https://github.com/gofiber/fiber/pull/4802"
+source_access = "auto"
+built_at = "2026-11-10T23:48:15.332042+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:50bf1928c6742110d35f688b66d27d1ff4e4993e77d61dfd722bce306c3230e3"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gofiber/fiber/pull/4802"
+pr_merged_at = "2026-10-30T20:59:14Z"
+base_commit = "f6b465f535492d10683e53ca91172b72df45a69b"
+fail_to_pass = [
+    "Test_Compress_Response_Quoted_Cache_Control_Argument_Is_Not_No_Transform",
+    "Test_Compress_Response_Repeated_Cache_Control_Lines_No_Transform",
+]
+pass_to_pass = [
+    "Test_Compress_AcceptEncoding_Negotiation",
+    "Test_Compress_AcceptEncoding_Negotiation/#00",
+    "Test_Compress_AcceptEncoding_Negotiation/*",
+    "Test_Compress_AcceptEncoding_Negotiation/*;foo=bar",
+    "Test_Compress_AcceptEncoding_Negotiation/br;q=0.5,_gzip;q=1",
+    "Test_Compress_AcceptEncoding_Negotiation/deflate,gzip,br",
+    "Test_Compress_AcceptEncoding_Negotiation/gzip;foo=bar",
+    "Test_Compress_AcceptEncoding_Negotiation/gzip;foo=bar;q=0.4,_br;q=0.2",
+    "Test_Compress_AcceptEncoding_Negotiation/gzip;q=0",
+    "Test_Compress_AcceptEncoding_Negotiation/gzip;q=1.0",
+    "Test_Compress_AcceptEncoding_Negotiation/gzip;q=bogus",
+    "Test_Compress_AcceptEncoding_Negotiation/identity",
+    "Test_Compress_AcceptEncoding_Negotiation/identity,gzip",
+    "Test_Compress_AcceptEncoding_Negotiation/identity;q=0,_gzip;q=0.5",
+    "Test_Compress_Adds_Vary_Header",
+    "Test_Compress_Brotli",
+    "Test_Compress_Deflate",
+    "Test_Compress_Different_Level",
+    "Test_Compress_Different_Level/br_level_0",
+    "Test_Compress_Different_Level/br_level_1",
+    "Test_Compress_Different_Level/br_level_2",
+    "Test_Compress_Different_Level/deflate_level_0",
+    "Test_Compress_Different_Level/deflate_level_1",
+    "Test_Compress_Different_Level/deflate_level_2",
+    "Test_Compress_Different_Level/gzip_level_0",
+    "Test_Compress_Different_Level/gzip_level_1",
+    "Test_Compress_Different_Level/gzip_level_2",
+    "Test_Compress_Different_Level/zstd_level_0",
+    "Test_Compress_Different_Level/zstd_level_1",
+    "Test_Compress_Different_Level/zstd_level_2",
+    "Test_Compress_Disabled",
+    "Test_Compress_Gzip",
+    "Test_Compress_Next",
+    "Test_Compress_Next_Error",
+    "Test_Compress_No_Transform_After_Escaped_Quote",
+    "Test_Compress_Quoted_Cache_Control_Argument_Is_Not_No_Transform",
+    "Test_Compress_Repeated_Accept_Encoding_Lines",
+    "Test_Compress_Repeated_Cache_Control_Lines_No_Transform",
+    "Test_Compress_RequestHeaderUntouched",
+    "Test_Compress_RespectsBodyLimitOnCompressedRequestBody",
+    "Test_Compress_Response_No_Transform_After_Escaped_Quote",
+    "Test_Compress_ShouldSkip_DoesNotMaterialize_BodyStream",
+    "Test_Compress_Skip_Head",
+    "Test_Compress_Skip_NoTransform",
+    "Test_Compress_Skip_NoTransform/request",
+    "Test_Compress_Skip_NoTransform/response",
+    "Test_Compress_Skip_Range",
+    "Test_Compress_Skip_Range_NoAcceptEncoding",
+    "Test_Compress_Skip_Range_Vary_Similar_Substring",
+    "Test_Compress_Skip_Range_Vary_Star",
+    "Test_Compress_Skip_Status_NoContent",
+    "Test_Compress_Skip_Status_NotModified",
+    "Test_Compress_Skip_Status_PartialContent",
+    "Test_Compress_Skip_When_Content_Encoding_Set",
+    "Test_Compress_Skip_When_Content_Encoding_Set_Vary_List_Star",
+    "Test_Compress_Skip_When_Content_Encoding_Set_Vary_Similar_Substring",
+    "Test_Compress_Skip_When_Content_Encoding_Set_Vary_Star",
+    "Test_Compress_StreamedBody_KeepsETagWeak",
+    "Test_Compress_Streaming_With_Compression",
+    "Test_Compress_Strong_ETag_Recalculated",
+    "Test_Compress_Strong_ETag_Unchanged_When_Not_Compressed",
+    "Test_Compress_Vary_List_Star",
+    "Test_Compress_Vary_Similar_Substring",
+    "Test_Compress_Vary_Star",
+    "Test_Compress_Weak_ETag_Unchanged",
+    "Test_Compress_Zstd",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gofiber__fiber:9bc9f2ff994e"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "mutants"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 24.137
+measured_overhead_seconds = 2.144
+measured_copy_seconds = 0.033
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 2
+verifier_timeout_sec = 720
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 2
+p2p_count = 66
+source_files = 1
+loc_changed = 20
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:12.425365+00:00"
+inline_recipe_sha256 = "sha256:865f45160c1c6f40701beb59d672c3e5ed55bae7b35dba1a1270d3c500cc3d33"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 278
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 720.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gofiber__fiber-4802-96737a3d7e62"

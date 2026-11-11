@@ -1,0 +1,315 @@
+diff --git a/constants.go b/constants.go
+index bf0f512bf98..c3eb0fde699 100644
+--- a/constants.go
++++ b/constants.go
+@@ -1,5 +1,9 @@
+ package fiber
+ 
++import (
++	internalcookie "github.com/gofiber/fiber/v3/internal/cookie"
++)
++
+ // HTTP methods were copied from net/http.
+ const (
+ 	MethodGet     = "GET"     // RFC 7231, 4.3.1
+@@ -312,10 +316,10 @@ const (
+ // Cookie SameSite
+ // https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis-03#section-4.1.2.7
+ const (
+-	CookieSameSiteDisabled   = "disabled" // not in RFC, just control "SameSite" attribute will not be set.
+-	CookieSameSiteLaxMode    = "Lax"
+-	CookieSameSiteStrictMode = "Strict"
+-	CookieSameSiteNoneMode   = "None"
++	CookieSameSiteDisabled   = internalcookie.SameSiteDisabled // not in RFC, just control "SameSite" attribute will not be set.
++	CookieSameSiteLaxMode    = internalcookie.SameSiteLax
++	CookieSameSiteStrictMode = internalcookie.SameSiteStrict
++	CookieSameSiteNoneMode   = internalcookie.SameSiteNone
+ )
+ 
+ // Route Constraints
+diff --git a/docs/middleware/session.md b/docs/middleware/session.md
+index d6163b42ad1..cfab89210a7 100644
+--- a/docs/middleware/session.md
++++ b/docs/middleware/session.md
+@@ -69,12 +69,14 @@ app.Use(session.New(session.Config{
+     AbsoluteTimeout:   24 * time.Hour,    // Maximum session life
+     Extractor:         extractors.FromCookie("__Host-session_id"),
+ }))
++```
+ 
+ Notes:
+ 
+ - AbsoluteTimeout must be greater than or equal to IdleTimeout; otherwise, the middleware panics during configuration.
+-- If CookieSameSite is set to "None", the middleware automatically forces CookieSecure=true when setting the cookie.
+-```
++- CookieSameSite accepts `"Disabled"`, `"Lax"`, `"Strict"`, or `"None"` case-insensitively; other values panic during configuration.
++- If CookieSameSite is set to `"Disabled"`, the cookie omits the SameSite attribute and preserves `CookieSecure`.
++- If CookieSameSite is set to `"None"`, the middleware automatically forces `CookieSecure=true` when setting the cookie.
+ 
+ ## Usage Patterns
+ 
+@@ -719,7 +721,7 @@ extractors.Chain(extractors ...extractors.Extractor) extractors.Extractor
+ | `AbsoluteTimeout`   | `time.Duration`             | Maximum session duration    | `0` (unlimited)                            |
+ | `CookieSecure`      | `bool`                      | HTTPS only                  | `false`                                    |
+ | `CookieHTTPOnly`    | `bool`                      | No JavaScript access        | `false`                                    |
+-| `CookieSameSite`    | `string`                    | SameSite attribute          | `"Lax"`                                    |
++| `CookieSameSite`    | `string`                    | SameSite mode: `Disabled`, `Lax`, `Strict`, or `None` | `"Lax"`                    |
+ | `CookiePath`        | `string`                    | Cookie path                 | `""`                                       |
+ | `CookieDomain`      | `string`                    | Cookie domain               | `""`                                       |
+ | `CookieSessionOnly` | `bool`                      | Session cookie              | `false`                                    |
+diff --git a/docs/whats_new.md b/docs/whats_new.md
+index 5031a623e7b..fcf83b2ee78 100644
+--- a/docs/whats_new.md
++++ b/docs/whats_new.md
+@@ -3316,5 +3316,16 @@ app.Use(session.New(session.Config{
+ }))
+ ```
+ 
++`CookieSameSite` is now read the same way as it is for `Ctx.Cookie`:
++
++- **`"Disabled"` omits the attribute.** The session used to ignore
++  `CookieSameSiteDisabled` and send `SameSite=Lax`, while `Ctx.Cookie` honored
++  it, so one constant meant two things. A session cookie configured this way now
++  carries no `SameSite` attribute, which is weaker than what was sent before. Set
++  `CookieSameSite: "Lax"` explicitly to keep the old cookie.
++- **Any other value panics** during configuration instead of silently falling
++  back to `Lax`, matching how `AbsoluteTimeout` is already validated. `Disabled`,
++  `Lax`, `Strict` and `None` are accepted case-insensitively.
++
+ See the [Session Middleware Migration Guide](./middleware/session.md#migration-guide)
+ for complete details.
+diff --git a/internal/cookie/samesite.go b/internal/cookie/samesite.go
+new file mode 100644
+index 00000000000..b671026f04b
+--- /dev/null
++++ b/internal/cookie/samesite.go
+@@ -0,0 +1,58 @@
++// Package cookie centralizes cookie policy shared by Fiber core and middleware.
++package cookie
++
++import (
++	"net/http"
++
++	"github.com/gofiber/utils/v2"
++	"github.com/valyala/fasthttp"
++)
++
++// SameSite mode names accepted by Fiber's cookie APIs.
++const (
++	SameSiteDisabled = "disabled"
++	SameSiteLax      = "Lax"
++	SameSiteStrict   = "Strict"
++	SameSiteNone     = "None"
++)
++
++// SameSite maps one Fiber SameSite mode to the cookie implementations Fiber
++// validates with and writes through.
++type SameSite struct {
++	HTTPMode       http.SameSite
++	FastHTTPMode   fasthttp.CookieSameSite
++	RequiresSecure bool
++}
++
++// ParseSameSite parses value case-insensitively. Unsupported values return the
++// Lax mapping and false, allowing callers to choose fallback or rejection.
++func ParseSameSite(value string) (SameSite, bool) {
++	switch {
++	case utils.EqualFold(value, SameSiteDisabled):
++		return SameSite{
++			HTTPMode:     0,
++			FastHTTPMode: fasthttp.CookieSameSiteDisabled,
++		}, true
++	case utils.EqualFold(value, SameSiteLax):
++		return SameSite{
++			HTTPMode:     http.SameSiteLaxMode,
++			FastHTTPMode: fasthttp.CookieSameSiteLaxMode,
++		}, true
++	case utils.EqualFold(value, SameSiteStrict):
++		return SameSite{
++			HTTPMode:     http.SameSiteStrictMode,
++			FastHTTPMode: fasthttp.CookieSameSiteStrictMode,
++		}, true
++	case utils.EqualFold(value, SameSiteNone):
++		return SameSite{
++			HTTPMode:       http.SameSiteNoneMode,
++			FastHTTPMode:   fasthttp.CookieSameSiteNoneMode,
++			RequiresSecure: true,
++		}, true
++	default:
++		return SameSite{
++			HTTPMode:     http.SameSiteLaxMode,
++			FastHTTPMode: fasthttp.CookieSameSiteLaxMode,
++		}, false
++	}
++}
+diff --git a/middleware/session/config.go b/middleware/session/config.go
+index f0a0ff1662b..036801cfcb9 100644
+--- a/middleware/session/config.go
++++ b/middleware/session/config.go
+@@ -5,6 +5,7 @@ import (
+ 
+ 	"github.com/gofiber/fiber/v3"
+ 	"github.com/gofiber/fiber/v3/extractors"
++	internalcookie "github.com/gofiber/fiber/v3/internal/cookie"
+ 	"github.com/gofiber/fiber/v3/log"
+ 	"github.com/gofiber/utils/v2"
+ )
+@@ -46,6 +47,7 @@ type Config struct {
+ 	CookiePath string
+ 
+ 	// CookieSameSite specifies the SameSite attribute of the cookie.
++	// Accepted values are "Disabled", "Lax", "Strict", and "None", case-insensitively.
+ 	//
+ 	// Optional. Default: "Lax"
+ 	CookieSameSite string
+@@ -94,7 +96,7 @@ var ConfigDefault = Config{
+ 	IdleTimeout:    30 * time.Minute,
+ 	KeyGenerator:   utils.SecureToken,
+ 	Extractor:      extractors.FromCookie("session_id"),
+-	CookieSameSite: "Lax",
++	CookieSameSite: fiber.CookieSameSiteLaxMode,
+ }
+ 
+ // DefaultErrorHandler logs the error and sends a 500 status code.
+@@ -129,14 +131,12 @@ func DefaultErrorHandler(c fiber.Ctx, err error) {
+ //	cfg := configDefault()
+ //	cfg := configDefault(customConfig)
+ func configDefault(config ...Config) Config {
+-	// Return default config if nothing provided
+-	if len(config) < 1 {
+-		return ConfigDefault
++	cfg := ConfigDefault
++	if len(config) > 0 {
++		// Override default config
++		cfg = config[0]
+ 	}
+ 
+-	// Override default config
+-	cfg := config[0]
+-
+ 	// Set default values
+ 	if cfg.IdleTimeout <= 0 {
+ 		cfg.IdleTimeout = ConfigDefault.IdleTimeout
+@@ -160,5 +160,9 @@ func configDefault(config ...Config) Config {
+ 		cfg.CookieSameSite = ConfigDefault.CookieSameSite
+ 	}
+ 
++	if _, valid := internalcookie.ParseSameSite(cfg.CookieSameSite); !valid {
++		panic("[session] CookieSameSite must be one of Disabled, Lax, Strict, or None")
++	}
++
+ 	return cfg
+ }
+diff --git a/middleware/session/session.go b/middleware/session/session.go
+index 208ad2d608f..49495901bfa 100644
+--- a/middleware/session/session.go
++++ b/middleware/session/session.go
+@@ -10,6 +10,7 @@ import (
+ 
+ 	"github.com/gofiber/fiber/v3"
+ 	"github.com/gofiber/fiber/v3/extractors"
++	internalcookie "github.com/gofiber/fiber/v3/internal/cookie"
+ 	"github.com/gofiber/utils/v2"
+ 	"github.com/valyala/fasthttp"
+ )
+@@ -547,22 +548,11 @@ func (s *Session) delSession() {
+ 
+ // setCookieAttributes sets the cookie attributes based on the session config.
+ func (s *Session) setCookieAttributes(fcookie *fasthttp.Cookie) {
+-	// Set SameSite attribute
+-	switch {
+-	case utils.EqualFold(s.config.CookieSameSite, fiber.CookieSameSiteStrictMode):
+-		fcookie.SetSameSite(fasthttp.CookieSameSiteStrictMode)
+-	case utils.EqualFold(s.config.CookieSameSite, fiber.CookieSameSiteNoneMode):
+-		fcookie.SetSameSite(fasthttp.CookieSameSiteNoneMode)
+-	default:
+-		fcookie.SetSameSite(fasthttp.CookieSameSiteLaxMode)
+-	}
+-
+-	// The Secure attribute is required for SameSite=None
+-	if fcookie.SameSite() == fasthttp.CookieSameSiteNoneMode {
+-		fcookie.SetSecure(true)
+-	} else {
+-		fcookie.SetSecure(s.config.CookieSecure)
+-	}
++	sameSite, _ := internalcookie.ParseSameSite(s.config.CookieSameSite)
++	fcookie.SetSameSite(sameSite.FastHTTPMode)
++	// The Secure attribute is required for SameSite=None; every other mode
++	// preserves the configured value.
++	fcookie.SetSecure(s.config.CookieSecure || sameSite.RequiresSecure)
+ 
+ 	fcookie.SetHTTPOnly(s.config.CookieHTTPOnly)
+ }
+diff --git a/res.go b/res.go
+index e9b1a0f7916..4d4bd93766b 100644
+--- a/res.go
++++ b/res.go
+@@ -16,6 +16,7 @@ import (
+ 	"unicode"
+ 	"unicode/utf8"
+ 
++	internalcookie "github.com/gofiber/fiber/v3/internal/cookie"
+ 	"github.com/gofiber/fiber/v3/internal/quotedstring"
+ 	"github.com/gofiber/utils/v2"
+ 	"github.com/valyala/bytebufferpool"
+@@ -324,21 +325,10 @@ func (r *DefaultRes) Cookie(cookie *Cookie) {
+ 		c.Expires = time.Time{}
+ 	}
+ 
+-	var sameSite http.SameSite
+-
+-	switch {
+-	case utils.EqualFold(c.SameSite, CookieSameSiteStrictMode):
+-		sameSite = http.SameSiteStrictMode
+-	case utils.EqualFold(c.SameSite, CookieSameSiteNoneMode):
+-		sameSite = http.SameSiteNoneMode
++	sameSite, _ := internalcookie.ParseSameSite(c.SameSite)
++	if sameSite.RequiresSecure {
+ 		// SameSite=None requires Secure=true per RFC and browser requirements
+ 		c.Secure = true
+-	case utils.EqualFold(c.SameSite, CookieSameSiteDisabled):
+-		sameSite = 0
+-	case utils.EqualFold(c.SameSite, CookieSameSiteLaxMode):
+-		sameSite = http.SameSiteLaxMode
+-	default:
+-		sameSite = http.SameSiteLaxMode
+ 	}
+ 
+ 	// Partitioned requires Secure=true per CHIPS spec
+@@ -346,7 +336,8 @@ func (r *DefaultRes) Cookie(cookie *Cookie) {
+ 		c.Secure = true
+ 	}
+ 
+-	// create/validate cookie using net/http
++	// Validate before fasthttp's setters can silently replace CR/LF or semicolons;
++	// rejection, rather than mutation, is this API's existing contract.
+ 	hc := &http.Cookie{ //nolint:gosec // G124: http.Cookie missing or has insecure Secure, HttpOnly, or SameSite attribute
+ 		Name:        c.Name,
+ 		Value:       c.Value,
+@@ -356,7 +347,7 @@ func (r *DefaultRes) Cookie(cookie *Cookie) {
+ 		MaxAge:      c.MaxAge,
+ 		Secure:      c.Secure,
+ 		HttpOnly:    c.HTTPOnly,
+-		SameSite:    sameSite,
++		SameSite:    sameSite.HTTPMode,
+ 		Partitioned: c.Partitioned,
+ 	}
+ 
+@@ -380,16 +371,7 @@ func (r *DefaultRes) Cookie(cookie *Cookie) {
+ 	fcookie.SetSecure(hc.Secure)
+ 	fcookie.SetHTTPOnly(hc.HttpOnly)
+ 
+-	switch sameSite {
+-	case http.SameSiteLaxMode:
+-		fcookie.SetSameSite(fasthttp.CookieSameSiteLaxMode)
+-	case http.SameSiteStrictMode:
+-		fcookie.SetSameSite(fasthttp.CookieSameSiteStrictMode)
+-	case http.SameSiteNoneMode:
+-		fcookie.SetSameSite(fasthttp.CookieSameSiteNoneMode)
+-	default:
+-		fcookie.SetSameSite(fasthttp.CookieSameSiteDisabled)
+-	}
++	fcookie.SetSameSite(sameSite.FastHTTPMode)
+ 
+ 	fcookie.SetPartitioned(hc.Partitioned)
+ 

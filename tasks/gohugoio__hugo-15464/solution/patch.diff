@@ -1,0 +1,560 @@
+diff --git a/common/hhtml/scanner.go b/common/hhtml/scanner.go
+new file mode 100644
+index 00000000000..f037017c43f
+--- /dev/null
++++ b/common/hhtml/scanner.go
+@@ -0,0 +1,204 @@
++// Copyright 2026 The Hugo Authors. All rights reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++// http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++// Package hhtml contains small, allocation-free HTML helpers.
++package hhtml
++
++import (
++	"strings"
++)
++
++// TokenType is the type of a Token.
++type TokenType int
++
++const (
++	// StartTag is a start tag, e.g. <p>.
++	StartTag TokenType = iota + 1
++	// EndTag is an end tag, e.g. </p>.
++	EndTag
++	// Markup is a comment, doctype, CDATA section or processing instruction.
++	Markup
++)
++
++// Token is a tag or other markup found by Scanner.
++type Token struct {
++	Type TokenType
++	// Name is the lowercased tag name. It is empty for Markup.
++	Name string
++	// SelfClosing is set for start tags ending in "/>".
++	SelfClosing bool
++	// Start is the position of the '<'.
++	Start int
++}
++
++// Scanner is a minimal, allocation-free scanner for HTML tags.
++// It handles quoted attribute values containing '>' and treats a '<'
++// that cannot start a tag (e.g. "I <3 Hugo") as text.
++type Scanner struct {
++	s   string
++	pos int
++}
++
++// NewScanner creates a new Scanner for s starting at pos.
++func NewScanner(s string, pos int) Scanner {
++	return Scanner{s: s, pos: pos}
++}
++
++// Pos returns the position right after the last token returned by Next.
++func (sc *Scanner) Pos() int {
++	return sc.pos
++}
++
++// Next returns the next token starting before limit.
++// ok is false when no more tokens are found.
++// A tag not closed before limit ends at limit.
++func (sc *Scanner) Next(limit int) (t Token, ok bool) {
++	for {
++		i := strings.IndexByte(sc.s[sc.pos:limit], '<')
++		if i == -1 || sc.pos+i+1 >= limit {
++			sc.pos = limit
++			return Token{}, false
++		}
++		t = Token{Start: sc.pos + i}
++		sc.pos = t.Start + 1
++
++		switch c := sc.s[sc.pos]; {
++		case c == '!' || c == '?':
++			rest := sc.s[sc.pos:limit]
++			switch {
++			case strings.HasPrefix(rest, "!--"):
++				sc.pos += 3
++				sc.skipPast(limit, "-->")
++			case strings.HasPrefix(rest, "![CDATA["):
++				sc.skipPast(limit, "]]>")
++			default:
++				sc.skipPast(limit, ">")
++			}
++			t.Type = Markup
++			return t, true
++		case c == '/':
++			sc.pos++
++			if sc.pos < limit && !isASCIILetter(sc.s[sc.pos]) {
++				// A bogus comment, e.g. "</ x>".
++				sc.skipPast(limit, ">")
++				t.Type = Markup
++				return t, true
++			}
++			t.Type = EndTag
++		case isASCIILetter(c):
++			t.Type = StartTag
++		default:
++			continue
++		}
++
++		start := sc.pos
++		for sc.pos < limit && !isTagNameEnd(sc.s[sc.pos]) {
++			sc.pos++
++		}
++		t.Name = strings.ToLower(sc.s[start:sc.pos])
++
++		for sc.pos < limit {
++			c := sc.s[sc.pos]
++			sc.pos++
++			switch c {
++			case '>':
++				return t, true
++			case '/':
++				t.SelfClosing = t.Type == StartTag && sc.pos < limit && sc.s[sc.pos] == '>'
++			case '=':
++				for sc.pos < limit && isSpace(sc.s[sc.pos]) {
++					sc.pos++
++				}
++				if sc.pos < limit && (sc.s[sc.pos] == '"' || sc.s[sc.pos] == '\'') {
++					q := sc.s[sc.pos]
++					sc.pos++
++					if j := strings.IndexByte(sc.s[sc.pos:limit], q); j == -1 {
++						sc.pos = limit
++					} else {
++						sc.pos += j + 1
++					}
++				}
++			}
++		}
++		return t, true
++	}
++}
++
++// SkipRawText moves the position to the start of the end tag of the
++// raw text element name (e.g. script), or to limit if there is none.
++func (sc *Scanner) SkipRawText(limit int, name string) {
++	for {
++		sc.skipPast(limit, "</")
++		if sc.pos >= limit {
++			return
++		}
++		if rest := sc.s[sc.pos:limit]; len(rest) > len(name) && strings.EqualFold(rest[:len(name)], name) && isTagNameEnd(rest[len(name)]) {
++			sc.pos -= 2
++			return
++		}
++	}
++}
++
++func (sc *Scanner) skipPast(limit int, sep string) {
++	if i := strings.Index(sc.s[sc.pos:limit], sep); i == -1 {
++		sc.pos = limit
++	} else {
++		sc.pos += i + len(sep)
++	}
++}
++
++// IsRawTextElement reports whether the element with the given lowercased name
++// contains raw text, i.e. no tags.
++func IsRawTextElement(name string) bool {
++	switch name {
++	case "script", "style", "textarea", "title", "iframe", "xmp", "noembed", "noframes":
++		return true
++	}
++	return false
++}
++
++// IsVoidElement reports whether the element with the given lowercased name
++// has no end tag.
++func IsVoidElement(name string) bool {
++	switch name {
++	case "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr":
++		return true
++	}
++	return false
++}
++
++// IsBlockElement reports whether the element with the given lowercased name
++// is rendered as a block (or table cell), separating its content from
++// the surrounding text.
++func IsBlockElement(name string) bool {
++	switch name {
++	case "address", "article", "aside", "blockquote", "caption", "dd", "details", "dialog", "div", "dl", "dt",
++		"fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header",
++		"hgroup", "hr", "li", "main", "nav", "ol", "p", "pre", "section", "summary", "table", "tbody", "td",
++		"tfoot", "th", "thead", "tr", "ul":
++		return true
++	}
++	return false
++}
++
++func isASCIILetter(c byte) bool {
++	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
++}
++
++func isSpace(c byte) bool {
++	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f'
++}
++
++func isTagNameEnd(c byte) bool {
++	return isSpace(c) || c == '/' || c == '>'
++}
+diff --git a/resources/page/page_markup.go b/resources/page/page_markup.go
+index 572822b0bcf..4dddd977335 100644
+--- a/resources/page/page_markup.go
++++ b/resources/page/page_markup.go
+@@ -21,6 +21,7 @@ import (
+ 	"unicode"
+ 	"unicode/utf8"
+ 
++	"github.com/gohugoio/hugo/common/hhtml"
+ 	"github.com/gohugoio/hugo/common/types"
+ 	"github.com/gohugoio/hugo/markup/tableofcontents"
+ 	"github.com/gohugoio/hugo/media"
+@@ -265,14 +266,14 @@ func expandSummaryHighToBalancedHTML(input string, low, high, maxHigh int) int {
+ 
+ 	var buf [16]string
+ 	stack := buf[:0]
+-	sc := htmlTagScanner{s: input, pos: low}
++	sc := hhtml.NewScanner(input, low)
+ 
+ 	for {
+-		name, end, ok := sc.next(high)
++		t, ok := sc.Next(high)
+ 		if !ok {
+ 			break
+ 		}
+-		stack = pushOrPopHTMLStack(stack, name, end)
++		stack = pushOrPopHTMLStack(&sc, stack, t, high)
+ 	}
+ 
+ 	if len(stack) == 0 {
+@@ -280,140 +281,35 @@ func expandSummaryHighToBalancedHTML(input string, low, high, maxHigh int) int {
+ 	}
+ 
+ 	for {
+-		name, end, ok := sc.next(maxHigh)
++		t, ok := sc.Next(maxHigh)
+ 		if !ok {
+ 			return high
+ 		}
+-		stack = pushOrPopHTMLStack(stack, name, end)
++		stack = pushOrPopHTMLStack(&sc, stack, t, maxHigh)
+ 		if len(stack) == 0 {
+-			return sc.pos
++			return sc.Pos()
+ 		}
+ 	}
+ }
+ 
+-func pushOrPopHTMLStack(stack []string, name string, end bool) []string {
+-	if end {
++func pushOrPopHTMLStack(sc *hhtml.Scanner, stack []string, t hhtml.Token, limit int) []string {
++	switch t.Type {
++	case hhtml.EndTag:
+ 		for i := len(stack) - 1; i >= 0; i-- {
+-			if stack[i] == name {
++			if stack[i] == t.Name {
+ 				return stack[:i]
+ 			}
+ 		}
+-		return stack
+-	}
+-	if isVoidHTMLElement(name) {
+-		return stack
+-	}
+-	return append(stack, name)
+-}
+-
+-// htmlTagScanner is a minimal, allocation-free scanner for start and end tags.
+-// It skips comments, quoted attribute values and raw text elements.
+-type htmlTagScanner struct {
+-	s   string
+-	pos int
+-}
+-
+-// next returns the lowercased name of the next tag before limit and
+-// whether it is an end tag. ok is false when no more tags are found.
+-func (sc *htmlTagScanner) next(limit int) (name string, end, ok bool) {
+-	for {
+-		i := strings.IndexByte(sc.s[sc.pos:limit], '<')
+-		if i == -1 {
+-			sc.pos = limit
+-			return "", false, false
+-		}
+-		sc.pos += i + 1
+-		if sc.pos >= limit {
+-			return "", false, false
+-		}
+-
+-		end = false
+-		switch c := sc.s[sc.pos]; c {
+-		case '!', '?':
+-			if strings.HasPrefix(sc.s[sc.pos:limit], "!--") {
+-				sc.skipPast(limit, "-->")
+-			} else {
+-				sc.skipPast(limit, ">")
+-			}
+-			continue
+-		case '/':
+-			end = true
+-			sc.pos++
+-		}
+-
+-		start := sc.pos
+-		for sc.pos < limit && isHTMLTagNameByte(sc.s[sc.pos]) {
+-			sc.pos++
+-		}
+-		if sc.pos == start {
+-			continue
+-		}
+-		name = strings.ToLower(sc.s[start:sc.pos])
+-
+-		selfClosing := false
+-		for sc.pos < limit {
+-			c := sc.s[sc.pos]
+-			sc.pos++
+-			switch c {
+-			case '"', '\'':
+-				sc.skipPast(limit, string(c))
+-			case '/':
+-				selfClosing = true
+-			case '>':
+-				if selfClosing {
+-					continue
+-				}
+-				if !end && isRawTextHTMLElement(name) {
+-					sc.skipPastEndTag(limit, name)
+-				}
+-				return name, end, true
+-			default:
+-				selfClosing = false
+-			}
+-		}
+-		return name, end, true
+-	}
+-}
+-
+-func (sc *htmlTagScanner) skipPast(limit int, sep string) {
+-	if i := strings.Index(sc.s[sc.pos:limit], sep); i == -1 {
+-		sc.pos = limit
+-	} else {
+-		sc.pos += i + len(sep)
+-	}
+-}
+-
+-func (sc *htmlTagScanner) skipPastEndTag(limit int, name string) {
+-	for {
+-		sc.skipPast(limit, "</")
+-		if sc.pos >= limit {
+-			return
++	case hhtml.StartTag:
++		if t.SelfClosing || hhtml.IsVoidElement(t.Name) {
++			return stack
+ 		}
+-		if rest := sc.s[sc.pos:limit]; len(rest) > len(name) && strings.EqualFold(rest[:len(name)], name) && !isHTMLTagNameByte(rest[len(name)]) {
+-			sc.pos -= 2
+-			return
++		if hhtml.IsRawTextElement(t.Name) {
++			sc.SkipRawText(limit, t.Name)
+ 		}
++		return append(stack, t.Name)
+ 	}
+-}
+-
+-func isHTMLTagNameByte(c byte) bool {
+-	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-'
+-}
+-
+-func isRawTextHTMLElement(name string) bool {
+-	switch name {
+-	case "script", "style", "textarea", "title", "iframe", "xmp", "noembed", "noframes":
+-		return true
+-	}
+-	return false
+-}
+-
+-func isVoidHTMLElement(name string) bool {
+-	switch name {
+-	case "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr":
+-		return true
+-	}
+-	return false
++	return stack
+ }
+ 
+ // ExtractSummaryFromHTMLWithDivider extracts a summary from the given HTML content with
+diff --git a/tpl/internal/go_templates/htmltemplate/hugo_template.go b/tpl/internal/go_templates/htmltemplate/hugo_template.go
+index d91baac7059..844323e76b5 100644
+--- a/tpl/internal/go_templates/htmltemplate/hugo_template.go
++++ b/tpl/internal/go_templates/htmltemplate/hugo_template.go
+@@ -52,11 +52,6 @@ func (t *Template) All() iter.Seq[*Template] {
+ 	}
+ }
+ 
+-// See https://github.com/golang/go/issues/5884
+-func StripTags(html string) string {
+-	return stripTags(html)
+-}
+-
+ func indirect(a any) any {
+ 	in := doIndirect(a)
+ 
+diff --git a/tpl/template.go b/tpl/template.go
+index e36d203b6e4..fca58318ce1 100644
+--- a/tpl/template.go
++++ b/tpl/template.go
+@@ -20,15 +20,15 @@ import (
+ 	"strings"
+ 	"sync"
+ 	"unicode"
++	"unicode/utf8"
+ 
+ 	"github.com/bep/helpers/contexthelpers"
+-	bp "github.com/gohugoio/hugo/bufferpool"
+ 	"github.com/gohugoio/hugo/common/collections"
++	"github.com/gohugoio/hugo/common/hhtml"
+ 
+ 	"github.com/gohugoio/hugo/identity"
+ 	"github.com/gohugoio/hugo/langs"
+ 
+-	htmltemplate "github.com/gohugoio/hugo/tpl/internal/go_templates/htmltemplate"
+ 	texttemplate "github.com/gohugoio/hugo/tpl/internal/go_templates/texttemplate"
+ )
+ 
+@@ -109,42 +109,102 @@ const (
+ 	HugoDeferredTemplateSuffix = "__d="
+ )
+ 
+-const hugoNewLinePlaceholder = "___hugonl_"
+-
+-var stripHTMLReplacerPre = strings.NewReplacer("\n", " ", "</p>", hugoNewLinePlaceholder, "<br>", hugoNewLinePlaceholder, "<br />", hugoNewLinePlaceholder)
+-
+-// StripHTML strips out all HTML tags in s.
++// StripHTML strips out all HTML tags, comments and the content of script and
++// style elements in s. Paragraph ends and line breaks are replaced with a
++// newline, other newlines with a space, text in adjacent block elements is
++// separated by a space, and repeated whitespace is collapsed.
++// Strings without any '<' are returned unchanged.
+ func StripHTML(s string) string {
+-	// Shortcut strings with no tags in them
+-	if !strings.ContainsAny(s, "<>") {
++	if strings.IndexByte(s, '<') == -1 {
+ 		return s
+ 	}
+ 
+-	pre := stripHTMLReplacerPre.Replace(s)
+-	preReplaced := pre != s
++	w := stripHTMLWriter{}
++	w.b.Grow(len(s))
++	sc := hhtml.NewScanner(s, 0)
++	for {
++		textStart := sc.Pos()
++		t, ok := sc.Next(len(s))
++		if !ok {
++			w.writeText(s[textStart:])
++			break
++		}
++		w.writeText(s[textStart:t.Start])
++		switch {
++		case t.Type == hhtml.StartTag && t.Name == "br", t.Type == hhtml.EndTag && t.Name == "p":
++			w.writeSpace('\n')
++		case t.Type == hhtml.StartTag && (t.Name == "script" || t.Name == "style"):
++			if !t.SelfClosing {
++				sc.SkipRawText(len(s), t.Name)
++			}
++		case hhtml.IsBlockElement(t.Name):
++			// Keep text in e.g. adjacent list items apart.
++			w.needsSpace = true
++		}
++	}
+ 
+-	s = htmltemplate.StripTags(pre)
++	return w.b.String()
++}
+ 
+-	if preReplaced {
+-		s = strings.ReplaceAll(s, hugoNewLinePlaceholder, "\n")
+-	}
++type stripHTMLWriter struct {
++	b        strings.Builder
++	wasSpace bool
++	// needsSpace is set when a space should separate the next text
++	// from any text before it.
++	needsSpace bool
++}
+ 
+-	var wasSpace bool
+-	b := bp.GetBuffer()
+-	defer bp.PutBuffer(b)
+-	for _, r := range s {
+-		isSpace := unicode.IsSpace(r)
+-		if !(isSpace && wasSpace) {
+-			b.WriteRune(r)
++func (w *stripHTMLWriter) writeText(s string) {
++	for i := 0; i < len(s); {
++		c := s[i]
++		if c >= utf8.RuneSelf {
++			r, size := utf8.DecodeRuneInString(s[i:])
++			if unicode.IsSpace(r) {
++				if !w.wasSpace {
++					w.b.WriteString(s[i : i+size])
++					w.wasSpace = true
++				}
++			} else {
++				w.writeNonSpace(s[i : i+size])
++			}
++			i += size
++			continue
+ 		}
+-		wasSpace = isSpace
++		if isASCIISpace(c) {
++			if c == '\n' {
++				c = ' '
++			}
++			w.writeSpace(c)
++			i++
++			continue
++		}
++		j := i + 1
++		for j < len(s) && s[j] < utf8.RuneSelf && !isASCIISpace(s[j]) {
++			j++
++		}
++		w.writeNonSpace(s[i:j])
++		i = j
+ 	}
++}
+ 
+-	if b.Len() > 0 {
+-		s = b.String()
++func (w *stripHTMLWriter) writeNonSpace(s string) {
++	if w.needsSpace && !w.wasSpace && w.b.Len() > 0 {
++		w.b.WriteByte(' ')
+ 	}
++	w.b.WriteString(s)
++	w.wasSpace = false
++	w.needsSpace = false
++}
++
++func (w *stripHTMLWriter) writeSpace(c byte) {
++	if !w.wasSpace {
++		w.b.WriteByte(c)
++		w.wasSpace = true
++	}
++}
+ 
+-	return s
++func isASCIISpace(c byte) bool {
++	return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r'
+ }
+ 
+ // DeferredExecution holds the template and data for a deferred execution.

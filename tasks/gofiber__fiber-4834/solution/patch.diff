@@ -1,0 +1,72 @@
+diff --git a/docs/middleware/idempotency.md b/docs/middleware/idempotency.md
+index 6d7e7fd1f23..7d7be662f83 100644
+--- a/docs/middleware/idempotency.md
++++ b/docs/middleware/idempotency.md
+@@ -37,6 +37,8 @@ type Locker interface {
+ 
+ * A request passes through untouched when `Next` returns `true` or when it has no `KeyHeader` value. The header is optional: nothing rejects a request that omits it.
+ * The first request with a key runs the handler. If the handler returns without an error, its status, body and headers are stored under the key for `Lifetime`, whatever the status code. A handler that returns an error is not stored, so the next request with that key runs the handler again.
++* Header lines already present before the handler runs are left out of the stored response when their name and value are unchanged. Earlier middleware runs on every request, so its CORS decisions and request IDs are not replayed from the first request. New or changed lines from the handler and downstream middleware are still stored, subject to `KeepResponseHeaders`; repeated identical lines are counted individually. This does not change how stored headers are added on replay or merge list-valued fields such as `Vary`.
++* Register middleware whose decisions must be made for every request, such as CORS and request ID, before idempotency. Middleware registered after it runs only on a cache miss, and its response headers are replayed with the stored response. Entries written before upstream header filtering was introduced retain their original headers until they expire; the storage keys are unchanged, so upgrading does not cause an already-recorded operation to run again.
+ * A streamed response that declares no length (`SendStreamWriter`, or `SendStream` without a size) is sent as it is produced and not stored, since storing it would mean reading it to its end first. The next request with that key runs the handler again. A stream of known length, such as `SendFile` serves, is read and stored like any other response when it is no longer than 1 MiB and delivers that length without an error; otherwise it is sent as read and not stored.
+ * Cookies are not stored: `Set-Cookie` and the obsolete `Set-Cookie2` are left out of the stored response unless `KeepResponseHeaders` names them. The client that caused the miss still receives them, and a replay does not, so a retry after a lost response does not set the cookie. A stored entry is replayed through the same filter, so one that holds a cookie, written by an earlier version or under a configuration that named it, is replayed without it.
+ * Later requests with the same key receive the stored response and the handler does not run. A request that arrives while the first is still running waits for `Lock` and then receives the stored response.
+diff --git a/docs/whats_new.md b/docs/whats_new.md
+index 2ee62461157..ad7405cb9c5 100644
+--- a/docs/whats_new.md
++++ b/docs/whats_new.md
+@@ -1718,6 +1718,8 @@ The CSRF middleware now validates the [`Sec-Fetch-Site`](https://developer.mozil
+ 
+ ### Idempotency
+ 
++Unchanged response header lines from middleware registered before idempotency are no longer stored. CORS and request ID middleware registered there produce fresh values on each request without cached copies being appended. Headers added or changed downstream still replay, including those from route-level CORS. Existing cache entries keep their previously stored headers until expiration; this change does not invalidate idempotency keys. See [Behavior](./middleware/idempotency.md#behavior) for middleware ordering.
++
+ Idempotency middleware now redacts keys by default and offers a `DisableValueRedaction` configuration flag (default `false`) to expose them when debugging.
+ 
+ A streamed response that declares no length (`SendStreamWriter`, or `SendStream` without a size) is sent as it is produced and no longer read to its end to store it, so a retry with its key runs the handler again. A stream of known length is stored only when it is no longer than 1 MiB and delivers that length without an error; a failed read used to be stored as its body. A request the server refused while reading it, such as one over `BodyLimit`, is not stored either, so the retry with its key reaches the handler instead of an empty `413`.
+diff --git a/middleware/idempotency/config.go b/middleware/idempotency/config.go
+index d0fbb8d5147..3a37d6b64f8 100644
+--- a/middleware/idempotency/config.go
++++ b/middleware/idempotency/config.go
+@@ -49,6 +49,8 @@ type Config struct {
+ 	KeyHeader string
+ 
+ 	// KeepResponseHeaders is a list of headers that should be kept from the original response.
++	// Unchanged header lines already present before the downstream handler runs are not
++	// stored, even when named here: earlier middleware sets them again for each request.
+ 	// A response is replayed to every request that carries its key, so Set-Cookie and the
+ 	// obsolete Set-Cookie2 are kept only when named here: a stored cookie would hand the
+ 	// session of the first client to the others. Every other header is kept by default, so
+diff --git a/middleware/idempotency/idempotency.go b/middleware/idempotency/idempotency.go
+index 61404be5c26..0d498a05cc9 100644
+--- a/middleware/idempotency/idempotency.go
++++ b/middleware/idempotency/idempotency.go
+@@ -198,6 +198,17 @@ func New(config ...Config) fiber.Handler {
+ 			return nil
+ 		}
+ 
++		// Earlier middleware runs again on a replay. Count its header lines now,
++		// before downstream handlers can overwrite their backing buffers. Only
++		// new or changed lines belong in the stored response; counts preserve
++		// identical lines that downstream handlers deliberately add again.
++		upstream := make(map[string]int)
++		for k, v := range c.Response().Header.All() {
++			if keepHeader(utils.UnsafeString(k)) {
++				upstream[string(k)+"\x00"+string(v)]++
++			}
++		}
++
+ 		// Execute the request handler
+ 		if err := c.Next(); err != nil {
+ 			// If the request handler returned an error, return it and skip idempotency
+@@ -229,6 +240,10 @@ func New(config ...Config) fiber.Handler {
+ 				if !keepHeader(utils.UnsafeString(k)) {
+ 					continue
+ 				}
++				if line := string(k) + "\x00" + string(v); upstream[line] > 0 {
++					upstream[line]--
++					continue
++				}
+ 				name := string(k)
+ 				headers[name] = append(headers[name], string(v))
+ 			}

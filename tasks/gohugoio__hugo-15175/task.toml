@@ -1,0 +1,139 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15175"
+description = "Add Data.Artifacts to css.Build and js.Build"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "2ffaf1fc1edb31993f22dd7fd8da5eeb0f4df015"
+reference = "https://github.com/gohugoio/hugo/pull/15175"
+source_access = "auto"
+built_at = "2026-11-10T23:42:34.858105+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:5f3824744848c1d081969f997cc84ff4610c8f339fd0eaa5b5b39c0156d2f21b"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15175"
+pr_merged_at = "2026-08-08T17:51:42Z"
+base_commit = "2ffaf1fc1edb31993f22dd7fd8da5eeb0f4df015"
+fail_to_pass = [
+    "TestBuildDataArtifacts",
+    "TestCSSBuildDataArtifacts",
+    "TestCSSBuildFileLoaderURLRelativeToWebContextRootMultihost",
+    "TestCSSBuildFileLoaderURLRelativeToWebContextRootMultihost/en_first",
+    "TestCSSBuildFileLoaderURLRelativeToWebContextRootMultihost/fr_first",
+]
+pass_to_pass = [
+    "TestBuildError",
+    "TestBuildError/Import_from_import_not_found",
+    "TestBuildError/Import_from_main_not_found",
+    "TestBuildErrorStack",
+    "TestBuildVariants",
+    "TestBuildVariants/Basic",
+    "TestBuildVariants/Edit_Import",
+    "TestBuildVariants/Edit_Import_Nested",
+    "TestCSSBuild",
+    "TestCSSBuildEdit",
+    "TestCSSBuildEditOptions",
+    "TestCSSBuildEditOptionsMultiple",
+    "TestCSSBuildFileLoaderURLRelativeToWebContextRoot",
+    "TestCSSBuildImportContext",
+    "TestCSSBuildImportContextChromaStyles",
+    "TestCSSBuildImportContextEdit",
+    "TestCSSBuildImportContextHashes",
+    "TestCSSBuildLoadersDefault",
+    "TestCSSBuildLoadersPartial",
+    "TestCSSBuildMultihost",
+    "TestCSSBuildSourceMaps",
+    "TestCSSBuildVars",
+    "TestCSSBuildVarsEmpty",
+    "TestCSSBuildVarsFromParams",
+    "TestCSSBuildVarsNestedIssue14705",
+    "TestCSSBuildVarsNestedUpperCase",
+    "TestCSSBuildVarsQuoted",
+    "TestChromaStyles",
+    "TestChromaStylesCustomModeClasses",
+    "TestChromaStylesErrors",
+    "TestChromaStylesKeepDefaultForegroundTokens",
+    "TestExternalsInAssets",
+    "TestImportHugoVsESBuild",
+    "TestImportHugoVsESBuild/assets",
+    "TestImportHugoVsESBuild/node_modules",
+    "TestPreserveLegalComments",
+    "TestTypeScriptExperimentalDecorators",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:49dceb19f546"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 58.903
+measured_overhead_seconds = 5.174
+measured_copy_seconds = 0.194
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 5
+p2p_count = 37
+source_files = 4
+loc_changed = 96
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:09.652937+00:00"
+inline_recipe_sha256 = "sha256:b1a22fa783519f3522c1c203180647a50c0f250016c6c233fedf397924da4960"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 214
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15175-b01601c9539a"

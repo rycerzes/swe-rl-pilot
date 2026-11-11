@@ -1,0 +1,181 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15480"
+description = "markup/goldmark: Fix auto heading ID when link text starts with a bracket"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "ed22b85c192dd750cf0bdfb2d2005d31ab3bc0a7"
+reference = "https://github.com/gohugoio/hugo/pull/15480"
+source_access = "auto"
+built_at = "2026-11-10T23:53:23.813122+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:07b251a6c28636d9add9c1304ba63b98f61de1775498a681ce50cd489669930c"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15480"
+pr_merged_at = "2026-10-25T14:24:32Z"
+base_commit = "ed22b85c192dd750cf0bdfb2d2005d31ab3bc0a7"
+fail_to_pass = [
+    "TestHeadingIDLinkTextStartingWithBracket",
+]
+pass_to_pass = [
+    "TestAttributeExclusion",
+    "TestAttributeExclusionWithRenderHook",
+    "TestAttributesDefaultRenderer",
+    "TestAttributesHookNoEscape",
+    "TestCodeFence",
+    "TestCodeFence/Basic",
+    "TestCodeFence/Highlight_lines,_default_config",
+    "TestCodeFence/Highlight_lines,_linenumbers_default_on",
+    "TestCodeFence/Highlight_lines,_linenumbers_default_on,_linenumbers_in_table_default_off",
+    "TestCodeFence/No_language",
+    "TestCodeFence/No_language,_guess_syntax",
+    "TestConvert",
+    "TestConvertAttributes",
+    "TestConvertAttributes/Blockquote",
+    "TestConvertAttributes/Code_block,_CodeFences=true",
+    "TestConvertAttributes/Code_block,_CodeFences=true,lineanchors",
+    "TestConvertAttributes/Code_block,_CodeFences=true,lineanchors,_default_ordinal",
+    "TestConvertAttributes/Code_block,_CodeFences=true,linenos=table",
+    "TestConvertAttributes/Ordered_list",
+    "TestConvertAttributes/Paragraph",
+    "TestConvertAttributes/Table",
+    "TestConvertAttributes/Title",
+    "TestConvertAttributes/Title_and_Blockquote",
+    "TestConvertAttributes/Unordered_list",
+    "TestConvertAttributes/Unordered_list,_indented",
+    "TestConvertAutoIDAsciiOnly",
+    "TestConvertAutoIDBlackfriday",
+    "TestConvertCJK",
+    "TestConvertCJKWithExtensionWithEastAsianLineBreaksOption",
+    "TestConvertCJKWithExtensionWithEastAsianLineBreaksOptionWithSimple",
+    "TestConvertCJKWithExtensionWithEastAsianLineBreaksOptionWithStyle",
+    "TestConvertCJKWithExtensionWithEscapedSpaceOption",
+    "TestConvertIssues",
+    "TestConvertIssues/Hyphen_in_HTML_attributes",
+    "TestEmojiDefaultConfig",
+    "TestEmojiDisabled",
+    "TestExtrasExtension",
+    "TestFootnoteExtension",
+    "TestGoldmarkBugs",
+    "TestGoldmarkEmojiExtension",
+    "TestGoldmarkRawHTMLCommentNoWarning",
+    "TestGoldmarkRawHTMLWarningBlocks",
+    "TestGoldmarkRawHTMLWarningInline",
+    "TestGoldmarkTemplateDelims",
+    "TestHighlight",
+    "TestHookInfiniteRecursion",
+    "TestHookInfiniteRecursion/.Page.RenderString",
+    "TestHookInfiniteRecursion/markdownify",
+    "TestImageAltApostrophesWithTypographer",
+    "TestIssue13416",
+    "TestLinkInTitle",
+    "TestLinkifyProtocol",
+    "TestPassthroughBlockFences",
+    "TestPassthroughInlineFences",
+    "TestPassthroughWithAlternativeFences",
+    "TestQuotesInImgAltAttr",
+    "TestRenderLinkDefaultAmpersand",
+    "TestRenderLinkDefaultDangerous",
+    "TestSanitizeAnchorName",
+    "TestSanitizeAnchorName/1+2=3",
+    "TestSanitizeAnchorName/Backward\\slash",
+    "TestSanitizeAnchorName/Forward/slash",
+    "TestSanitizeAnchorName/God_is_good:_神真美好",
+    "TestSanitizeAnchorName/Many___spaces__here",
+    "TestSanitizeAnchorName/Multiple--Hyphens",
+    "TestSanitizeAnchorName/Nonbreaking_Space",
+    "TestSanitizeAnchorName/Number_32",
+    "TestSanitizeAnchorName/One-Hyphen",
+    "TestSanitizeAnchorName/Question?",
+    "TestSanitizeAnchorName/Resumé",
+    "TestSanitizeAnchorName/Special_!\"#$%&(parens)=?´*_chars",
+    "TestSanitizeAnchorName/Tab_Space",
+    "TestSanitizeAnchorName/Trailing_Space_",
+    "TestSanitizeAnchorName/Trailing_hyphen-",
+    "TestSanitizeAnchorName/Under_score",
+    "TestSanitizeAnchorNameAsciiOnly",
+    "TestSanitizeAnchorNameBlackfriday",
+    "TestTableOfContents",
+    "TestTableOfContentsAdvanced",
+    "TestTableOfContentsWithGoldmarkExtras",
+    "TestTableOfContentsWithPassthrough",
+    "TestTypographerConfig",
+    "TestTypographerImageAltText",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:8502b60066b1"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 76.366
+measured_overhead_seconds = 3.474
+measured_copy_seconds = 0.129
+run_timeout_sec = 180
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 1
+p2p_count = 83
+source_files = 1
+loc_changed = 4
+difficulty = "trivial"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:10.546650+00:00"
+inline_recipe_sha256 = "sha256:90f3b94fa0f56f2ea81476dfe02acf36df357fa908f67e1b232212f950569ff0"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 277
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15480-48edec432de6"

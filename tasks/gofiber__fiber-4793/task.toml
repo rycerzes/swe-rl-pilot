@@ -1,0 +1,241 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gofiber__fiber-4793"
+description = "🐛 bug: trim the whitespace around comma-split header values in Bind"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "fiber",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gofiber/fiber"
+ref = "7c22c42eecd2d35bc2fb0078b583d8e2cd5085ae"
+reference = "https://github.com/gofiber/fiber/pull/4793"
+source_access = "auto"
+built_at = "2026-11-10T23:55:23.484300+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:6a5a09357d407271503c22757176a9218eb40d1fad302641031212a7a3ee4823"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gofiber/fiber/pull/4793"
+pr_merged_at = "2026-10-29T16:10:32Z"
+base_commit = "7c22c42eecd2d35bc2fb0078b583d8e2cd5085ae"
+fail_to_pass = [
+    "Test_HeaderBinder_Bind_Splitting_SkipsEmptyListElements",
+    "Test_HeaderBinder_Bind_Splitting_StringMapNotSplit",
+    "Test_HeaderBinder_Bind_Splitting_TrimsListWhitespace",
+    "Test_RespHeaderBinder_Bind_Splitting_TrimsListWhitespace",
+]
+pass_to_pass = [
+    "TestSetParserDecoderConcurrentAccess",
+    "Test_AcquireBindData_ReservesPairs",
+    "Test_BindData_AlternatingKeys",
+    "Test_BindData_Bind",
+    "Test_BindData_Bind/splitting_disabled",
+    "Test_BindData_Bind/splitting_enabled_with_comma",
+    "Test_BindData_Bind/value",
+    "Test_BindData_BracketNotation",
+    "Test_Bind_MapOfSlices_OwnsValues",
+    "Test_Bind_Splitting_KeepsElementWhitespace",
+    "Test_Bind_StringMap_Destinations",
+    "Test_Bind_StringMap_KeepsLastValue",
+    "Test_Binders_ErrorPaths",
+    "Test_Binders_ErrorPaths/form_binder_bad_multipart",
+    "Test_Binders_ErrorPaths/form_binder_invalid_key",
+    "Test_Binders_ErrorPaths/query_binder_invalid_key",
+    "Test_CBORBinder_Bind",
+    "Test_CollectPromoted_MutualEmbedding",
+    "Test_CookieBinder_Bind",
+    "Test_CookieBinder_Bind_ParseError",
+    "Test_EqualFieldType",
+    "Test_EqualFieldType_DiamondEmbedding",
+    "Test_EqualFieldType_EmbeddedStruct",
+    "Test_EqualFieldType_InvalidDestination",
+    "Test_EqualFieldType_Map",
+    "Test_EqualFieldType_NestedDepth",
+    "Test_EqualFieldType_RecursiveType",
+    "Test_EqualFieldType_ScalarNotSplit",
+    "Test_FieldInfo_ResolveKindsAgreesWithResolve",
+    "Test_FilterFlags",
+    "Test_FilterFlags/text/javascript",
+    "Test_FilterFlags/text/javascript;_charset=utf-8",
+    "Test_FilterFlags/text/javascript;_charset=utf-8;_foo=bar",
+    "Test_FilterFlags/text/javascript_charset=utf-8",
+    "Test_FormBinder_Bind",
+    "Test_FormBinder_BindMultipart",
+    "Test_FormBinder_BindMultipart_BodyLimitExceeded",
+    "Test_FormBinder_BindMultipart_FileError",
+    "Test_FormBinder_BindMultipart_MapsClearedBetweenRequests",
+    "Test_FormBinder_BindMultipart_ValueError",
+    "Test_FormBinder_Bind_MapClearedBetweenRequests",
+    "Test_FormBinder_Bind_MixedCaseContentType",
+    "Test_FormBinder_Bind_MixedCaseContentType/multipart",
+    "Test_FormBinder_Bind_MixedCaseContentType/urlencoded",
+    "Test_FormBinder_Bind_OptionalIDParam",
+    "Test_FormBinder_Bind_OptionalIDParam/id_not_provided",
+    "Test_FormBinder_Bind_OptionalIDParam/id_provided",
+    "Test_FormBinder_Bind_OptionalIDParam/id_zero",
+    "Test_FormBinder_Bind_ParseError",
+    "Test_FormBinder_Bind_PointerScalars",
+    "Test_FormBinder_Bind_PointerScalars/all_fields_provided",
+    "Test_FormBinder_Bind_PointerScalars/explicit_zero_and_empty_values_provided",
+    "Test_FormBinder_Bind_PointerScalars/no_fields_provided",
+    "Test_FormBinder_Bind_PointerScalars/partial_fields_provided",
+    "Test_GetAndPutToThePool",
+    "Test_GetFieldCache_Panic",
+    "Test_HeaderBinder_Bind",
+    "Test_HeaderBinder_Bind_ParseError",
+    "Test_IsDigits",
+    "Test_JSON_Binding_Bind",
+    "Test_JSON_Binding_Bind_OptionalIDParam",
+    "Test_JSON_Binding_Bind_OptionalIDParam/id_not_provided",
+    "Test_JSON_Binding_Bind_OptionalIDParam/id_null",
+    "Test_JSON_Binding_Bind_OptionalIDParam/id_provided",
+    "Test_JSON_Binding_Bind_OptionalIDParam/id_zero",
+    "Test_Msgpack_Binding_Bind",
+    "Test_Notation_FormAndQuery",
+    "Test_Notation_FormAndQuery/bracket_index_mixed_with_a_dot_field",
+    "Test_Notation_FormAndQuery/bracket_struct_field",
+    "Test_Notation_FormAndQuery/brackets_two_levels_deep",
+    "Test_Notation_FormAndQuery/dot_index_on_a_scalar_slice_is_dropped",
+    "Test_Notation_FormAndQuery/dot_index_on_a_struct_slice",
+    "Test_Notation_FormAndQuery/dot_struct_field",
+    "Test_Notation_FormAndQuery/dots_two_levels_deep",
+    "Test_Notation_FormAndQuery/empty_brackets",
+    "Test_Notation_FormAndQuery/index_on_a_scalar_slice_is_dropped",
+    "Test_Notation_FormAndQuery/indexed_brackets_on_a_struct_slice",
+    "Test_Notation_FormAndQuery/repeated_key",
+    "Test_ParseParamSquareBrackets",
+    "Test_ParseParamSquareBrackets/#00",
+    "Test_ParseParamSquareBrackets/[]",
+    "Test_ParseParamSquareBrackets/foo[]",
+    "Test_ParseParamSquareBrackets/foo[bar",
+    "Test_ParseParamSquareBrackets/foo[bar[baz]]",
+    "Test_ParseParamSquareBrackets/foo[bar]",
+    "Test_ParseParamSquareBrackets/foo[bar][baz",
+    "Test_ParseParamSquareBrackets/foo[bar][baz]",
+    "Test_ParseParamSquareBrackets/foo]bar[",
+    "Test_QueryBinder_Bind",
+    "Test_QueryBinder_Bind_OptionalIDParam",
+    "Test_QueryBinder_Bind_OptionalIDParam/id_not_provided",
+    "Test_QueryBinder_Bind_OptionalIDParam/id_provided",
+    "Test_QueryBinder_Bind_OptionalIDParam/id_zero",
+    "Test_QueryBinder_Bind_PointerScalars",
+    "Test_QueryBinder_Bind_PointerScalars/all_fields_provided",
+    "Test_QueryBinder_Bind_PointerScalars/no_fields_provided",
+    "Test_QueryBinder_Bind_PointerScalars/partial_fields_provided",
+    "Test_QueryBinder_Bind_PointerScalars/zero_values_provided",
+    "Test_QueryBinder_Bind_PointerSlices",
+    "Test_QueryBinder_Bind_Splitting_EmbeddedStruct",
+    "Test_QueryBinder_Bind_Splitting_EmptyAliasWithOptions",
+    "Test_QueryBinder_Bind_Splitting_InvalidDestination",
+    "Test_QueryBinder_Bind_Splitting_NestedDepth",
+    "Test_QueryBinder_Bind_Splitting_NestedDepth/bracket_notation",
+    "Test_QueryBinder_Bind_Splitting_NestedDepth/dot_notation",
+    "Test_QueryBinder_Bind_Splitting_NestedDepth/mixed_notation",
+    "Test_QueryBinder_Bind_Splitting_NilSliceMap",
+    "Test_QueryBinder_Bind_Splitting_ScalarNotSplit",
+    "Test_ReleaseBindData",
+    "Test_RespHeaderBinder_Bind",
+    "Test_RespHeaderBinder_Bind_ParseError",
+    "Test_SetParserDecoder_AliasTagIgnored",
+    "Test_SetParserDecoder_CustomConverter",
+    "Test_SetParserDecoder_UnknownKeys",
+    "Test_StructKeyKind_NestedCacheTypeMismatch",
+    "Test_StructKeyKind_NestedPaths",
+    "Test_URIBinding_Bind",
+    "Test_UnimplementedCborMarshal_ReturnsError",
+    "Test_UnimplementedCborUnmarshal_ReturnsError",
+    "Test_UnimplementedMsgpackMarshal_ReturnsError",
+    "Test_UnimplementedMsgpackUnmarshal_ReturnsError",
+    "Test_XMLBinding_Bind",
+    "Test_XMLBinding_Bind_error",
+    "Test_buildFieldInfo_Unexported",
+    "Test_decoderBuilder",
+    "Test_decoderPoolMapInit",
+    "Test_equalFieldType_CacheTypeMismatch",
+    "Test_fieldName",
+    "Test_getFieldCache",
+    "Test_parseToMap",
+    "Test_parseToMap_Extended",
+    "Test_parseToMap_defaultCase",
+    "Test_parseToStruct_MismatchedData",
+    "Test_parse_function_maps",
+    "Test_tagIndex_MatchesTags",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gofiber__fiber:9bc9f2ff994e"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 21.552
+measured_overhead_seconds = 1.438
+measured_copy_seconds = 0.035
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 4
+p2p_count = 135
+source_files = 3
+loc_changed = 24
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:12.423602+00:00"
+inline_recipe_sha256 = "sha256:865f45160c1c6f40701beb59d672c3e5ed55bae7b35dba1a1270d3c500cc3d33"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = [
+    "Test_HeaderBinder_Bind_Splitting_SkipsEmptyListElements",
+    "Test_HeaderBinder_Bind_Splitting_StringMapNotSplit",
+    "Test_HeaderBinder_Bind_Splitting_TrimsListWhitespace",
+    "Test_RespHeaderBinder_Bind_Splitting_TrimsListWhitespace",
+]
+instruction_description_words = 476
+instruction_ok = false
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gofiber__fiber-4793-11cdf65aef75"

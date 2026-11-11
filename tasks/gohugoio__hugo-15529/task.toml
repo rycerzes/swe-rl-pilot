@@ -1,0 +1,151 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15529"
+description = " langs/i18n: Fix project translations losing to module translations"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "185a609ec26020ac97b0a3f78c9ca299e20e7477"
+reference = "https://github.com/gohugoio/hugo/pull/15529"
+source_access = "auto"
+built_at = "2026-11-11T00:20:11.867925+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:5935f68eb5118bf042003dc9d00fe6ddbee78d04e1a8b8996d1c4010704e54ac"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15529"
+pr_merged_at = "2026-11-03T09:47:53Z"
+base_commit = "185a609ec26020ac97b0a3f78c9ca299e20e7477"
+fail_to_pass = [
+    "TestI18nProjectWinsOverManyModules",
+]
+pass_to_pass = [
+    "TestGetPluralCount",
+    "TestI18nDefaultContentLanguage",
+    "TestI18nFromTheme",
+    "TestI18nReservedKeyMap",
+    "TestI18nReservedKeyScalar",
+    "TestI18nTranslate",
+    "TestI18nTranslate/all-present-false",
+    "TestI18nTranslate/all-present-true",
+    "TestI18nTranslate/argument-float-false",
+    "TestI18nTranslate/argument-float-true",
+    "TestI18nTranslate/context-provided-false",
+    "TestI18nTranslate/context-provided-true",
+    "TestI18nTranslate/dotted-bare-key-false",
+    "TestI18nTranslate/dotted-bare-key-true",
+    "TestI18nTranslate/file-missing-false",
+    "TestI18nTranslate/file-missing-true",
+    "TestI18nTranslate/known-language-missing-plural-false",
+    "TestI18nTranslate/known-language-missing-plural-true",
+    "TestI18nTranslate/lang-with-hyphen-false",
+    "TestI18nTranslate/lang-with-hyphen-true",
+    "TestI18nTranslate/missing-false",
+    "TestI18nTranslate/missing-true",
+    "TestI18nTranslate/present-in-current-false",
+    "TestI18nTranslate/present-in-current-true",
+    "TestI18nTranslate/present-in-default-false",
+    "TestI18nTranslate/present-in-default-true",
+    "TestI18nTranslate/readingTime-many-dot-false",
+    "TestI18nTranslate/readingTime-many-dot-true",
+    "TestI18nTranslate/readingTime-many-false",
+    "TestI18nTranslate/readingTime-many-true",
+    "TestI18nTranslate/readingTime-map-many-false",
+    "TestI18nTranslate/readingTime-map-many-true",
+    "TestI18nTranslate/readingTime-map-one-false",
+    "TestI18nTranslate/readingTime-map-one-true",
+    "TestI18nTranslate/readingTime-one-false",
+    "TestI18nTranslate/readingTime-one-true",
+    "TestI18nTranslate/readingTime-string-one-false",
+    "TestI18nTranslate/readingTime-string-one-true",
+    "TestI18nTranslate/same-id-and-translation-default-false",
+    "TestI18nTranslate/same-id-and-translation-default-true",
+    "TestI18nTranslate/same-id-and-translation-false",
+    "TestI18nTranslate/same-id-and-translation-true",
+    "TestI18nTranslate/unknown-language-code-false",
+    "TestI18nTranslate/unknown-language-code-true",
+    "TestI18nTranslate/unknown-language-codes-false",
+    "TestI18nTranslate/unknown-language-codes-true",
+    "TestI18nUseLangWhenLocaleFileIsMissing",
+    "TestI18nUseLocaleWhenBothTranslationFilesArePresent",
+    "TestPassPageToI18n",
+    "TestPlural",
+    "TestPlural/English",
+    "TestPlural/Other_only",
+    "TestPlural/Polish",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:bca2cec8875b"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 74.762
+measured_overhead_seconds = 4.296
+measured_copy_seconds = 0.122
+run_timeout_sec = 150
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 1
+p2p_count = 53
+source_files = 1
+loc_changed = 8
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:10.742349+00:00"
+inline_recipe_sha256 = "sha256:4cc82e3d629b1c3cb536e23a6624772af0004d6045cb5527d068672db0d098ae"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 241
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15529-585d27d798d9"

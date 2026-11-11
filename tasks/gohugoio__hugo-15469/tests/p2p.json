@@ -1,0 +1,20 @@
+[
+  "TestInclude",
+  "TestIncludeCacheHints",
+  "TestIncludeCached",
+  "TestIncludeCachedDifferentKey",
+  "TestIncludeCachedRecursion",
+  "TestIncludeCachedRecursionShortcode",
+  "TestIncludeCachedTimeout",
+  "TestIncludeRelativePath",
+  "TestIncludeRelativePathInDecoratorInner",
+  "TestIncludeRelativePathInDeferredBlock",
+  "TestIncludeRelativePathNotFromPartial",
+  "TestIncludeRelativePathOutsidePartials",
+  "TestPartialReturnBareStopsEarly",
+  "TestPartialReturnConditional",
+  "TestPartialReturnFromRange",
+  "TestPartialReturnNil",
+  "TestPartialReturnValueFromTemplateInclude",
+  "TestReturnExecuteFromTemplateInPartial"
+]

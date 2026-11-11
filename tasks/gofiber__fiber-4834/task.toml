@@ -1,0 +1,152 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gofiber__fiber-4834"
+description = "🐛 bug: exclude unchanged upstream headers from idempotency storage"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "fiber",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gofiber/fiber"
+ref = "3a397ad690eb4d9353740fb29fb08c9495a635d9"
+reference = "https://github.com/gofiber/fiber/pull/4834"
+source_access = "auto"
+built_at = "2026-11-11T00:05:04.119368+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:5c9d7f2af7add5a9908abc19606ba4cd68d508ffae8b9ea5237676bacf6849f9"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gofiber/fiber/pull/4834"
+pr_merged_at = "2026-11-02T13:42:20Z"
+base_commit = "3a397ad690eb4d9353740fb29fb08c9495a635d9"
+fail_to_pass = [
+    "Test_New_ReplayDownstreamHeaders",
+    "Test_New_ReplayDownstreamHeaders/repeated_identical_lines",
+    "Test_New_ReplayUpstreamAndHandlerCookies",
+    "Test_New_ReplayUpstreamHeaders",
+    "Test_New_ReplayUpstreamHeaders/origin=",
+    "Test_New_ReplayUpstreamHeaders/origin=https://denied.example",
+    "Test_New_ReplayUpstreamHeaders/origin=https://first.example",
+    "Test_New_ReplayUpstreamHeaders/origin=https://second.example",
+]
+pass_to_pass = [
+    "TestEncodeDecoderesponse",
+    "TestMarshalUnmarshalresponse",
+    "Test_Idempotency",
+    "Test_Idempotency_RefusedRequestIsNotStored",
+    "Test_Idempotency_SizedStreamIsReplayed",
+    "Test_Idempotency_Store_After_Handler_Cancel",
+    "Test_Idempotency_StreamIsPassedOnUnrecorded",
+    "Test_Idempotency_StreamIsPassedOnUnrecorded/fails",
+    "Test_Idempotency_StreamIsPassedOnUnrecorded/longer_than_declared",
+    "Test_Idempotency_StreamIsPassedOnUnrecorded/too_long_to_store",
+    "Test_Idempotency_StreamIsPassedOnUnrecorded/undeclared_length",
+    "Test_MemoryLock",
+    "Test_MemoryLock/zero_value",
+    "Test_New_Cache_WhenBodyTooLarge",
+    "Test_New_DoesNotReplayCookies",
+    "Test_New_Errors",
+    "Test_New_Errors/invalid_key",
+    "Test_New_Errors/lock_error",
+    "Test_New_Errors/second_pass_read_error",
+    "Test_New_Errors/storage_get_error",
+    "Test_New_Errors/storage_set_error",
+    "Test_New_Errors/unmarshal_error",
+    "Test_New_HandlerError",
+    "Test_New_KeepResponseHeaders_NamedCookies",
+    "Test_New_KeyScope",
+    "Test_New_KeyScope_NotConsulted",
+    "Test_New_NextSkip",
+    "Test_New_ReplayDownstreamHeaders/explicit_content_type_overwritten_by_json",
+    "Test_New_ReplayDownstreamHeaders/json_without_upstream_headers",
+    "Test_New_ReplayDownstreamHeaders/route_cors",
+    "Test_New_ReplayDropsStoredCookies",
+    "Test_New_ReplayVary",
+    "Test_New_SharedStorage_KeyNamespace",
+    "Test_New_StoreRetrieve_FilterHeaders",
+    "Test_New_StoreRetrieve_FilterHeaders/case_insensitive_snapshot",
+    "Test_New_StoreRetrieve_FilterHeaders/exact_name",
+    "Test_New_StoreRetrieve_HeadersWithCommas",
+    "Test_New_UnlockError",
+    "Test_configDefault_defaults",
+    "Test_configDefault_override",
+    "Test_response_Decode_LimitExceeded",
+    "Test_response_Decode_Truncated",
+    "Test_response_EncodeDecode_Populated",
+    "Test_response_EncodeMsg_WriterErrors",
+    "Test_response_MarshalUnmarshal_Populated",
+    "Test_response_UnmarshalMsg_UnknownField",
+    "Test_scopedKey",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "sha256:10f6cab9d6fad98bcdc3c2d856141e5b815ebbaf26cea9ca446e4b42bfdf2194"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 60.028
+measured_overhead_seconds = 2.68
+measured_copy_seconds = 0.058
+run_timeout_sec = 150
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 8
+p2p_count = 47
+source_files = 4
+loc_changed = 21
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:12.834124+00:00"
+inline_recipe_sha256 = "sha256:2b7057e689df4da30ad78ba0d436a0dd62e8f73c9aec5d1cc469582b407ca925"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 594
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gofiber__fiber-4834-bb905a70f862"

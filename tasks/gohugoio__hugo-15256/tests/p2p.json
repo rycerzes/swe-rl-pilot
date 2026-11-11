@@ -1,0 +1,16 @@
+[
+  "TestConfigAliases",
+  "TestContentTypesDefault",
+  "TestDefaultConfigEnvDisableLanguagesIssue13707",
+  "TestDefaultConfigLanguageBlankWhenNoEnglishExists",
+  "TestDirsMount",
+  "TestInvalidOutputFormat",
+  "TestLegacyEmbeddedRenderHookEnablement",
+  "TestMapUglyURLs",
+  "TestMergeDeep",
+  "TestMergeDeepBuildStats",
+  "TestMergeDeepBuildStatsTheme",
+  "TestPaginationConfig",
+  "TestPaginationConfigDisableAliases",
+  "TestRedefineContentTypes"
+]

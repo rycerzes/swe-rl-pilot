@@ -1,0 +1,143 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gofiber__fiber-4726"
+description = "🐛 bug: equalize basicauth verification time across mixed hash algorithms"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "fiber",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gofiber/fiber"
+ref = "11954d1033877de8c109686934129fe9dbe6a12c"
+reference = "https://github.com/gofiber/fiber/pull/4726"
+source_access = "auto"
+built_at = "2026-11-10T23:26:41.407551+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:b1fca2619a593d12f7a5fb98a1da6f31f9135caa31efbe834587bb38899496c2"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gofiber/fiber/pull/4726"
+pr_merged_at = "2026-09-30T14:34:40Z"
+base_commit = "11954d1033877de8c109686934129fe9dbe6a12c"
+fail_to_pass = [
+    "Test_buildVerifiers",
+    "Test_buildVerifiers/each_user_accepts_only_its_own_password",
+    "Test_buildVerifiers_SameCostAcrossTiers",
+]
+pass_to_pass = [
+    "Test_BasicAuthLogContextTagWritesUsername",
+    "Test_BasicAuthLoggerTagWritesUsername",
+    "Test_BasicAuth_AuthorizerCtx",
+    "Test_BasicAuth_Charset",
+    "Test_BasicAuth_ControlChars",
+    "Test_BasicAuth_EmptyAuthorization",
+    "Test_BasicAuth_HashVariants",
+    "Test_BasicAuth_HashVariants_Invalid",
+    "Test_BasicAuth_HeaderControlCharEdges",
+    "Test_BasicAuth_HeaderLimit",
+    "Test_BasicAuth_HeaderLimit/allowed",
+    "Test_BasicAuth_HeaderLimit/too_large",
+    "Test_BasicAuth_HeaderWhitespace",
+    "Test_BasicAuth_Immutable",
+    "Test_BasicAuth_InvalidHeader",
+    "Test_BasicAuth_InvalidUTF8",
+    "Test_BasicAuth_MissingColon",
+    "Test_BasicAuth_MissingScheme",
+    "Test_BasicAuth_Next",
+    "Test_BasicAuth_NonASCIIHeader",
+    "Test_BasicAuth_RejectsWrongDigestLength",
+    "Test_BasicAuth_RejectsWrongDigestLength/sha256_too_short",
+    "Test_BasicAuth_RejectsWrongDigestLength/sha512_holds_a_sha256_digest",
+    "Test_BasicAuth_RejectsWrongDigestLength/sha512_too_short",
+    "Test_BasicAuth_UTF8Normalization",
+    "Test_BasicAuth_UnpaddedBase64",
+    "Test_BasicAuth_UsernameFromContext_Types",
+    "Test_BasicAuth_WWWAuthenticateHeader",
+    "Test_BasicAuth_WWWAuthenticateHeader_QuotedString",
+    "Test_BasicAuth_WWWAuthenticateHeader_UTF8",
+    "Test_Middleware_BasicAuth",
+    "Test_buildVerifiers/uses_a_fixed-work_fallback_when_no_users_are_configured",
+    "Test_containsCTL",
+    "Test_containsInvalidHeaderChars_WordBoundaries",
+    "Test_parseHashedPassword",
+    "Test_parseHashedPassword/bcrypt",
+    "Test_parseHashedPassword/sha256",
+    "Test_parseHashedPassword/sha256-b64",
+    "Test_parseHashedPassword/sha256-hex",
+    "Test_parseHashedPassword/sha512",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gofiber__fiber:959a2e370e62"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 19.782
+measured_overhead_seconds = 1.985
+measured_copy_seconds = 0.045
+run_timeout_sec = 120
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 3
+p2p_count = 40
+source_files = 2
+loc_changed = 75
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:11.855940+00:00"
+inline_recipe_sha256 = "sha256:049ecba115d3c541d20df7e04d4c352c8865f7fd40a96588f5fb4a27a3413e7f"
+inline_recipe_lines = 14
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_stripped_sections = [
+    "Tests",
+]
+instruction_names_hidden_tests = []
+instruction_description_words = 86
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gofiber__fiber-4726-8d6bee5a8289"

@@ -1,0 +1,664 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index e704b7822d3..cbe45805519 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -6,7 +6,7 @@
+ 
+ ### General coding practices
+ 
+-- When adding Go tests, always invoke `t.Parallel()` at the start of each test and subtest to maximize concurrency. The one exception is a test that calls `testing.AllocsPerRun`, which panics with `AllocsPerRun called during parallel test`: leave those sequential and say why in a comment, as `Test_Chain_NoAllocations` and `Test_Combined_DoesNotAllocate` do.
++- When adding Go tests, always invoke `t.Parallel()` at the start of each test and subtest to maximize concurrency. The exceptions are a test that calls `testing.AllocsPerRun`, which panics with `AllocsPerRun called during parallel test`, and one that installs package-level state every other test reads, such as the proxy policy `withSecurityPolicyForTest` installs: leave those sequential and say why in a comment, as `Test_Chain_NoAllocations`, `Test_Combined_DoesNotAllocate` and `Test_Security_Do_BlocksDNSRebinding` do.
+ - Prefer `github.com/gofiber/utils/v2` helpers (for example, `utils.Trim`) when performing common operations such as string manipulation, whenever it is practical and appropriate for the surrounding code.
+ - Keep all protocol behavior RFC-compliant (e.g., HTTP/1.1 requirements) and document any intentional deviations.
+ - Protect hot paths from regressions: profile changes.
+diff --git a/constants.go b/constants.go
+index c3eb0fde699..09a659876e3 100644
+--- a/constants.go
++++ b/constants.go
+@@ -201,6 +201,7 @@ const (
+ 	HeaderExpect                             = "Expect"
+ 	HeaderMaxForwards                        = "Max-Forwards"
+ 	HeaderSetCookie                          = "Set-Cookie"
++	HeaderSetCookie2                         = "Set-Cookie2"
+ 	HeaderAccessControlAllowCredentials      = "Access-Control-Allow-Credentials"
+ 	HeaderAccessControlAllowHeaders          = "Access-Control-Allow-Headers"
+ 	HeaderAccessControlAllowMethods          = "Access-Control-Allow-Methods"
+diff --git a/docs/api/constants.md b/docs/api/constants.md
+index 8fac31af08d..3b9ef3aa1d3 100644
+--- a/docs/api/constants.md
++++ b/docs/api/constants.md
+@@ -208,6 +208,7 @@ const (
+     HeaderExpect                             = "Expect"
+     HeaderMaxForwards                        = "Max-Forwards"
+     HeaderSetCookie                          = "Set-Cookie"
++    HeaderSetCookie2                         = "Set-Cookie2"
+     HeaderAccessControlAllowCredentials      = "Access-Control-Allow-Credentials"
+     HeaderAccessControlAllowHeaders          = "Access-Control-Allow-Headers"
+     HeaderAccessControlAllowMethods          = "Access-Control-Allow-Methods"
+diff --git a/docs/middleware/adaptor.md b/docs/middleware/adaptor.md
+index f956d663469..881dd4d3ecf 100644
+--- a/docs/middleware/adaptor.md
++++ b/docs/middleware/adaptor.md
+@@ -353,7 +353,7 @@ func main() {
+ 
+ - An adapted `net/http` handler, middleware or `ConvertRequest` request is built from the path the router matched, `c.Path()`, followed by the query as the client sent it, not from the request line as it arrived. The two differ for an escaped or non-canonical request, and `net/http` reads the raw line its own way: `/public/..%2Fadmin/x` decodes into a `URL.Path` that `http.FileServer` cleans to `/admin/x`, although no middleware mounted on `/admin` has run for it. Routed, `/a/../admin/x` reaches the handler as `/admin/x` (after the `/admin` middleware ran), `%41` as `A`, a stray `%` as `%25`, a byte a path may not carry raw, such as `|` or a byte of UTF-8, as its escape, and with `UnescapePath` the decoded path is escaped again segment by segment. The query keeps its bytes unless a Fiber handler changed the arguments through `QueryArgs()`.
+ - The adapted request keeps the host Fiber saw. For a request in the absolute form, such as `GET http://public.example/x` with `Host: admin.internal`, that is the host the request line names ([RFC 9112 Section 3.2.2](https://www.rfc-editor.org/rfc/rfc9112#section-3.2.2)): `r.Host` is `public.example`, as are `c.Hostname()` and the host `app.Domain` matches.
+-- `HTTPHandler`, `HTTPHandlerFunc` and `HTTPHandlerWithContext` answer `404 Not Found` for a routed path with an empty segment (`//admin/x`) or an escaped slash (`/public/..%2Fadmin/x`): `net/http` decodes `%2F` into a separator in `URL.Path` and its handlers clean `//` and `..` away, so the handler would serve a path the router never matched. They answer `404` as well for a backslash, raw or escaped as `%5C`, and for a `.` or `..` segment carrying parameters, such as `..;`, which a handler that passes the request on, such as `httputil.ReverseProxy`, would hand to an upstream that reads them as a separator (WHATWG URL parsers, IIS) or as a dot segment (Tomcat, Jetty). `HTTPMiddleware` and `ConvertRequest` hand all of these on, with an escaped slash kept in `URL.RawPath`; a Fiber route behind the middleware still receives its `%2F`. To serve names that hold one, such as a GitLab-style `group%2Fproject` id, wrap the handler with `HTTPMiddleware` as a middleware that does not call `next`, and read the name from `r.URL.EscapedPath()`.
++- `HTTPHandler`, `HTTPHandlerFunc` and `HTTPHandlerWithContext` answer `404 Not Found` for a routed path with an empty segment (`//admin/x`) or an escaped slash (`/public/..%2Fadmin/x`): `net/http` decodes `%2F` into a separator in `URL.Path` and its handlers clean `//` and `..` away, so the handler would serve a path the router never matched. They answer `404` as well for a backslash, raw or escaped as `%5C`, and for a `.` or `..` segment carrying parameters, such as `..;`, or a segment of parameters alone before another, such as `/;x/admin`, which a handler that passes the request on, such as `httputil.ReverseProxy`, would hand to an upstream that reads them as a separator (WHATWG URL parsers, IIS), as a dot segment or as an empty one (Tomcat, Jetty). A path parameter on a named segment, such as `/a;b/c`, is handed on, since `net/http` reads it as part of the name. A middleware mounted on `/admin` does not run for `/admin;x/secret`, so put an upstream that strips parameters, such as Tomcat or Jetty, behind the [proxy middleware](./proxy.md#request-target), which refuses it, rather than an adapted `httputil.ReverseProxy`. `HTTPMiddleware` and `ConvertRequest` hand all of these on, with an escaped slash kept in `URL.RawPath`; a Fiber route behind the middleware still receives its `%2F`. To serve names that hold one, such as a GitLab-style `group%2Fproject` id, wrap the handler with `HTTPMiddleware` as a middleware that does not call `next`, and read the name from `r.URL.EscapedPath()`.
+ - `HTTPMiddleware` answers `400 Bad Request`, and `ConvertRequest` returns `fiber.ErrBadRequest`, for a routed path fasthttp would read as an authority rather than a path: one that begins with `//` and holds `://`, which `..` resolution builds out of `//u:pw@evil.example/a:/x/..//b`, or any path beginning with `//` on a request without a `Host` header. Set as the request line, it would become the host of both the `net/http` request and the Fiber request behind the middleware.
+ - A routed path holding an escape of an unreserved character, such as `%2e` or `%41`, is answered with `404 Not Found` by `HTTPHandler`, `HTTPHandlerFunc` and `HTTPHandlerWithContext` and with `400 Bad Request` by `HTTPMiddleware` and `ConvertRequest`. The router decodes every such escape when it normalizes a path, so one still in `c.Path()` can only have been forged by a stray `%`, and `URL.Path` would read a forged `%2e%2e` as the `..` segment an `http.FileServer` cleans away.
+ - `HTTPHandler`, `HTTPHandlerFunc` and `HTTPHandlerWithContext` put the original request line back once a buffered handler has returned, or panicked, so `c.OriginalURL()` in a middleware that runs afterwards is unchanged. A handler that flushed or hijacked is still running with a request whose URL aliases the request line, so the line is then left as the handler read it; `HTTPMiddleware` and `ConvertRequest` leave it as well.
+diff --git a/docs/middleware/idempotency.md b/docs/middleware/idempotency.md
+index 8c17b76f3d3..b45ebe810ee 100644
+--- a/docs/middleware/idempotency.md
++++ b/docs/middleware/idempotency.md
+@@ -37,10 +37,16 @@ type Locker interface {
+ 
+ * A request passes through untouched when `Next` returns `true` or when it has no `KeyHeader` value. The header is optional: nothing rejects a request that omits it.
+ * The first request with a key runs the handler. If the handler returns without an error, its status, body and headers are stored under the key for `Lifetime`, whatever the status code. A handler that returns an error is not stored, so the next request with that key runs the handler again.
++* Cookies are not stored: `Set-Cookie` and the obsolete `Set-Cookie2` are left out of the stored response unless `KeepResponseHeaders` names them. The client that caused the miss still receives them, and a replay does not, so a retry after a lost response does not set the cookie. A stored entry is replayed through the same filter, so one that holds a cookie, written by an earlier version or under a configuration that named it, is replayed without it.
+ * Later requests with the same key receive the stored response and the handler does not run. A request that arrives while the first is still running waits for `Lock` and then receives the stored response.
+-* The key alone identifies a request. The method, path and body are not compared, so a retry with the same key but a different payload, or on another route, gets the original response.
++* The key alone identifies a request, unless `KeyScope` is set. The method, path and body are not compared, so a retry with the same key but a different payload, or on another route, gets the original response, and so does anyone else who sends the key.
++* With `KeyScope`, a response is stored under the scope and the key together. A request replays only what was stored in its own scope, and a request in another scope that sends the same key runs the handler and stores a response of its own.
+ * A key that fails `KeyHeaderValidate` is returned as an error to the error handler, which answers `500` unless the validator returns a `*fiber.Error`.
+ 
++:::caution Treat a key as a secret
++Whoever sends a stored key receives the response stored for it, whatever the user, route, method or body of their request: its status, its body and every header the config keeps. The default validator checks only the length, so `00000000-0000-0000-0000-000000000000` passes. Have clients draw keys from a cryptographically secure random source, such as a version 4 UUID, and never derive one from a counter, a timestamp or an identifier like a user ID that another client can guess. When responses differ per user, set `KeyScope` to something that identifies the caller, so that a key someone else sent or guessed returns nothing stored for you. If you name a cookie in `KeepResponseHeaders`, scope the keys too: an unscoped replay would hand that cookie to whoever sends the key. Only the cookies are left out by default. A session or token carried in another response header, such as the session ID the session middleware writes to the header it reads it from, is stored and replayed like any header: list the headers to replay in `KeepResponseHeaders` so that it is left out, or scope the keys.
++:::
++
+ ## Examples
+ 
+ Import the middleware package:
+@@ -50,6 +56,7 @@ import (
+     "time"
+ 
+     "github.com/gofiber/fiber/v3"
++    "github.com/gofiber/fiber/v3/middleware/basicauth"
+     "github.com/gofiber/fiber/v3/middleware/idempotency"
+ )
+ ```
+@@ -77,6 +84,39 @@ app.Use(idempotency.New(idempotency.Config{
+ }))
+ ```
+ 
++### Scope Keys by User
++
++`KeyScope` returns the scope a key belongs to. Register the middleware that authenticates the request before this one, so that the user is known by the time the scope is asked for. A response is then stored, replayed and locked per user, and a key another user sent returns nothing stored for you:
++
++```go
++app.Use(basicauth.New(basicauth.Config{
++    Users: users,
++}))
++
++app.Use(idempotency.New(idempotency.Config{
++    KeyScope: func(c fiber.Ctx) string {
++        return basicauth.UsernameFromContext(c)
++    },
++}))
++```
++
++The scope and the key are hashed together into the key the storage sees, so a user ID never appears in it and a long scope fits a storage that limits the length of its keys. Requests for which the function returns the same string share a scope, the empty string included, so return something for every request that has a key. Scoped and unscoped entries share one keyspace, so give an instance with `KeyScope` a storage of its own, or the same `KeyScope` to every instance that shares the storage.
++
++### Keep a Cookie
++
++A cookie is stored and replayed only when `KeepResponseHeaders` names it. Name the headers you want to replay, and scope the keys:
++
++```go
++app.Use(idempotency.New(idempotency.Config{
++    KeepResponseHeaders: []string{fiber.HeaderContentType, fiber.HeaderSetCookie},
++    KeyScope: func(c fiber.Ctx) string {
++        return basicauth.UsernameFromContext(c)
++    },
++}))
++```
++
++A route that issues the cookie, such as a login, has no authenticated user yet, so a scope taken from the session or the credentials is the same empty string for every caller there, and the kept cookie would replay to whoever sends the key. Scope such a route by an identity the request itself carries, such as the account name in the login form, or skip the middleware on it with `Next`.
++
+ ### Custom Config
+ 
+ ```go
+@@ -96,7 +136,8 @@ Idempotency keys are hidden in logs and error messages by default. Set `DisableV
+ | Lifetime            | `time.Duration`        | Maximum lifetime of an idempotency key.                                                                                                 | `30 * time.Minute`                                                 |
+ | KeyHeader           | `string`               | Header name containing the idempotency key.                                                                                             | `"X-Idempotency-Key"`                                              |
+ | KeyHeaderValidate   | `func(string) error`   | Function to validate idempotency header syntax (e.g., UUID). The error it returns is passed to the error handler as is; the default one wraps `ErrInvalidIdempotencyKey`. | UUID length check (`36` characters)                                |
+-| KeepResponseHeaders | `[]string`             | List of headers to preserve from original response, matched case-insensitively. An empty list keeps all headers, like `nil`.            | `nil` (keep all headers)                                           |
++| KeyScope            | `func(fiber.Ctx) string` | Returns the scope a key belongs to, such as the ID of the authenticated user. A response is stored and replayed per scope and key, so a key another user sent or guessed returns nothing stored for you. Requests for which it returns the same string share a scope, the empty one included. | `nil` (the key alone identifies a request)                         |
++| KeepResponseHeaders | `[]string`             | List of headers to preserve from original response, matched case-insensitively. An empty list keeps all headers, like `nil`, but for `Set-Cookie` and `Set-Cookie2`, which are kept only when named. | `nil` (keep all headers but the cookies)                           |
+ | DisableValueRedaction | `bool`                | Disables idempotency key redaction in logs and error messages. | `false`                                              |
+ | Lock                | `Locker`               | Locks an idempotency key to prevent race conditions. The default only locks within this process. | `NewMemoryLock()` (in-memory locker)                               |
+ | Storage             | `fiber.Storage`        | Stores response data by idempotency key. The default store is private to this process.                                                  | In-memory storage                                                  |
+@@ -121,6 +162,8 @@ var ConfigDefault = Config{
+         return nil
+     },
+ 
++    KeyScope: nil,
++
+     KeepResponseHeaders: nil,
+ 
+     Lock: nil, // Set in configDefault so we don't allocate data here.
+diff --git a/docs/middleware/proxy.md b/docs/middleware/proxy.md
+index 49d68e05652..89b9ebef9f0 100644
+--- a/docs/middleware/proxy.md
++++ b/docs/middleware/proxy.md
+@@ -187,7 +187,7 @@ h.Add("X-Real-IP", ip)
+ 
+ ### Request target
+ 
+-`Balancer`, `DomainForward` and `BalancerForward` forward the path the router matched, `c.Path()`, followed by the query. They do not forward the request line as it arrived. The two differ, and the difference is what an attacker uses: fasthttp's normalization of the raw request line decodes `%2F` into a separator and merges repeated slashes, so `/public/..%2Fadmin/secret` and `//admin/secret` used to reach the upstream as `/admin/secret`, a path no middleware mounted on `/admin` had seen. Routed, they stay `/public/..%2Fadmin/secret` and `//admin/secret`, and by default the proxy refuses to forward either, since an upstream that decodes `%2F` or merges `//` would read them as `/admin/secret` as well. Dot segments are resolved before matching, so `/public/../admin/secret` runs the `/admin` middleware and is forwarded as `/admin/secret`. An escape of an unreserved character is decoded (`%41` becomes `A`), every other escape is kept as sent and a stray `%` is forwarded as `%25`. A byte a path may not carry raw ([RFC 3986 Section 3.3](https://www.rfc-editor.org/rfc/rfc3986#section-3.3)), such as `|`, `{`, `"` or a byte of UTF-8, is forwarded as its escape, as fasthttp wrote it before, so `/über` reaches the upstream as `/%C3%BCber`; the sub-delims (`!$&'()*+,;=`), `:` and `@` stay raw. With `UnescapePath` enabled the decoded path is escaped again segment by segment, so a separator that came from `%2F` is forwarded as the separator the router matched it as.
++`Balancer`, `DomainForward` and `BalancerForward` forward the path the router matched, `c.Path()`, followed by the query. They do not forward the request line as it arrived. The two differ, and the difference is what an attacker uses: fasthttp's normalization of the raw request line decodes `%2F` into a separator and merges repeated slashes, so `/public/..%2Fadmin/secret` and `//admin/secret` used to reach the upstream as `/admin/secret`, a path no middleware mounted on `/admin` had seen. Routed, they stay `/public/..%2Fadmin/secret` and `//admin/secret`, and by default the proxy refuses to forward either, since an upstream that decodes `%2F` or merges `//` would read them as `/admin/secret` as well. Dot segments are resolved before matching, so `/public/../admin/secret` runs the `/admin` middleware and is forwarded as `/admin/secret`. An escape of an unreserved character is decoded (`%41` becomes `A`), every other escape is kept as sent and a stray `%` is forwarded as `%25`. A byte a path may not carry raw ([RFC 3986 Section 3.3](https://www.rfc-editor.org/rfc/rfc3986#section-3.3)), such as `|`, `{`, `"` or a byte of UTF-8, is forwarded as its escape, as fasthttp wrote it before, so `/über` reaches the upstream as `/%C3%BCber`; the sub-delims (`!$&'()*+,;=`), `:` and `@` stay raw, a `;` only under `SecurityPolicy.AllowPathParameters` (see below). With `UnescapePath` enabled the decoded path is escaped again segment by segment, so a separator that came from `%2F` is forwarded as the separator the router matched it as, and a `;`, which the router then takes for part of a name, as `%3B`.
+ 
+ The query is forwarded byte for byte as the client sent it, so a signed URL keeps its signature. Only when a handler changed the arguments through `QueryArgs()` is it the changed arguments, as fasthttp serializes them; reading them, as `c.Query()` does, changes nothing. `Balancer` puts the original request line back once the upstream has answered, so `c.OriginalURL()` in a middleware that runs afterwards is unchanged.
+ 
+@@ -198,17 +198,18 @@ The query is forwarded byte for byte as the client sent it, so a signed URL keep
+ - `Balancer`, `DomainForward` and `BalancerForward` answer `400 Bad Request` for a routed path an upstream could read as another path, one under a prefix whose middleware never ran for it. That is a path holding:
+   - an escaped slash (`%2F`) or an empty segment (`//`). An upstream that decodes `%2F` into a separator or merges repeated slashes before it matches routes, as a `net/http` file server or a fasthttp server does, would map `/public/..%2Fadmin/secret`, `/admin%2Fsecret` and `//admin/secret` to `/admin/secret`. An upstream that keeps both as sent can be reached with `SecurityPolicy.AllowAmbiguousSlashes`, described below.
+   - a backslash, raw or escaped as `%5C`. WHATWG URL parsers, as in Node.js, Bun, Deno and Cloudflare Workers, and IIS read it as a separator, so `/admin\secret` and `/public/..%5Cadmin/secret` would reach `/admin`.
+-  - a `.` or `..` segment carrying parameters, such as `..;` or `..;jsessionid=x`. Servlet containers such as Tomcat and Jetty strip the parameters before they resolve dot segments, so `/public/..;/admin/secret` would reach `/admin/secret`.
++  - a path parameter, a `;` in any segment, such as `/admin;x/secret`, `/admin;/secret`, `/;/admin/secret` or `/public/..;/admin/secret`. Servlet containers such as Tomcat and Jetty strip the parameters from every segment before they match routes and resolve dot segments, so each of these would reach `/admin/secret`. A `;` in the query is no path parameter, and a client that means a literal `;` in a name can send it as `%3B`, which is forwarded as sent, except behind a custom `BalancingClient` (see below). An upstream that relies on `;jsessionid` can be reached with `SecurityPolicy.AllowPathParameters`, described below.
+   - an escape of an unreserved character, such as `%2e` or `%70`. The router decodes every such escape when it normalizes a path, so one still in `c.Path()` can only have been forged by a stray `%`, and an upstream decoding it again would serve a name no middleware matched.
+ 
+   To forward such a target regardless, build it from `c.Path()` and call `Do`.
+-- `SecurityPolicy.AllowAmbiguousSlashes` lets `Balancer`, `DomainForward` and `BalancerForward` forward a path holding `%2F` or `//`, for an upstream that addresses names such as GitLab-style `group%2Fproject` ids or object keys with a doubled slash. Set it on `Config.SecurityPolicy` for `Balancer`, or install it with `proxy.WithSecurityPolicy` for `DomainForward` and `BalancerForward`. Enable it only when every upstream behind the handler keeps `%2F` and `//` as sent; a backslash, a dot segment with parameters and a forged escape are refused regardless.
++- `SecurityPolicy.AllowAmbiguousSlashes` lets `Balancer`, `DomainForward` and `BalancerForward` forward a path holding `%2F` or `//`, for an upstream that addresses names such as GitLab-style `group%2Fproject` ids or object keys with a doubled slash. Set it on `Config.SecurityPolicy` for `Balancer`, or install it with `proxy.WithSecurityPolicy` for `DomainForward` and `BalancerForward`. Enable it only when every upstream behind the handler keeps `%2F` and `//` as sent: one that decodes `%2F` reads `/a%2F../b` as `/b`. A path parameter still needs `AllowPathParameters`; a backslash, a dot segment with parameters and a forged escape are refused regardless.
++- `SecurityPolicy.AllowPathParameters` lets `Balancer`, `DomainForward` and `BalancerForward` forward a path holding path parameters, such as `/cart;jsessionid=x`, for an upstream that relies on `;jsessionid` URL rewriting. Set it where you would set `AllowAmbiguousSlashes`. Enable it only when every upstream behind the handler keeps the `;` as part of the name or checks access itself: one that strips the parameters reads `/admin;x/secret` as `/admin/secret`, a path the middleware on `/admin` in Fiber never matched. A dot segment with parameters (`..;`), behind a raw slash or an escaped one, a backslash and a forged escape are refused regardless. So is a segment made of parameters alone before another segment, such as `/;x/admin`, since it is an empty segment once the parameters are stripped, unless `AllowAmbiguousSlashes` is set as well; at the end of the path, as in `/app/;jsessionid=x`, it only spells the trailing slash and is forwarded. Under `UnescapePath` the setting has no effect: the router reads a `;` as part of the name, and it is forwarded as `%3B`.
+ - A path override without a leading slash, as a rewrite of `/go/*` to `$1` produces for `/go/http://u:pw@evil.example/x`, is forwarded rooted, as the path `/http://u:pw@evil.example/x`, rather than as the absolute URL a request line would read it as.
+ - With a custom `Client`, every `*fasthttp.HostClient` among its `Clients` gets `DisablePathNormalizing` set, since a client left normalizing would decode `%2F` into a separator and merge `//` on the way out. Any other `BalancingClient` cannot be told, so with one present `Balancer` answers `400 Bad Request` for a routed target that normalization would change: one holding an empty segment or an escape it would decode into a byte it then writes raw, such as `%3B` or `%40`. An escape of a byte it writes escaped again, such as `%20` or the `%C3%BC` of `/über`, is forwarded.
+ - `Do`, `Forward`, `DomainForward`, `BalancerForward` and their variants switch path normalization off on the default client, on a client registered with `WithClient` and on every host client a per-call `*fasthttp.Client` creates once the proxy has it. fasthttp applies that setting only to the host client it creates for an upstream, so a per-call client that already reached that upstream before it was handed to the proxy keeps the host client it made then, and that one still normalizes: `/public/..%2Fadmin/secret` would leave it as `/admin/secret`. Register such a client with `WithClient` before it serves requests, hand the proxy a client used for nothing else, or create the client with `DisablePathNormalizing: true`.
+ 
+ :::caution Upstream normalization
+-The proxy cannot control what the upstream does with the target beyond what it refuses to forward. A target holding `%2F`, `//`, a backslash, a dot segment with parameters or a forged escape is not forwarded by default, so an upstream that decodes, merges or strips parameters cannot be handed a path the router did not match through them. An escape of another reserved character, such as `%3B`, `%3F` or `%23`, is forwarded as sent, and so are a segment's case and a trailing dot or space, any of which an upstream on Windows or a case-insensitive filesystem may treat as another name. Authorize on the upstream as well.
++The proxy cannot control what the upstream does with the target beyond what it refuses to forward. A target holding `%2F`, `//`, a backslash, a path parameter (`;`) or a forged escape is not forwarded by default, so an upstream that decodes, merges or strips parameters cannot be handed a path the router did not match through them. An escape of another reserved character, such as `%3B`, `%3F` or `%23`, is forwarded as sent, and so are a segment's case and a trailing dot or space, any of which an upstream on Windows or a case-insensitive filesystem may treat as another name. Authorize on the upstream as well.
+ :::
+ 
+ When you build the target for `Do`, `Forward` or their variants yourself, derive it from `c.Path()` and `c.Request().URI().QueryString()` rather than from `c.OriginalURL()`, which is the request line as it arrived, before the router resolved dot segments.
+@@ -408,6 +409,7 @@ func DefaultSecurityPolicy() proxy.SecurityPolicy {
+         AllowHTTPSDowngrade:   false,
+         KeepHopByHopHeaders:   false,
+         AllowAmbiguousSlashes: false,
++        AllowPathParameters:   false,
+     }
+ }
+ ```
+diff --git a/docs/whats_new.md b/docs/whats_new.md
+index 771b46d8f68..fad1d8a7e12 100644
+--- a/docs/whats_new.md
++++ b/docs/whats_new.md
+@@ -1522,7 +1522,7 @@ Incoming body sizes now respect the Fiber app's configured `BodyLimit` (falling
+ 
+ The adaptor also propagates the request's protocol version, normalized to Fiber's convention (`HTTP/2.0` → `HTTP/2`, `HTTP/3.0` → `HTTP/3`), so `c.Protocol()` reports the real version instead of always `HTTP/1.1`. Interim responses such as `SendEarlyHints`' `103` are silently skipped through the adaptor — there is no client connection to write them to — while the `Link` headers still reach the final response.
+ 
+-An adapted `net/http` handler, middleware or `ConvertRequest` request is built from the path the router matched, `c.Path()`, followed by the query as the client sent it, rather than from the request line as it arrived, so a `net/http` guard on `r.URL.Path` sees the `/admin/x` that `/a/../admin/x` was routed as. A byte a path may not carry raw is written as its escape, and the request keeps the host Fiber saw, including the one an absolute-form request line names. `HTTPHandler`, `HTTPHandlerFunc` and `HTTPHandlerWithContext` answer `404 Not Found` for a routed path with an empty segment or an escaped slash, such as `//admin/x` or `/public/..%2Fadmin/x`, which `net/http` would otherwise decode and clean into a path no Fiber middleware ran for, and for one with a backslash or a dot segment carrying parameters (`..;`), which an upstream behind a handler such as `httputil.ReverseProxy` may resolve into another path; a handler that must serve such names can be wrapped with `HTTPMiddleware` instead. `HTTPMiddleware` answers `400 Bad Request`, and `ConvertRequest` returns `fiber.ErrBadRequest`, for a routed path fasthttp would read as an authority rather than a path: one that begins with `//` and holds `://`, or one beginning with `//` on a request without a `Host` header. A routed path holding an escape of an unreserved character, which only a stray `%` can forge, is `404 Not Found` from the handler adapters and `400 Bad Request` from `HTTPMiddleware` and `ConvertRequest`, since `URL.Path` would read a forged `%2e%2e` as `..`. `FiberHandler`, `FiberHandlerFunc` and `FiberApp` route `r.RequestURI` as received, so a raw `/über` is routed as a Fiber server routes it, and when `r.URL` no longer matches that line, the request line `net/http` would write for `r`: a rewritten `r.URL`, as `http.StripPrefix` produces, a request built in code without a `RequestURI`, and the authority of a `CONNECT` request in the authority form. See the adaptor's [notes and limitations](./middleware/adaptor.md#notes-and-limitations).
++An adapted `net/http` handler, middleware or `ConvertRequest` request is built from the path the router matched, `c.Path()`, followed by the query as the client sent it, rather than from the request line as it arrived, so a `net/http` guard on `r.URL.Path` sees the `/admin/x` that `/a/../admin/x` was routed as. A byte a path may not carry raw is written as its escape, and the request keeps the host Fiber saw, including the one an absolute-form request line names. `HTTPHandler`, `HTTPHandlerFunc` and `HTTPHandlerWithContext` answer `404 Not Found` for a routed path with an empty segment or an escaped slash, such as `//admin/x` or `/public/..%2Fadmin/x`, which `net/http` would otherwise decode and clean into a path no Fiber middleware ran for, and for one with a backslash, a dot segment carrying parameters (`..;`) or a segment of parameters alone before another (`/;x/admin`), which an upstream behind a handler such as `httputil.ReverseProxy` may resolve into another path; a handler that must serve such names can be wrapped with `HTTPMiddleware` instead. `HTTPMiddleware` answers `400 Bad Request`, and `ConvertRequest` returns `fiber.ErrBadRequest`, for a routed path fasthttp would read as an authority rather than a path: one that begins with `//` and holds `://`, or one beginning with `//` on a request without a `Host` header. A routed path holding an escape of an unreserved character, which only a stray `%` can forge, is `404 Not Found` from the handler adapters and `400 Bad Request` from `HTTPMiddleware` and `ConvertRequest`, since `URL.Path` would read a forged `%2e%2e` as `..`. `FiberHandler`, `FiberHandlerFunc` and `FiberApp` route `r.RequestURI` as received, so a raw `/über` is routed as a Fiber server routes it, and when `r.URL` no longer matches that line, the request line `net/http` would write for `r`: a rewritten `r.URL`, as `http.StripPrefix` produces, a request built in code without a `RequestURI`, and the authority of a `CONNECT` request in the authority form. See the adaptor's [notes and limitations](./middleware/adaptor.md#notes-and-limitations).
+ 
+ | Payload Size | Metric         | V2           | V3          | Percent Change |
+ | ------------ | -------------- | ------------ | ----------- | -------------- |
+@@ -1630,6 +1630,8 @@ The CSRF middleware now validates the [`Sec-Fetch-Site`](https://developer.mozil
+ 
+ Idempotency middleware now redacts keys by default and offers a `DisableValueRedaction` configuration flag (default `false`) to expose them when debugging.
+ 
++The key alone identifies a request, so whoever sends a stored key receives the response stored for it, whatever the user or route. The new `KeyScope` function returns the scope a key belongs to, such as the ID of the authenticated user, and a response is then stored, replayed and locked per scope and key. `Set-Cookie` and `Set-Cookie2` are no longer stored, and an entry that holds one is replayed without it, unless `KeepResponseHeaders` names the header; a replay no longer hands the cookie of the first client to the next one, while a session or token carried in another response header is still replayed unless `KeepResponseHeaders` leaves it out or `KeyScope` scopes the key. Have clients draw keys from a cryptographically secure random source, as the default validator checks only the length. See [Behavior](./middleware/idempotency.md#behavior).
++
+ ### EncryptCookie
+ 
+ - Added support for specifying key length when using `encryptcookie.GenerateKey(length)`. Keys must be base64-encoded and may be 16, 24, or 32 bytes when decoded, supporting AES-128, AES-192, and AES-256 (default).
+@@ -1905,7 +1907,7 @@ The proxy is secure by default. Upstreams that resolve to loopback, private, lin
+ 
+ `ErrUpstreamHostUnresolvable` is new: a name that cannot be resolved, or that resolves to no address, is rejected with an error that matches it and `ErrUpstreamHostBlocked` both, and `errors.As` finds the `*net.DNSError` of the lookup. A host with only IPv6 addresses and `DialDualStack` off fails with an error that matches neither, where it matched `ErrUpstreamHostBlocked` before. An address `net/url` cannot parse is rejected with `ErrUpstreamHostInvalid` and the `*url.Error` wrapped beside it, so the message of that error carries the parse error. The time `DoTimeout`, `DoDeadline` or `Config.Timeout` allows bounds the lookup and the connects of the request as well; a connect that nothing bounds has five seconds, as before.
+ 
+-`Balancer`, `DomainForward` and `BalancerForward` forward the path the router matched, `c.Path()`, followed by the query as the client sent it, instead of the request line as it arrived. Spellings such as `/public/..%2Fadmin/secret` and `//admin/secret`, which fasthttp's normalization of the raw request line turned into `/admin/secret` on the way to the upstream, are answered with `400 Bad Request`, since an upstream that decodes `%2F` or merges `//` before it matches routes would still serve a path no middleware matched; the new `SecurityPolicy.AllowAmbiguousSlashes` forwards them exactly as the router matched them, for an upstream that keeps both. A path holding a backslash, a dot segment carrying parameters (`..;`), which servlet containers resolve, or an escape of an unreserved character, which only a stray `%` can forge, is answered with `400` regardless. A path with dot segments is forwarded resolved, and a byte a path may not carry raw is forwarded as its escape. Every entry in `Config.Servers` must be a scheme and host only; an entry with a path, userinfo, query or fragment panics at startup with `ErrUpstreamNotOrigin`. `Balancer` also answers `400 Bad Request` for a request whose `Host` header carries userinfo and for a routed target fasthttp would read as an authority rather than a path (one that begins with `//` and holds `://`, or one beginning with `//` on a request without a `Host` header). A path override without a leading slash is forwarded rooted. Every `*fasthttp.HostClient` in a custom `Client` gets `DisablePathNormalizing` set, and behind any other `BalancingClient` a target that normalization would change is answered with `400`. Path normalization is also disabled on the default client, on a client registered with `WithClient` and on every host client a per-call client creates once the proxy has it. See [Request target](./middleware/proxy.md#request-target).
++`Balancer`, `DomainForward` and `BalancerForward` forward the path the router matched, `c.Path()`, followed by the query as the client sent it, instead of the request line as it arrived. Spellings such as `/public/..%2Fadmin/secret` and `//admin/secret`, which fasthttp's normalization of the raw request line turned into `/admin/secret` on the way to the upstream, are answered with `400 Bad Request`, since an upstream that decodes `%2F` or merges `//` before it matches routes would still serve a path no middleware matched; the new `SecurityPolicy.AllowAmbiguousSlashes` forwards them exactly as the router matched them, for an upstream that keeps both. A path parameter, a `;` in any segment, is answered with `400` as well: servlet containers such as Tomcat and Jetty strip the parameters from every segment before they match routes, so `/admin;x/secret`, `/admin;/secret` and `/;/admin/secret` are `/admin/secret` there. The new `SecurityPolicy.AllowPathParameters` forwards them, for an upstream that relies on `;jsessionid`; a client can also send a literal `;` as `%3B`. A path holding a backslash, a dot segment carrying parameters (`..;`), or an escape of an unreserved character, which only a stray `%` can forge, is answered with `400` regardless. A path with dot segments is forwarded resolved, and a byte a path may not carry raw is forwarded as its escape. Every entry in `Config.Servers` must be a scheme and host only; an entry with a path, userinfo, query or fragment panics at startup with `ErrUpstreamNotOrigin`. `Balancer` also answers `400 Bad Request` for a request whose `Host` header carries userinfo and for a routed target fasthttp would read as an authority rather than a path (one that begins with `//` and holds `://`, or one beginning with `//` on a request without a `Host` header). A path override without a leading slash is forwarded rooted. Every `*fasthttp.HostClient` in a custom `Client` gets `DisablePathNormalizing` set, and behind any other `BalancingClient` a target that normalization would change is answered with `400`. Path normalization is also disabled on the default client, on a client registered with `WithClient` and on every host client a per-call client creates once the proxy has it. See [Request target](./middleware/proxy.md#request-target).
+ 
+ `DoRedirects` rewrites the request for each hop as RFC 9110 §15.4 describes: a `303` turns every method but `GET` and `HEAD` into `GET`, a `301` or `302` turns `POST` into `GET`, and a `307` or `308` repeats the request. When the method changes, the body goes with it, and the fields that framed, described or expected it, for that hop: the request your handler holds keeps its method, body and credentials. A hop sent as a copy keeps the request timeout, the user values and the body of a multipart form the server parsed ahead of the handler. A redirect that would repeat the body of a streamed request is followed when the first hop left all of it in memory, as it does for a body of known length up to 8 KiB, and fails with `fasthttp.ErrRedirectBodyStream` for a chunked or a longer one. `Authorization`, `Cookie` and the related credential headers are dropped when a redirect leaves the origin ([RFC 6454](https://www.rfc-editor.org/rfc/rfc6454)): another scheme now counts as leaving it, as another host or port did, and a default port spelled out in `Location`, `http://example.com/` to `http://example.com:80/`, no longer does. See [Redirect method and body](./middleware/proxy.md#redirect-method-and-body).
+ 
+@@ -3304,6 +3306,8 @@ app.Use(csrf.New(csrf.Config{
+ #### Idempotency
+ 
+ - **DisableValueRedaction Toggle**: The idempotency middleware now hides keys in logs and error paths by default, with a `DisableValueRedaction` boolean (default `false`) to reveal them when needed.
++- **KeyScope**: A function that returns the scope a key belongs to, such as the ID of the authenticated user. A response is stored, replayed and locked per scope and key, so a key another user sent or guessed returns nothing stored for you. Without it the key alone identifies a request, as before.
++- **Cookies are not replayed**: `Set-Cookie` and `Set-Cookie2` are left out of the stored response and out of a replay unless `KeepResponseHeaders` names them. Before, a response with `KeepResponseHeaders` unset replayed the cookie of the first client to every request that sent the key. A retry that needs the cookie must now name it, together with `KeyScope`.
+ 
+ #### Timeout
+ 
+diff --git a/internal/wiretarget/wiretarget.go b/internal/wiretarget/wiretarget.go
+index cca4a606ce7..894488ef661 100644
+--- a/internal/wiretarget/wiretarget.go
++++ b/internal/wiretarget/wiretarget.go
+@@ -13,6 +13,18 @@ import (
+ 	"github.com/valyala/fasthttp"
+ )
+ 
++// Allowance names what SegmentsAsRouted lets through that it refuses
++// otherwise, for a caller that was told the reader keeps it as sent.
++type Allowance uint8
++
++const (
++	// AllowSlashes lets an escaped slash and an empty segment through.
++	AllowSlashes Allowance = 1 << iota
++	// AllowParameters lets a path parameter through on a segment that has a
++	// name other than "." and "..".
++	AllowParameters
++)
++
+ // Routed returns the request target to hand on for c: the path the router
+ // matched, spelled as a request line has to carry it, then the query.
+ //
+@@ -96,38 +108,39 @@ func appendQuery(dst, query []byte) []byte {
+ // this is false, as the net/http handler adapters do.
+ //
+ // It is false as well for a backslash, raw or escaped as "%5C", which WHATWG
+-// URL parsers and IIS read as a separator, and for a "." or ".." segment that
+-// carries path parameters, such as "..;x", which servlet containers such as
+-// Tomcat and Jetty resolve as a dot segment once they strip the parameters:
+-// "/public/..;/admin" is "/admin" there.
+-func SegmentsAsRouted(target string) bool {
+-	return segmentsAsRouted(target, false)
+-}
+-
+-// SegmentsAsRoutedSlashesAside is SegmentsAsRouted without its objection to
+-// an escaped slash and an empty segment, for a caller that was told the
+-// reader keeps those as sent. A backslash, a forged escape and a dot segment
+-// carrying parameters are still refused.
+-func SegmentsAsRoutedSlashesAside(target string) bool {
+-	return segmentsAsRouted(target, true)
+-}
+-
+-// segmentsAsRouted scans target's path once for what SegmentsAsRouted
+-// refuses, leaving out escaped slashes and empty segments when slashes is
+-// set.
+-func segmentsAsRouted(target string, slashes bool) bool { //nolint:revive // flag-parameter: the two exported wrappers name the cases
++// URL parsers and IIS read as a separator, and for a path parameter, a ";" in
++// any segment. Servlet containers such as Tomcat and Jetty strip the
++// parameters from every segment before they match routes, so "/admin;x/secret"
++// and "/admin;/secret" are "/admin/secret" there, "/;/admin/secret" is
++// "//admin/secret" and so "/admin/secret" once the empty segment is merged,
++// and "/public/..;/admin" is "/admin".
++//
++// allow lets some of this through. A "." or ".." segment that carries
++// parameters, such as "..;x", is refused whatever it says, behind a raw slash
++// or, with AllowSlashes, behind an escaped one: a reader that strips the
++// parameters resolves it as a dot segment, and none has a use for it as a
++// name. A segment made of parameters alone, such as ";x", is an empty segment
++// once they are stripped, and is refused as one unless AllowSlashes is set
++// too; as the last segment it spells the trailing slash and passes.
++func SegmentsAsRouted(target string, allow Allowance) bool {
+ 	path := pathOf(target)
++	slashes := allow&AllowSlashes != 0
+ 	segment := 0
+ 	for i := 0; i < len(path); i++ {
+ 		switch path[i] {
+ 		case '/':
+-			if !slashes && i+1 < len(path) && path[i+1] == '/' {
++			// An empty segment follows, or ends here: one that began with ";"
++			// is empty once its parameters are stripped.
++			if !slashes && ((i+1 < len(path) && path[i+1] == '/') || (segment < i && path[segment] == ';')) {
+ 				return false
+ 			}
+ 			segment = i + 1
+ 		case '\\':
+ 			return false
+ 		case ';':
++			if allow&AllowParameters == 0 {
++				return false
++			}
+ 			if name := path[segment:i]; name == "." || name == ".." {
+ 				return false
+ 			}
+@@ -138,6 +151,11 @@ func segmentsAsRouted(target string, slashes bool) bool { //nolint:revive // fla
+ 					return false
+ 				}
+ 				i += 2
++				if v == '/' {
++					// Let through for a reader that keeps it as sent, but a
++					// dot segment behind it is judged as one behind a raw slash.
++					segment = i + 1
++				}
+ 			}
+ 		}
+ 	}
+diff --git a/middleware/adaptor/adaptor.go b/middleware/adaptor/adaptor.go
+index 5d54e1da6be..23765872b8a 100644
+--- a/middleware/adaptor/adaptor.go
++++ b/middleware/adaptor/adaptor.go
+@@ -275,10 +275,15 @@ func HTTPHandlerWithContext(h http.Handler) fiber.Handler {
+ // the raw one its own way: "/public/..%2Fadmin" decodes into a URL.Path that
+ // http.FileServer cleans to "/admin", although no middleware mounted on
+ // "/admin" has run. A routed path whose segments would not survive that
+-// reading, one with an empty segment or an escaped slash, is not handed on.
++// reading, one with an empty segment or an escaped slash, is not handed on,
++// nor is one that a handler passing the request on, such as
++// httputil.ReverseProxy, would hand an upstream that reads it as another path:
++// a backslash, or a segment a servlet container strips to a dot or an empty
++// segment ("..;", "/;x/admin"). A path parameter on a named segment is handed
++// on, since net/http reads it as part of the name.
+ func serveRouted(c fiber.Ctx, handler fasthttp.RequestHandler) error {
+ 	target := wiretarget.Routed(c)
+-	if !wiretarget.SegmentsAsRouted(target) {
++	if !wiretarget.SegmentsAsRouted(target, wiretarget.AllowParameters) {
+ 		return fiber.ErrNotFound
+ 	}
+ 	if target == c.OriginalURL() {
+diff --git a/middleware/cache/utils.go b/middleware/cache/utils.go
+index 620285791eb..7f1577eb9cb 100644
+--- a/middleware/cache/utils.go
++++ b/middleware/cache/utils.go
+@@ -96,11 +96,6 @@ func lookupCachedHeader(headers []cachedHeader, name string) ([]byte, bool) {
+ 	return nil, false
+ }
+ 
+-// setCookie2 is the obsolete RFC 2965 spelling of Set-Cookie. fasthttp keeps it
+-// as an ordinary field rather than in its cookie store, so it has to be looked
+-// up separately.
+-const setCookie2 = "Set-Cookie2"
+-
+ // cachedHeadersSetCookie reports whether a stored entry carries a cookie. Only
+ // an entry written before Set-Cookie joined ignoreHeaders can, so this asks
+ // about a persisted store an older version filled, not about anything this one
+@@ -109,7 +104,7 @@ func cachedHeadersSetCookie(headers []cachedHeader) bool {
+ 	if _, ok := lookupCachedHeader(headers, fiber.HeaderSetCookie); ok {
+ 		return true
+ 	}
+-	_, ok := lookupCachedHeader(headers, setCookie2)
++	_, ok := lookupCachedHeader(headers, fiber.HeaderSetCookie2)
+ 	return ok
+ }
+ 
+@@ -120,9 +115,10 @@ func responseSetsCookie(h *fasthttp.ResponseHeader, normalized bool) bool { //no
+ 		return true
+ 	}
+ 	// Not PeekAll(Set-Cookie): fasthttp answers that from its cookie store and
+-	// returns one empty entry when there is none. Set-Cookie2 has no store, so it
+-	// is found only under the spelling the handler wrote.
+-	for _, v := range fieldname.Lines(h, setCookie2, normalized) {
++	// returns one empty entry when there is none. The obsolete RFC 2965
++	// Set-Cookie2 is an ordinary field to fasthttp, with no store, so it is
++	// found only under the spelling the handler wrote.
++	for _, v := range fieldname.Lines(h, fiber.HeaderSetCookie2, normalized) {
+ 		if len(v) > 0 {
+ 			return true
+ 		}
+diff --git a/middleware/idempotency/config.go b/middleware/idempotency/config.go
+index 300520e4af7..d0fbb8d5147 100644
+--- a/middleware/idempotency/config.go
++++ b/middleware/idempotency/config.go
+@@ -31,16 +31,31 @@ type Config struct {
+ 	// KeyHeaderValidate defines a function to validate the syntax of the idempotency header.
+ 	//
+ 	// Optional. Default: a function which ensures the header is 36 characters long (the size of an UUID).
++	// It checks the length only, so it accepts a key that is easy to guess; see KeyScope.
+ 	KeyHeaderValidate func(string) error
+ 
++	// KeyScope returns the scope an idempotency key belongs to, such as the ID of the
++	// authenticated user. A response is stored under the scope and the key together, and
++	// replayed only to a request that carries the same key in the same scope, so a key that
++	// another user sent or guessed returns nothing stored for you. Requests for which it
++	// returns the same string share a scope, the empty string included.
++	//
++	// Optional. Default: nil (the key alone identifies a request)
++	KeyScope func(c fiber.Ctx) string
++
+ 	// KeyHeader is the name of the header that contains the idempotency key.
+ 	//
+ 	// Optional. Default: X-Idempotency-Key
+ 	KeyHeader string
+ 
+ 	// KeepResponseHeaders is a list of headers that should be kept from the original response.
++	// A response is replayed to every request that carries its key, so Set-Cookie and the
++	// obsolete Set-Cookie2 are kept only when named here: a stored cookie would hand the
++	// session of the first client to the others. Every other header is kept by default, so
++	// a session or token carried in one, such as the session ID the session middleware
++	// writes to the header it reads it from, needs a list that leaves it out, or KeyScope.
+ 	//
+-	// Optional. Default: nil (to keep all headers)
++	// Optional. Default: nil (to keep all headers but the cookies)
+ 	KeepResponseHeaders []string
+ 
+ 	// Lifetime is the maximum lifetime of an idempotency key.
+@@ -72,6 +87,8 @@ var ConfigDefault = Config{
+ 		return nil
+ 	},
+ 
++	KeyScope: nil,
++
+ 	KeepResponseHeaders: nil,
+ 
+ 	Lock: nil, // Set in configDefault so we don't allocate data here.
+diff --git a/middleware/idempotency/idempotency.go b/middleware/idempotency/idempotency.go
+index ad1429033d5..e178148416b 100644
+--- a/middleware/idempotency/idempotency.go
++++ b/middleware/idempotency/idempotency.go
+@@ -1,6 +1,8 @@
+ package idempotency
+ 
+ import (
++	"crypto/sha256"
++	"encoding/hex"
+ 	"fmt"
+ 	"slices"
+ 
+@@ -25,6 +27,31 @@ const (
+ 
+ const redactedKey = "[redacted]"
+ 
++// isCookieHeader reports whether name is a header that sets a cookie: Set-Cookie
++// or its obsolete RFC 2965 spelling.
++func isCookieHeader(name string) bool {
++	return utils.EqualFold(name, fiber.HeaderSetCookie) || utils.EqualFold(name, fiber.HeaderSetCookie2)
++}
++
++// scopedKey returns the key a response is stored and locked under when
++// Config.KeyScope is set: a digest of the scope and the key together. The
++// length of the scope goes in front of it, so no two pairs share the bytes
++// that are hashed and a key cannot spell out another scope, and the digest has
++// the same length whatever either is, which a storage that limits the length of
++// its keys needs.
++func scopedKey(scope, key string) string {
++	// A user ID and a UUID fit the array; a longer pair grows onto the heap.
++	var buf [128]byte
++	b := utils.AppendUint(buf[:0], uint64(len(scope)))
++	b = append(b, ':')
++	b = append(b, scope...)
++	b = append(b, key...)
++	sum := sha256.Sum256(b)
++	var out [sha256.Size * 2]byte
++	hex.Encode(out[:], sum[:])
++	return string(out[:])
++}
++
+ // IsFromCache reports whether the middleware served the response from the
+ // cache for the current request.
+ func IsFromCache(c fiber.Ctx) bool {
+@@ -62,7 +89,13 @@ func New(config ...Config) fiber.Handler {
+ 	// against the canonical-case names fasthttp reports stays allocation-free.
+ 	keepResponseHeaders := slices.Clone(cfg.KeepResponseHeaders)
+ 
+-	shouldKeepHeader := func(header string) bool {
++	// keepHeader reports whether a header the handler wrote is stored and a
++	// stored one is replayed: with no list, every header but the cookies, which
++	// only a name in the list keeps; with one, the named headers alone.
++	keepHeader := func(header string) bool {
++		if keepResponseHeaders == nil {
++			return !isCookieHeader(header)
++		}
+ 		return slices.ContainsFunc(keepResponseHeaders, func(keep string) bool {
+ 			return utils.EqualFold(header, keep)
+ 		})
+@@ -80,6 +113,12 @@ func New(config ...Config) fiber.Handler {
+ 			_ = c.Status(res.StatusCode)
+ 
+ 			for header, vals := range res.Headers {
++				// A stored entry goes through the same filter: one an earlier
++				// version wrote, or one written under another configuration,
++				// may hold more than this one keeps.
++				if !keepHeader(header) {
++					continue
++				}
+ 				for _, val := range vals {
+ 					c.RequestCtx().Response.Header.Add(header, val)
+ 				}
+@@ -106,34 +145,45 @@ func New(config ...Config) fiber.Handler {
+ 		}
+ 
+ 		// Don't execute middleware if the idempotency key is empty
+-		if c.Get(cfg.KeyHeader) == "" {
++		key := c.Get(cfg.KeyHeader)
++		if key == "" {
+ 			return c.Next()
+ 		}
++		// Copied once, before anything reads it: the validator may keep what it
++		// is handed, a handler that rewrote the header would not change what is
++		// hashed or logged, and the lock and the storage retain the unscoped key.
++		key = utils.CopyString(key)
+ 
+ 		// Validate key
+-		key := utils.CopyString(c.Get(cfg.KeyHeader))
+ 		if err := cfg.KeyHeaderValidate(key); err != nil {
+ 			return err
+ 		}
+ 
++		// The key a response is stored and locked under: a digest of the scope
++		// and the key when the config scopes it, otherwise the key alone.
++		storageKey := key
++		if cfg.KeyScope != nil {
++			storageKey = scopedKey(cfg.KeyScope(c), key)
++		}
++
+ 		// First-pass: if the idempotency key is in the storage, get and return the response
+-		if ok, err := maybeWriteCachedResponse(c, key); err != nil {
++		if ok, err := maybeWriteCachedResponse(c, storageKey); err != nil {
+ 			return fmt.Errorf("failed to write cached response at fastpath: %w", err)
+ 		} else if ok {
+ 			return nil
+ 		}
+ 
+-		if err := cfg.Lock.Lock(key); err != nil {
++		if err := cfg.Lock.Lock(storageKey); err != nil {
+ 			return fmt.Errorf("failed to lock: %w", err)
+ 		}
+ 		defer func() {
+-			if err := cfg.Lock.Unlock(key); err != nil {
++			if err := cfg.Lock.Unlock(storageKey); err != nil {
+ 				log.Errorf("[IDEMPOTENCY] failed to unlock key %q: %v", maskKey(key), err)
+ 			}
+ 		}()
+ 
+ 		// Lock acquired. If the idempotency key now is in the storage, get and return the response
+-		if ok, err := maybeWriteCachedResponse(c, key); err != nil {
++		if ok, err := maybeWriteCachedResponse(c, storageKey); err != nil {
+ 			return fmt.Errorf("failed to write cached response while locked: %w", err)
+ 		} else if ok {
+ 			return nil
+@@ -157,22 +207,15 @@ func New(config ...Config) fiber.Handler {
+ 			// date into two broken lines on replay.
+ 			headers := make(map[string][]string)
+ 			for k, v := range c.Response().Header.All() {
++				// Judged before the name is copied, so a line that is not
++				// kept costs nothing.
++				if !keepHeader(utils.UnsafeString(k)) {
++					continue
++				}
+ 				name := string(k)
+ 				headers[name] = append(headers[name], string(v))
+ 			}
+-
+-			if keepResponseHeaders == nil {
+-				// Keep all
+-				res.Headers = headers
+-			} else {
+-				// Filter
+-				res.Headers = make(map[string][]string)
+-				for h, vals := range headers {
+-					if shouldKeepHeader(h) {
+-						res.Headers[h] = vals
+-					}
+-				}
+-			}
++			res.Headers = headers
+ 		}
+ 
+ 		// Marshal response
+@@ -182,7 +225,7 @@ func New(config ...Config) fiber.Handler {
+ 		}
+ 
+ 		// Store response
+-		if err := cfg.Storage.SetWithContext(c, key, bs, cfg.Lifetime); err != nil {
++		if err := cfg.Storage.SetWithContext(c, storageKey, bs, cfg.Lifetime); err != nil {
+ 			return fmt.Errorf("failed to save response: %w", err)
+ 		}
+ 
+diff --git a/middleware/proxy/proxy.go b/middleware/proxy/proxy.go
+index 321bdd83859..4853bd16584 100644
+--- a/middleware/proxy/proxy.go
++++ b/middleware/proxy/proxy.go
+@@ -14,12 +14,17 @@ import (
+ 
+ // segmentsAsRouted reports whether a forwarding handler may hand target on
+ // under policy: wiretarget.SegmentsAsRouted, with escaped slashes and empty
+-// segments let through when policy.AllowAmbiguousSlashes is set.
++// segments let through when policy.AllowAmbiguousSlashes is set and path
++// parameters when policy.AllowPathParameters is.
+ func segmentsAsRouted(target string, policy SecurityPolicy) bool {
++	var allow wiretarget.Allowance
+ 	if policy.AllowAmbiguousSlashes {
+-		return wiretarget.SegmentsAsRoutedSlashesAside(target)
++		allow |= wiretarget.AllowSlashes
+ 	}
+-	return wiretarget.SegmentsAsRouted(target)
++	if policy.AllowPathParameters {
++		allow |= wiretarget.AllowParameters
++	}
++	return wiretarget.SegmentsAsRouted(target, allow)
+ }
+ 
+ // forwardWithRealIP is what Forward, DomainForward and BalancerForward share:
+@@ -211,7 +216,8 @@ func doActionWithPolicy(
+ }
+ 
+ // forwardRouted forwards the routed path to base for DomainForward and BalancerForward. A path
+-// an upstream could read as another (wiretarget.SegmentsAsRouted) is a 400 unless AllowAmbiguousSlashes.
++// an upstream could read as another (wiretarget.SegmentsAsRouted) is a 400 unless the policy
++// allows that spelling (AllowAmbiguousSlashes, AllowPathParameters).
+ func forwardRouted(c fiber.Ctx, base *url.URL, clients ...*fasthttp.Client) error {
+ 	target := wiretarget.Routed(c)
+ 	active := currentSecurityPolicy()
+diff --git a/middleware/proxy/security.go b/middleware/proxy/security.go
+index 4582bf7e0f2..4bcb4b5ff25 100644
+--- a/middleware/proxy/security.go
++++ b/middleware/proxy/security.go
+@@ -110,10 +110,27 @@ type SecurityPolicy struct {
+ 	// merges "//" before it matches routes reads such a path as another
+ 	// one, under a prefix whose middleware the router never ran for it;
+ 	// enable this only when every upstream keeps them, through a client
+-	// that does not normalize paths. A forged escape, a backslash and a
++	// that does not normalize paths. A path parameter needs
++	// AllowPathParameters as well, and a forged escape, a backslash and a
+ 	// dot segment carrying parameters are refused regardless.
+ 	// Default: false.
+ 	AllowAmbiguousSlashes bool
++
++	// AllowPathParameters lets Balancer, DomainForward and BalancerForward
++	// forward a routed path with a path parameter, a ";" and what follows it
++	// as in "/cart;jsessionid=x", which they otherwise answer with 400 Bad
++	// Request. An upstream that relies on ";jsessionid" needs it. Servlet
++	// containers such as Tomcat and Jetty strip the parameters from every
++	// segment before they match routes, so they read "/admin;x/secret" as
++	// "/admin/secret", under a prefix whose middleware the router never ran
++	// for it; enable this only when every upstream behind the handler keeps
++	// the ";" as part of the name or checks access itself. A dot segment
++	// carrying parameters, behind a raw slash or an escaped one, a backslash
++	// and a forged escape are refused regardless, and so is a segment made of
++	// parameters alone, such as "/;x/admin", unless AllowAmbiguousSlashes is
++	// set as well. No effect under UnescapePath, which forwards a ";" as "%3B".
++	// Default: false.
++	AllowPathParameters bool
+ }
+ 
+ // DefaultSecurityPolicy returns the secure-by-default proxy security
+@@ -132,6 +149,7 @@ func DefaultSecurityPolicy() SecurityPolicy {
+ 		AllowHTTPSDowngrade:   false,
+ 		KeepHopByHopHeaders:   false,
+ 		AllowAmbiguousSlashes: false,
++		AllowPathParameters:   false,
+ 	}
+ }
+ 

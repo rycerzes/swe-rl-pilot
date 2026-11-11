@@ -1,0 +1,90 @@
+diff --git a/hugolib/page__per_output.go b/hugolib/page__per_output.go
+index e8dd38ce7f6..05bb49132e7 100644
+--- a/hugolib/page__per_output.go
++++ b/hugolib/page__per_output.go
+@@ -104,21 +104,34 @@ func (pco *pageContentOutput) Reset() {
+ 	pco.renderHooks = &renderHooks{}
+ }
+ 
+-func (pco *pageContentOutput) Render(ctx context.Context, layout ...string) (template.HTML, error) {
+-	if len(layout) == 0 {
+-		return "", errors.New("no layout given")
++func (pco *pageContentOutput) Render(ctx context.Context, args ...any) (template.HTML, error) {
++	if len(args) == 0 {
++		return "", errors.New("no view given")
+ 	}
+-	templ, found, err := pco.po.p.resolveTemplate(layout...)
++	if len(args) > 2 {
++		return "", errors.New("too many arguments, expected VIEW [CONTEXT]")
++	}
++	view, err := cast.ToStringE(args[0])
++	if err != nil {
++		return "", fmt.Errorf("failed to convert view argument to string: %w", err)
++	}
++
++	// Make sure to send the *pageState and not the *pageContentOutput to the template.
++	var data any = pco.po.p
++	if len(args) == 2 {
++		data = args[1]
++	}
++
++	templ, found, err := pco.po.p.resolveTemplate(view)
+ 	if err != nil {
+ 		return "", pco.po.p.wrapError(err)
+ 	}
+ 
+ 	if !found {
+-		return "", fmt.Errorf("template %q not found", layout[0])
++		return "", fmt.Errorf("template %q not found", view)
+ 	}
+ 
+-	// Make sure to send the *pageState and not the *pageContentOutput to the template.
+-	res, err := executeToString(ctx, pco.po.p.s.GetTemplateStore(), templ, pco.po.p)
++	res, err := executeToString(ctx, pco.po.p.s.GetTemplateStore(), templ, data)
+ 	if err != nil {
+ 		return "", pco.po.p.wrapError(fmt.Errorf("failed to execute template %s: %w", templ.Name(), err))
+ 	}
+diff --git a/resources/page/page.go b/resources/page/page.go
+index 6104eb0ed73..e0677e1ed86 100644
+--- a/resources/page/page.go
++++ b/resources/page/page.go
+@@ -327,8 +327,9 @@ type PageMetaInternalProvider interface {
+ 
+ // PageRenderProvider provides a way for a Page to render content.
+ type PageRenderProvider interface {
+-	// Render renders the given layout with this Page as context.
+-	Render(ctx context.Context, layout ...string) (template.HTML, error)
++	// Render renders the given view (a layout template) with this Page as
++	// the data context, or, if given, the second argument CONTEXT.
++	Render(ctx context.Context, args ...any) (template.HTML, error)
+ 	// RenderString renders the first value in args with the content renderer defined
+ 	// for this Page.
+ 	// It takes an optional map as a second argument:
+diff --git a/resources/page/page_lazy_contentprovider.go b/resources/page/page_lazy_contentprovider.go
+index 84fb246826f..2b0516ac540 100644
+--- a/resources/page/page_lazy_contentprovider.go
++++ b/resources/page/page_lazy_contentprovider.go
+@@ -117,8 +117,8 @@ func (lcp *LazyContentProvider) Len(ctx context.Context) int {
+ 	return lcp.init.Value(ctx).Len(ctx)
+ }
+ 
+-func (lcp *LazyContentProvider) Render(ctx context.Context, layout ...string) (template.HTML, error) {
+-	return lcp.init.Value(ctx).Render(ctx, layout...)
++func (lcp *LazyContentProvider) Render(ctx context.Context, args ...any) (template.HTML, error) {
++	return lcp.init.Value(ctx).Render(ctx, args...)
+ }
+ 
+ func (lcp *LazyContentProvider) RenderString(ctx context.Context, args ...any) (template.HTML, error) {
+diff --git a/resources/page/page_nop.go b/resources/page/page_nop.go
+index 7dbc5f61514..1e92f0f8299 100644
+--- a/resources/page/page_nop.go
++++ b/resources/page/page_nop.go
+@@ -399,7 +399,7 @@ func (p *nopPage) RelRef(argsm map[string]any) (string, error) {
+ 	return "", nil
+ }
+ 
+-func (p *nopPage) Render(ctx context.Context, layout ...string) (template.HTML, error) {
++func (p *nopPage) Render(ctx context.Context, args ...any) (template.HTML, error) {
+ 	return "", nil
+ }
+ 

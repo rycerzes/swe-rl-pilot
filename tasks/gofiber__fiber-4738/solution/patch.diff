@@ -1,0 +1,131 @@
+diff --git a/docs/api/ctx.md b/docs/api/ctx.md
+index c580d070c87..da9d4999e09 100644
+--- a/docs/api/ctx.md
++++ b/docs/api/ctx.md
+@@ -1560,6 +1560,10 @@ app.Get("/", func(c fiber.Ctx) error {
+ })
+ ```
+ 
++:::caution Repeated field lines
++When a request carries the same header on several field lines, `Get` returns the first line that holds a value and steps over an empty leading line. `net/http`'s `Header.Get` and fasthttp's `Peek` return the first line even when it is empty, so a `net/http` layer in front of Fiber, such as a server mounting the app through the [adaptor](../middleware/adaptor.md), can read a field as empty that `Get` returns a value for. Use [`GetAll`](#getall) to see every line, and do not authorize on a header read with `Get` unless the layer in front strips or refuses it on every line. The `basicauth` and `csrf` middleware refuse a request that repeats the single-value fields they read, and so does `keyauth` with its default `Authorization` extractor; a custom `extractors.FromHeader` extractor combines repeated lines into one value instead.
++:::
++
+ :::info
+ The returned value is valid only within the handler. Do not store references.
+ Make copies or use the [**`Immutable`**](./fiber.md#immutable) setting instead. [Read more...](../#zero-allocation)
+diff --git a/docs/middleware/adaptor.md b/docs/middleware/adaptor.md
+index 3ef34ec619e..ade34133499 100644
+--- a/docs/middleware/adaptor.md
++++ b/docs/middleware/adaptor.md
+@@ -198,6 +198,10 @@ func main() {
+ }
+ ```
+ 
++:::caution Two parsers read one request
++The `net/http` server and the Fiber app behind it each parse the request's headers, and they do not read a repeated header alike. `Header.Get` returns the first field line even when it is empty, while `c.Get` returns the first line that holds a value. A request carrying `X-Internal:` on one line and `X-Internal: true` on the next therefore reads as empty in a `net/http` guard and as `true` in the Fiber handler behind it. A guard that must keep clients from setting a header should strip it with `r.Header.Del(name)` or test `len(r.Header.Values(name)) > 0`, never compare `r.Header.Get(name)` with the empty string. Fiber's `basicauth` and `csrf` middleware refuse a request that repeats the single-value fields they read, and so does `keyauth` with its default `Authorization` extractor, so a credential split across two `Authorization` lines is rejected rather than authenticated; a custom `extractors.FromHeader` extractor combines repeated lines into one value, which the validator then judges.
++:::
++
+ ### 6. Converting `fiber.Ctx` to `*http.Request` (`ConvertRequest`)
+ 
+ Create an `*http.Request` from a `fiber.Ctx`. The `forServer` parameter determines how
+@@ -349,6 +353,7 @@ func main() {
+ 
+ - A request that `net/http` served over TLS is seen as TLS by Fiber: `c.Scheme()` is `https`, `c.Secure()` is true and `c.RequestCtx().TLSConnectionState()` carries the state from `r.TLS`.
+ - `c.StartTime()` (and so `c.Elapsed()`) is not set for requests that reach Fiber through `FiberHandler`, `FiberApp` or `HTTPMiddleware`: fasthttp only records the request time inside its own server loop.
++- Both parsers read the headers: `Header.Get` returns the first field line even when it is empty, `c.Get` the first line that holds a value. A `net/http` guard should strip a header or check every value rather than compare `Header.Get` with the empty string; see the caution in the `FiberApp` section above.
+ - `HTTPMiddleware` routes the request the wrapped middleware hands to `next`, including a rewritten `r.URL` such as the one `http.StripPrefix` produces. The middleware must call `next` before it flushes or hijacks the response; after that the response has left Fiber's hands and the call is ignored.
+ 
+ ## Summary
+diff --git a/docs/middleware/basicauth.md b/docs/middleware/basicauth.md
+index e3980de2271..3011fe96411 100644
+--- a/docs/middleware/basicauth.md
++++ b/docs/middleware/basicauth.md
+@@ -4,7 +4,7 @@ id: basicauth
+ 
+ # BasicAuth
+ 
+-Basic Authentication middleware for [Fiber](https://github.com/gofiber/fiber) that provides HTTP basic auth. It calls the next handler for valid credentials and returns [`401 Unauthorized`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401) for missing or invalid credentials, [`400 Bad Request`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400) for malformed `Authorization` headers, or [`431 Request Header Fields Too Large`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/431) when the header exceeds size limits. Credentials may omit Base64 padding as permitted by RFC 7235's `token68` syntax.
++Basic Authentication middleware for [Fiber](https://github.com/gofiber/fiber) that provides HTTP basic auth. It calls the next handler for valid credentials and returns [`401 Unauthorized`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401) for missing or invalid credentials, [`400 Bad Request`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400) for malformed `Authorization` headers, among them a request that carries the field on more than one line, or [`431 Request Header Fields Too Large`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/431) when the header exceeds size limits. Credentials may omit Base64 padding as permitted by RFC 7235's `token68` syntax.
+ 
+ The default unauthorized response includes the header `WWW-Authenticate: Basic realm="Restricted", charset="UTF-8"`, sets `Cache-Control: no-store`, and adds a `Vary: Authorization` header. Only the `UTF-8` charset is supported; any other value will panic. Generated realm and charset values are escaped as RFC 9110 HTTP quoted strings.
+ 
+@@ -117,7 +117,7 @@ Users: map[string]string{
+ | HeaderLimit     | `int`                       | Maximum allowed length of the `Authorization` header. Requests exceeding this limit are rejected. | `8192` |
+ | Authorizer      | `func(string, string, fiber.Ctx) bool` | Authorizer defines a function to check the credentials. It will be called with a username, password, and the current context and is expected to return true or false to indicate approval.  | `nil`                 |
+ | Unauthorized    | `fiber.Handler`             | Unauthorized defines the response body for unauthorized responses.                                                                                                    | `nil`                 |
+-| BadRequest      | `fiber.Handler`             | BadRequest defines the response for malformed `Authorization` headers.                                                                                     | `nil`                 |
++| BadRequest      | `fiber.Handler`             | BadRequest defines the response for malformed `Authorization` headers, a request carrying the field on more than one line included.                        | `nil`                 |
+ 
+ ## Default Config
+ 
+diff --git a/docs/whats_new.md b/docs/whats_new.md
+index 8d4199044f4..aaa8dfb35d2 100644
+--- a/docs/whats_new.md
++++ b/docs/whats_new.md
+@@ -1484,7 +1484,7 @@ The adaptor also propagates the request's protocol version, normalized to Fiber'
+ 
+ ### BasicAuth
+ 
+-The BasicAuth middleware now validates the `Authorization` header more rigorously and sets security-focused response headers. Passwords must be provided in **hashed** form (e.g. SHA-256 or bcrypt) rather than plaintext. The default challenge includes the `charset="UTF-8"` parameter and disables caching. Responses also set a `Vary: Authorization` header to prevent caching based on credentials. Passwords are no longer stored in the request context. A `Charset` option controls the value used in the challenge header.
++The BasicAuth middleware now validates the `Authorization` header more rigorously and sets security-focused response headers. Passwords must be provided in **hashed** form (e.g. SHA-256 or bcrypt) rather than plaintext. The default challenge includes the `charset="UTF-8"` parameter and disables caching. Responses also set a `Vary: Authorization` header to prevent caching based on credentials. Passwords are no longer stored in the request context. A `Charset` option controls the value used in the challenge header. A request that carries the `Authorization` field on more than one line is refused with `400 Bad Request`: the field is defined as a single value, and reading either line would let the other decide what the request means.
+ A new `HeaderLimit` option restricts the maximum length of the `Authorization` header (default: `8192` bytes).
+ The `Authorizer` function now receives the current `fiber.Ctx` as a third argument, allowing credential checks to incorporate request context.
+ 
+diff --git a/middleware/basicauth/basicauth.go b/middleware/basicauth/basicauth.go
+index b7f05513432..91eb533557f 100644
+--- a/middleware/basicauth/basicauth.go
++++ b/middleware/basicauth/basicauth.go
+@@ -9,6 +9,7 @@ import (
+ 	"unicode/utf8"
+ 
+ 	"github.com/gofiber/fiber/v3"
++	"github.com/gofiber/fiber/v3/internal/headerlookup"
+ 	"github.com/gofiber/fiber/v3/middleware/logger"
+ 	"github.com/gofiber/utils/v2"
+ 	"github.com/gofiber/utils/v2/swar"
+@@ -44,8 +45,17 @@ func New(config ...Config) fiber.Handler {
+ 			return c.Next()
+ 		}
+ 
+-		// Get authorization header and ensure it matches the Basic scheme
+-		rawAuth := c.Get(fiber.HeaderAuthorization)
++		// Authorization is a single-value field (RFC 9110 Section 11.6.2), so a
++		// message carrying it on more than one line is malformed and refused
++		// rather than read, whatever the lines are spelled like or hold. Reading
++		// any one of them lets whoever wrote the other decide: the first line
++		// hides a credential behind an empty one, and the first non-empty line
++		// authenticates a request that a net/http layer in front, reading the
++		// field with Header.Get, saw as carrying no credential at all.
++		rawAuth, ok := headerlookup.Value(c, fiber.HeaderAuthorization)
++		if !ok {
++			return cfg.BadRequest(c)
++		}
+ 		if rawAuth == "" {
+ 			return cfg.Unauthorized(c)
+ 		}
+diff --git a/middleware/basicauth/config.go b/middleware/basicauth/config.go
+index 5d0f0603057..6f86d34fc1d 100644
+--- a/middleware/basicauth/config.go
++++ b/middleware/basicauth/config.go
+@@ -72,7 +72,8 @@ type Config struct {
+ 	// Optional. Default: nil
+ 	Unauthorized fiber.Handler
+ 
+-	// BadRequest defines the response body for malformed Authorization headers.
++	// BadRequest defines the response body for malformed Authorization headers,
++	// a request carrying the field on more than one line included.
+ 	// By default it will return with a 400 Bad Request without the WWW-Authenticate header.
+ 	//
+ 	// Optional. Default: nil
+diff --git a/res_interface_gen.go b/res_interface_gen.go
+index 5dd8ff5e2e4..d526c88d09f 100644
+--- a/res_interface_gen.go
++++ b/res_interface_gen.go
+@@ -211,6 +211,7 @@ type Res interface {
+ 	Type(extension string, charset ...string) Ctx
+ 	// Vary adds the given header field to the Vary response header.
+ 	// This will append the header, if not already listed; otherwise, leaves it listed in the current location.
++	// Field names are compared case-insensitively (RFC 9110 Section 5.1); the first spelling is kept.
+ 	// Per RFC 9110 Section 12.5.5 the wildcard "*" only has meaning as the sole member of the field:
+ 	// once "*" is added (or already present), the header is collapsed to a single "*".
+ 	Vary(fields ...string)

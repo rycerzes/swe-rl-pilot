@@ -1,0 +1,95 @@
+diff --git a/docs/middleware/limiter.md b/docs/middleware/limiter.md
+index e048c74c3d6..3665e1af3f6 100644
+--- a/docs/middleware/limiter.md
++++ b/docs/middleware/limiter.md
+@@ -110,6 +110,8 @@ app.Use(limiter.New(limiter.Config{
+ 
+ You can also calculate the expiration dynamically using the `ExpirationFunc` parameter. It receives the request context and allows you to set a different expiration window for each request.
+ 
++Window accounting is whole-second, so a positive duration below one second is treated as a one-second window. A zero or negative duration falls back to the default expiration.
++
+ Example:
+ 
+ ```go
+@@ -130,7 +132,7 @@ app.Use(limiter.New(limiter.Config{
+ | MaxFunc                | `func(fiber.Ctx) int`     | Function that calculates the maximum number of recent connections within `Expiration` seconds before sending a 429 response. | A function that returns `cfg.Max`    |
+ | KeyGenerator           | `func(fiber.Ctx) string` | Function to generate custom keys; uses `c.IP()` by default.                 | A function using `c.IP()` as the default   |
+ | Expiration             | `time.Duration`           | Duration to keep request records in memory.                   | 1 * time.Minute                          |
+-| ExpirationFunc         | `func(fiber.Ctx) time.Duration` | Function that calculates the expiration duration dynamically. | A function that returns `cfg.Expiration` |
++| ExpirationFunc         | `func(fiber.Ctx) time.Duration` | Function that calculates the expiration duration dynamically. Positive values below one second are floored to one second; non-positive values fall back to the default expiration. | A function that returns `cfg.Expiration` |
+ | LimitReached           | `fiber.Handler`           | Called when a request exceeds the limit.                                       | A function sending a 429 response          |
+ | SkipFailedRequests     | `bool`                    | When set to `true`, requests with status code ≥ 400 aren't counted.                         | false                                    |
+ | SkipSuccessfulRequests | `bool`                    | When set to `true`, requests with status code < 400 aren't counted.                          | false                                    |
+diff --git a/middleware/limiter/config.go b/middleware/limiter/config.go
+index e2f53707174..e82ef9b7cd5 100644
+--- a/middleware/limiter/config.go
++++ b/middleware/limiter/config.go
+@@ -32,7 +32,9 @@ type Config struct {
+ 	// }
+ 	MaxFunc func(c fiber.Ctx) int
+ 
+-	// A function to dynamically calculate the expiration time for rate limiter entries
++	// A function to dynamically calculate the expiration time for rate limiter entries.
++	// Window accounting is whole-second, so a positive value below one second is floored to
++	// one second. A zero or negative value falls back to the default expiration.
+ 	//
+ 	// Default: A function that returns the static `Expiration` value from the config.
+ 	ExpirationFunc func(c fiber.Ctx) time.Duration
+@@ -152,6 +154,19 @@ func configDefault(config ...Config) Config {
+ 	return cfg
+ }
+ 
++// windowSeconds turns a per-request expiration into the whole-second window used
++// for accounting. A positive sub-second value floors to 1s instead of truncating
++// to a 0-second window (NaN rate in sliding, no limiting at all in fixed).
++func windowSeconds(d time.Duration) uint64 {
++	if d <= 0 {
++		d = ConfigDefault.Expiration
++	}
++	if sec := uint64(d.Seconds()); sec > 0 {
++		return sec
++	}
++	return 1
++}
++
+ // currentSecond returns the current Unix time in whole seconds used for window
+ // accounting. Production reads the cached utils.Timestamp() (refreshed by a 1s
+ // ticker) to keep the hot path allocation- and syscall-free; tests can inject a
+diff --git a/middleware/limiter/limiter_fixed.go b/middleware/limiter/limiter_fixed.go
+index 6b7922a9bf9..d6c8359346f 100644
+--- a/middleware/limiter/limiter_fixed.go
++++ b/middleware/limiter/limiter_fixed.go
+@@ -37,12 +37,10 @@ func (FixedWindow) New(cfg *Config) fiber.Handler {
+ 			return c.Next()
+ 		}
+ 
+-		// Generate expiration from generator
+-		expirationDuration := cfg.ExpirationFunc(c)
+-		if expirationDuration <= 0 {
+-			expirationDuration = ConfigDefault.Expiration
+-		}
+-		expiration := uint64(expirationDuration.Seconds())
++		// Generate expiration from generator. The storage TTL is derived from the
++		// window so a sub-second value cannot expire the entry mid-window.
++		expiration := windowSeconds(cfg.ExpirationFunc(c))
++		expirationDuration, _ := secondsToDuration(expiration)
+ 
+ 		// Get key from request
+ 		key := cfg.KeyGenerator(c)
+diff --git a/middleware/limiter/limiter_sliding.go b/middleware/limiter/limiter_sliding.go
+index a51f089baf4..bf59495f4e8 100644
+--- a/middleware/limiter/limiter_sliding.go
++++ b/middleware/limiter/limiter_sliding.go
+@@ -40,11 +40,7 @@ func (SlidingWindow) New(cfg *Config) fiber.Handler {
+ 		}
+ 
+ 		// Generate expiration from generator
+-		expirationDuration := cfg.ExpirationFunc(c)
+-		if expirationDuration <= 0 {
+-			expirationDuration = ConfigDefault.Expiration
+-		}
+-		expiration := uint64(expirationDuration.Seconds())
++		expiration := windowSeconds(cfg.ExpirationFunc(c))
+ 
+ 		// Get key from request
+ 		key := cfg.KeyGenerator(c)

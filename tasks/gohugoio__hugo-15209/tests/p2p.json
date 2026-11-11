@@ -1,0 +1,9 @@
+[
+  "TestCopy",
+  "TestCopyPageShouldFail",
+  "TestGet",
+  "TestGlobalResourcesNotPublishedRegressionIssue12190",
+  "TestGlobalResourcesNotPublishedRegressionIssue12214",
+  "TestPostProcessDeprecated",
+  "TestResourcesGettersShouldNotNormalizePermalinks"
+]

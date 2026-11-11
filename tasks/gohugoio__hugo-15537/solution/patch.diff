@@ -1,0 +1,30 @@
+diff --git a/tpl/tplimpl/templatedescriptor.go b/tpl/tplimpl/templatedescriptor.go
+index 6a71ad3a6bc..b0894f43a50 100644
+--- a/tpl/tplimpl/templatedescriptor.go
++++ b/tpl/tplimpl/templatedescriptor.go
+@@ -91,7 +91,8 @@ func (s descriptorHandler) compareDescriptors(category Category, this, other Tem
+ 		}
+ 
+ 		if category == CategoryShortcode {
+-			if (this.IsPlainText == other.IsPlainText || !other.IsPlainText) || this.AlwaysAllowPlainText {
++			plainTextOK := this.IsPlainText == other.IsPlainText || !other.IsPlainText || this.AlwaysAllowPlainText
++			if plainTextOK && this.isLayoutCompatible(other) {
+ 				w.w1 = 1
+ 			}
+ 		}
+@@ -247,6 +248,15 @@ func (this TemplateDescriptor) doCompare(category Category, other TemplateDescri
+ 	return w
+ }
+ 
++//lint:ignore ST1006 this vs other makes it easier to reason about.
++func (this TemplateDescriptor) isLayoutCompatible(other TemplateDescriptor) bool {
++	switch other.LayoutFromTemplate {
++	case "", layoutAll, this.LayoutFromTemplate, this.LayoutFromUser:
++		return true
++	}
++	return false
++}
++
+ func (d TemplateDescriptor) IsZero() bool {
+ 	return d == TemplateDescriptor{}
+ }

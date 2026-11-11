@@ -1,0 +1,8 @@
+[
+  "TestGlob",
+  "TestResourcesMatchMountedPathCase",
+  "TestResourcesMatchPreservePathCase",
+  "TestResourcesMatchPreservePathCase/literal_first",
+  "TestResourcesMatchPreservePathCase/lower_first",
+  "TestResourcesMatchPreservePathCase/wildcard_first"
+]

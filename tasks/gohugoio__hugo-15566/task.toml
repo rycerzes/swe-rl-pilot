@@ -1,0 +1,123 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15566"
+description = "common/htime: Preserve location of time.Time values"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "bdde5aa5155c6c349a743e71dc846bef754b6773"
+reference = "https://github.com/gohugoio/hugo/pull/15566"
+source_access = "auto"
+built_at = "2026-11-10T23:31:23.960950+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:a823792414ca78656a757b5d495f03d9164d4ef496b041630df7df07ebb4ad1a"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15566"
+pr_merged_at = "2026-11-10T18:19:29Z"
+base_commit = "bdde5aa5155c6c349a743e71dc846bef754b6773"
+fail_to_pass = [
+    "TestTimeFormatZoneName",
+]
+pass_to_pass = [
+    "TestDuration",
+    "TestFormat",
+    "TestFormat/TZ_America/Los_Angeles",
+    "TestFormat/UTC",
+    "TestIn",
+    "TestIn/A",
+    "TestIn/B",
+    "TestIn/C",
+    "TestIn/D",
+    "TestIn/E",
+    "TestIn/F",
+    "TestTimeFormatMonthAbbreviationsEnGB",
+    "TestTimeLocation",
+    "TestTimeLocation/Empty_location",
+    "TestTimeLocation/Empty_location,_time",
+    "TestTimeLocation/Invalid_time_value",
+    "TestTimeLocation/Invalid_time_zone",
+    "TestTimeLocation/New_York,_time",
+    "TestTimeLocation/New_York_EDT",
+    "TestTimeLocation/New_York_EST",
+    "TestTimeLocation/New_location",
+    "TestTimeLocation/Offset,_New_York",
+    "TestTimeLocation/Offset,_Oslo",
+    "TestTimeLocation/Offset_minus_0700,_empty_location",
+    "TestTimeLocation/Offset_plus_0200,_empty_location",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:bca2cec8875b"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 75.161
+measured_overhead_seconds = 4.242
+measured_copy_seconds = 0.118
+run_timeout_sec = 180
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 1
+p2p_count = 25
+source_files = 1
+loc_changed = 9
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:10.750630+00:00"
+inline_recipe_sha256 = "sha256:4cc82e3d629b1c3cb536e23a6624772af0004d6045cb5527d068672db0d098ae"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 254
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15566-a18affacbf08"

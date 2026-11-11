@@ -1,0 +1,153 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15468"
+description = "resources: Make processed image key stable across builds"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "77230eba0469604d28434a8eacee868f3274e6ac"
+reference = "https://github.com/gohugoio/hugo/pull/15468"
+source_access = "auto"
+built_at = "2026-11-11T00:11:02.473721+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:663178c0085803be401e92bf6e9fce52aff64ce36ed53785b6287eb49c9e3845"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15468"
+pr_merged_at = "2026-10-21T09:12:16Z"
+base_commit = "77230eba0469604d28434a8eacee868f3274e6ac"
+fail_to_pass = [
+    "TestOverlayAndMaskKeyStableAcrossBuildsIssue15467",
+]
+pass_to_pass = [
+    "TestAddColorToPalette",
+    "TestAutoOrient",
+    "TestColorLuminance",
+    "TestColorToHexString",
+    "TestColorToHexString/#000000",
+    "TestColorToHexString/#4287f5",
+    "TestColorToHexString/#4287f580",
+    "TestColorToHexString/#ffffff",
+    "TestColorsIssue14453",
+    "TestDecodeConfig",
+    "TestDecodeImageConfig",
+    "TestExpandCropRectToMinSize",
+    "TestExpandCropRectToMinSize/bottom_right",
+    "TestExpandCropRectToMinSize/centered",
+    "TestExpandCropRectToMinSize/source_too_small",
+    "TestExpandCropRectToMinSize/top_left",
+    "TestFilterHash",
+    "TestHexStringToColor",
+    "TestHexStringToColor/#000",
+    "TestHexStringToColor/#00f7",
+    "TestHexStringToColor/#4287f5",
+    "TestHexStringToColor/#f",
+    "TestHexStringToColor/#fff",
+    "TestHexStringToColor/#ffffff",
+    "TestHexStringToColor/#fffffff",
+    "TestHexStringToColor/4287f580",
+    "TestHexStringToColor/777",
+    "TestHexStringToColor/FFF",
+    "TestHexStringToColor/FfF",
+    "TestHexStringToColor/f",
+    "TestHexStringToColor/fff",
+    "TestHexStringToColor/ffffff",
+    "TestHexStringToColor/fffffff",
+    "TestImageAnimationMemoryLimit",
+    "TestImageConfigPerFormat",
+    "TestImageCropSmartKeepsTargetSizeIssue13688",
+    "TestImageFirstFrameOnly",
+    "TestImageFrameCount",
+    "TestImagesGoldenConfigLossyVsQuality",
+    "TestImagesGoldenFiltersMask",
+    "TestImagesGoldenFiltersMaskCacheIssues",
+    "TestImagesGoldenFiltersMisc",
+    "TestImagesGoldenFiltersPaddingTransparentColor",
+    "TestImagesGoldenFiltersPaletted",
+    "TestImagesGoldenFiltersText",
+    "TestImagesGoldenMethods",
+    "TestImagesGoldenProcessAviStraws",
+    "TestImagesGoldenProcessAvif",
+    "TestImagesGoldenProcessMisc",
+    "TestImagesGoldenProcessSmartCropRotate",
+    "TestImagesGoldenProcessWebP",
+    "TestImagesGoldenWebPAnimation",
+    "TestImagingGlobalsDeprecated",
+    "TestOrientationEq",
+    "TestReplaceColorInPalette",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:8502b60066b1"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 92.807
+measured_overhead_seconds = 3.591
+measured_copy_seconds = 0.132
+run_timeout_sec = 210
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 1
+p2p_count = 55
+source_files = 1
+loc_changed = 1
+difficulty = "trivial"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:10.542752+00:00"
+inline_recipe_sha256 = "sha256:90f3b94fa0f56f2ea81476dfe02acf36df357fa908f67e1b232212f950569ff0"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 520
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15468-5254fb1cf1f2"

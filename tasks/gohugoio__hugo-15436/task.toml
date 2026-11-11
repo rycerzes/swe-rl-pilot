@@ -1,0 +1,161 @@
+version = "1.0"
+artifacts = [
+    { source = "/workspace" },
+]
+
+[task]
+name = "default/gohugoio__hugo-15436"
+description = "js, css: Add charset option to js.Build and css.Build"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "hugo",
+    "pr_runtime",
+]
+
+[metadata.repo2env]
+pipeline = "pr_runtime"
+pipeline_version = "0.3.0"
+repo = "gohugoio/hugo"
+ref = "c9f6e4d4abc3645cb46824c870e4e1b4c098b765"
+reference = "https://github.com/gohugoio/hugo/pull/15436"
+source_access = "auto"
+built_at = "2026-11-10T23:46:29.588622+00:00"
+synthesis_llm = "anthropic/claude-sonnet-4-6"
+reward_kinds = [
+    "test_execution",
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:bac23f1b3c6d7830f80a0ba3f1276728e77936641a875bfedb3ac0424dc2bb31"
+
+[metadata.repo2env.pr_runtime]
+pr_url = "https://github.com/gohugoio/hugo/pull/15436"
+pr_merged_at = "2026-10-12T11:29:26Z"
+base_commit = "c9f6e4d4abc3645cb46824c870e4e1b4c098b765"
+fail_to_pass = [
+    "TestBuildCharset",
+    "TestDecodeExternalOptions",
+    "TestToBuildOptions",
+]
+pass_to_pass = [
+    "TestBatchEditInstance",
+    "TestBatchEditScriptParam",
+    "TestBatchErrorRunnerResourceNotSet",
+    "TestBatchErrorScriptResourceInAssetsSyntaxError",
+    "TestBatchErrorScriptResourceInBundleSyntaxError",
+    "TestBatchErrorScriptResourceNotSet",
+    "TestBatchMissingImportedAssetIssue13737",
+    "TestBatchMultiHost",
+    "TestBatchRemoveAllInGroup",
+    "TestBatchRenameBundledScript",
+    "TestBatchSlashInBatchID",
+    "TestBatchSourceMaps",
+    "TestBatchTemplateOKBuild",
+    "TestBuildDataArtifacts",
+    "TestBuildError",
+    "TestBuildError/Import_from_import_not_found",
+    "TestBuildError/Import_from_main_not_found",
+    "TestBuildErrorStack",
+    "TestBuildImportOutsideProject",
+    "TestBuildImportOutsideProject/Relative_import",
+    "TestBuildImportOutsideProject/Relative_import,_target_in_allowRead",
+    "TestBuildImportOutsideProject/Symlink_in_theme",
+    "TestBuildVariants",
+    "TestBuildVariants/Basic",
+    "TestBuildVariants/Edit_Import",
+    "TestBuildVariants/Edit_Import_Nested",
+    "TestDecodeExternalOptionsLegacyTargetString",
+    "TestExternalsInAssets",
+    "TestImportHugoVsESBuild",
+    "TestImportHugoVsESBuild/assets",
+    "TestImportHugoVsESBuild/node_modules",
+    "TestPreserveLegalComments",
+    "TestResolveComponentInAssets",
+    "TestResolveComponentInAssets/Basic,_extension",
+    "TestResolveComponentInAssets/Basic,_no_extension",
+    "TestResolveComponentInAssets/Basic,_no_extension,_typescript",
+    "TestResolveComponentInAssets/Check_file_before_directory",
+    "TestResolveComponentInAssets/Index_ESM_file,_folder_and_index",
+    "TestResolveComponentInAssets/Index_ESM_file,_folder_and_index_and_suffix",
+    "TestResolveComponentInAssets/Index_ESM_file,_folder_only",
+    "TestResolveComponentInAssets/Index_and_Index_ESM_file,_folder_only",
+    "TestResolveComponentInAssets/Index_file,_folder_and_index",
+    "TestResolveComponentInAssets/Index_file,_folder_and_index_and_suffix",
+    "TestResolveComponentInAssets/Index_file,_folder_only",
+    "TestResolveComponentInAssets/Not_found",
+    "TestResolveComponentInAssets/Not_found,_double_js_extension",
+    "TestToBuildOptionsTarget",
+    "TestToBuildOptionsTarget/#00",
+    "TestToBuildOptionsTarget/es2015",
+    "TestToBuildOptionsTarget/es2016",
+    "TestToBuildOptionsTarget/es2017",
+    "TestToBuildOptionsTarget/es2018",
+    "TestToBuildOptionsTarget/es2019",
+    "TestToBuildOptionsTarget/es2020",
+    "TestToBuildOptionsTarget/es2021",
+    "TestToBuildOptionsTarget/es2022",
+    "TestToBuildOptionsTarget/es2023",
+    "TestToBuildOptionsTarget/es2024",
+    "TestToBuildOptionsTarget/es2025",
+    "TestToBuildOptionsTarget/esnext",
+    "TestTypeScriptExperimentalDecorators",
+]
+validation_status = "verified"
+flaky_dropped = 0
+bootstrap_image = "local/r2e-bootstrap/gohugoio__hugo:85fb23f1c23a"
+reward_mode = "graded"
+harbor_min_version = "0.25.0"
+tamper_check = "unavailable"
+
+[metadata.repo2env.pr_runtime.grading_time]
+measured_run_seconds = 90.909
+measured_overhead_seconds = 5.786
+measured_copy_seconds = 0.253
+run_timeout_sec = 210
+copy_timeout_sec = 120
+runs_per_grading = 1
+verifier_timeout_sec = 600
+
+[metadata.repo2env.reward_calibration]
+f2p_count = 3
+p2p_count = 61
+source_files = 1
+loc_changed = 17
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "inline_dockerfile"
+pushed_at = "2026-11-11T04:23:10.361723+00:00"
+inline_recipe_sha256 = "sha256:8f09ee17fc8fda9ff131b2d55752d144814877d7dcd93e9fe35e16f492c59500"
+inline_recipe_lines = 11
+inline_recipe_source = "agent_replay"
+
+[metadata.swe_rl_pilot]
+instruction_names_hidden_tests = []
+instruction_description_words = 50
+instruction_ok = true
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 600.0
+environment_mode = "separate"
+user = "root"
+
+[environment]
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15436-3e412406f0f4"

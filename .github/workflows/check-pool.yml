@@ -1,0 +1,126 @@
+name: Check a prebuilt-image task pool
+
+# Rebuilds a wrapped pool from public inputs and checks every task, the way build-images.yml
+# checks ours: each task is downloaded from Harbor Hub, given a separate verifier by
+# scripts/wrap_separate_verifier.py with its GHCR image (mirror-images.yml's map), then run with
+# Harbor's Docker environment: oracle 1.0, nop 0.0, and each attack in scripts/attacks/ not
+# above 0. Output: per-task results and a list of tasks that passed everything.
+
+on:
+  workflow_dispatch:
+    inputs:
+      list:
+        description: "task<TAB>language<TAB>source image list"
+        default: "mirror/swe-rebench-v2.1.tsv"
+      image_map:
+        description: "source -> mirror image map (JSON)"
+        default: "mirror/swe-rebench-v2.1.image-map.json"
+      source:
+        description: "Harbor Hub owner the tasks are downloaded from"
+        default: "ibragim-badertdinov"
+      shards:
+        description: "parallel jobs (each must finish within 6 h)"
+        default: "50"
+
+permissions: {}
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - id: plan
+        env:
+          SHARDS: ${{ inputs.shards }}
+        run: |
+          python3 -c "import json,os;n=int(os.environ['SHARDS']);print('matrix='+json.dumps({'shard':list(range(n))}))" >> "$GITHUB_OUTPUT"
+
+  check:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      LIST: ${{ inputs.list }}
+      IMAGE_MAP: ${{ inputs.image_map }}
+      SOURCE: ${{ inputs.source }}
+      SHARDS: ${{ inputs.shards }}
+      SHARD: ${{ matrix.shard }}
+      UV_NO_CONFIG: "1"
+      HARBOR: uvx --from harbor==0.25.0 harbor
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Generation environment (wrapper deps)
+        run: cd gen && uv sync --no-config && .venv/bin/python -I patch_repo2rlenv.py
+      - name: Download and wrap this shard's tasks
+        run: |
+          mkdir -p pool/src
+          awk -F'\t' -v n="$SHARDS" -v s="$SHARD" 'NR % n == s {print $1}' "$LIST" > shard.txt
+          while read -r task; do
+            $HARBOR download "$SOURCE/$task" -o pool/src >/dev/null 2>&1 \
+              || echo "$task" >> download-failed.txt
+          done < shard.txt
+          # Runners have 4 CPUs and 16 GB; Harbor's Docker environment enforces the task's request.
+          gen/.venv/bin/python scripts/wrap_separate_verifier.py pool/src pool/wrapped --image-map "$IMAGE_MAP" \
+            --max-cpus 4 --max-memory-mb 12288
+          echo "shard $SHARD: $(wc -l < shard.txt) listed, $(ls pool/wrapped | wc -l) wrapped" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Check each task
+        run: |
+          mkdir -p results
+          : > "results/results-$SHARD.tsv"
+          for task in pool/wrapped/*/; do
+            name=$(basename "$task")
+            rc=0
+            python3 scripts/check_controls.py "$task" --attacks --harbor "$HARBOR" \
+              --jobs "jobs/$name" > "results/$name.txt" 2>&1 || rc=$?
+            verdict=$([ "$rc" -eq 0 ] && echo PASS || echo FAIL)
+            printf '%s\t%s\t%s\n' "$name" "$verdict" \
+              "$(grep -E '^- FAIL' "results/$name.txt" | tr '\n' ' ' | cut -c1-300)" >> "results/results-$SHARD.tsv"
+            # Keep disk free: each image is ~0.5-1.3 GiB.
+            docker image prune -af >/dev/null 2>&1 || true
+            rm -rf "jobs/$name"
+          done
+          [ ! -f download-failed.txt ] || sed 's/$/\tFAIL\tdownload failed/' download-failed.txt >> "results/results-$SHARD.tsv"
+          echo "shard $SHARD: $(grep -c $'\tPASS\t' "results/results-$SHARD.tsv") passed, $(grep -c $'\tFAIL\t' "results/results-$SHARD.tsv") failed" | tee -a "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pool-check-${{ matrix.shard }}
+          path: results/
+          retention-days: 30
+
+  merge:
+    needs: check
+    if: always()
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: pool-check-*
+          merge-multiple: true
+          path: results
+      - name: Summary
+        run: |
+          cat results/results-*.tsv | sort > results.tsv
+          awk -F'\t' '$2=="PASS"{print $1}' results.tsv > passed.txt
+          awk -F'\t' '$2=="FAIL"' results.tsv > failed.tsv
+          echo "passed $(wc -l < passed.txt), failed $(wc -l < failed.tsv)" | tee -a "$GITHUB_STEP_SUMMARY"
+          head -40 failed.tsv | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pool-check
+          path: |
+            results.tsv
+            passed.txt
+            failed.tsv
+          retention-days: 90

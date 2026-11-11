@@ -18,7 +18,9 @@ their test.sh restores only the hidden test files, so an agent-written conftest.
    runs them and grades as before.
 
 The grader tools and guard come from the pinned Repo2RLEnv in gen/ (with gen/patch_repo2rlenv.py
-applied). --image-map rewrites [environment].docker_image (e.g. to a GHCR mirror).
+applied). --image-map rewrites [environment].docker_image (e.g. to a GHCR mirror). --max-cpus and
+--max-memory-mb cap the task's resource request (Harbor's Docker environment enforces it, and
+SWE-rebench asks for 6 CPUs; GitHub runners have 4).
 """
 
 from __future__ import annotations
@@ -33,7 +35,7 @@ from pathlib import Path
 
 import tomli_w
 
-WRAPPER_VERSION = 1
+WRAPPER_VERSION = 2
 XFER = "/pilot_xfer/agent"
 PRISTINE = "/opt/pilot/pristine"
 
@@ -52,8 +54,14 @@ finish() {{  # graded|ungraded reason
   echo "pilot wrapper: $1 $2" >&2
   exit 0
 }}
+# The verifier is a fresh container from the image, so PATH is the image's. Non-Python images
+# (Go, Rust, ...) ship a grader interpreter at /opt/harbor-grader/python3 (SWE-rebench V2.1).
 PY=""
-for p in /usr/local/bin/python3 /usr/bin/python3; do [ -x "$p" ] && {{ PY="$p"; break; }}; done
+for p in /usr/local/bin/python3 /usr/bin/python3 /opt/harbor-grader/python3 /opt/conda/bin/python3 \
+         "$(command -v python3 2>/dev/null)"; do
+  [ -n "$p" ] && [ -x "$p" ] && "$p" -c 'import sys; sys.exit(sys.version_info < (3, 8))' 2>/dev/null \
+    && {{ PY="$p"; break; }}
+done
 [ -n "$PY" ] || finish ungraded no_system_python
 [ -d {xfer} ] || finish ungraded no_agent_tree
 mkdir -p "$(dirname {pristine})" && rm -rf {pristine} && cp -a "$WD" {pristine} || finish ungraded pristine_copy_failed
@@ -87,7 +95,8 @@ def gen_module(name: str) -> Path:
     return Path(pipelines.__file__).with_name(name)
 
 
-def wrap(src: Path, out: Path, image_map: dict[str, str]) -> None:
+def wrap(src: Path, out: Path, image_map: dict[str, str], max_cpus: int | None = None,
+         max_memory_mb: int | None = None) -> None:
     data = tomllib.loads((src / "task.toml").read_text(encoding="utf-8"))
     env = data.setdefault("environment", {})
     workdir = env.get("workdir")
@@ -106,6 +115,10 @@ def wrap(src: Path, out: Path, image_map: dict[str, str]) -> None:
 
     image = env.get("docker_image", "")
     env["docker_image"] = image_map.get(image, image)
+    if max_cpus and env.get("cpus", 0) > max_cpus:
+        env["cpus"] = max_cpus
+    if max_memory_mb and env.get("memory_mb", 0) > max_memory_mb:
+        env["memory_mb"] = max_memory_mb
     data["artifacts"] = [*data.get("artifacts", []), {"source": XFER}]
     verifier = data.setdefault("verifier", {})
     verifier["environment_mode"] = "separate"
@@ -124,6 +137,8 @@ def main() -> int:
     parser.add_argument("out", type=Path)
     parser.add_argument("--image-map", type=Path)
     parser.add_argument("--force", action="store_true", help="replace tasks already in OUT")
+    parser.add_argument("--max-cpus", type=int)
+    parser.add_argument("--max-memory-mb", type=int)
     args = parser.parse_args()
     image_map = json.loads(args.image_map.read_text()) if args.image_map else {}
     args.out.mkdir(parents=True, exist_ok=True)
@@ -134,7 +149,7 @@ def main() -> int:
             if not args.force:
                 continue
             shutil.rmtree(dest)
-        wrap(toml_path.parent, dest, image_map)
+        wrap(toml_path.parent, dest, image_map, args.max_cpus, args.max_memory_mb)
         n += 1
     print(f"wrapped {n} task(s) into {args.out}")
     return 0

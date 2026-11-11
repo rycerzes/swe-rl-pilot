@@ -398,7 +398,6 @@
   "Test_Logger_MustRegisterTagPanicsOnInvalidInput",
   "Test_Logger_New_TimeDoneUpdater",
   "Test_Logger_Next",
-  "Test_Logger_PreRegisteredMiddlewareTag",
   "Test_Logger_RegisterTagRejectsInvalidInput",
   "Test_Logger_RegisteredTag",
   "Test_Logger_SanitizesControlBytes",

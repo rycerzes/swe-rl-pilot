@@ -476,7 +476,6 @@ pass_to_pass = [
     "Test_Logger_MustRegisterTagPanicsOnInvalidInput",
     "Test_Logger_New_TimeDoneUpdater",
     "Test_Logger_Next",
-    "Test_Logger_PreRegisteredMiddlewareTag",
     "Test_Logger_RegisterTagRejectsInvalidInput",
     "Test_Logger_RegisteredTag",
     "Test_Logger_SanitizesControlBytes",
@@ -700,6 +699,10 @@ inline_recipe_source = "agent_replay"
 instruction_names_hidden_tests = []
 instruction_description_words = 647
 instruction_ok = true
+
+[[metadata.swe_rl_pilot.p2p_dropped]]
+test = "Test_Logger_PreRegisteredMiddlewareTag"
+reason = "flaky for the reference fix: failed oracle run 1, passed run 2 (verify run 42971009962)"
 
 [agent]
 timeout_sec = 1800.0

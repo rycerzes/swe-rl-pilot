@@ -1,0 +1,1258 @@
+{
+  "cutoff": "2026-10-16",
+  "eval_repos": [],
+  "summary": {
+    "train": {
+      "gofiber/fiber": 28,
+      "gohugoio/hugo": 30,
+      "more-itertools/more-itertools": 4,
+      "networkx/networkx": 21
+    },
+    "eval_time": {
+      "gofiber/fiber": 13,
+      "gohugoio/hugo": 15,
+      "networkx/networkx": 3
+    },
+    "eval_repo": {},
+    "excluded": {
+      "gofiber/fiber": 21,
+      "gohugoio/hugo": 9,
+      "more-itertools/more-itertools": 3,
+      "networkx/networkx": 2
+    }
+  },
+  "train": [
+    {
+      "task": "gofiber__fiber-4544",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-07-20T20:01:54Z",
+      "tamper_check": "unavailable",
+      "f2p": 4,
+      "p2p": 1504
+    },
+    {
+      "task": "gofiber__fiber-4564",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-07-30T14:15:08Z",
+      "tamper_check": "unavailable",
+      "f2p": 2,
+      "p2p": 59
+    },
+    {
+      "task": "gofiber__fiber-4570",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-07-30T21:23:39Z",
+      "tamper_check": "mutants",
+      "f2p": 2,
+      "p2p": 37
+    },
+    {
+      "task": "gofiber__fiber-4575",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-07-30T13:59:34Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 349
+    },
+    {
+      "task": "gofiber__fiber-4577",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-07-30T13:28:46Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 10
+    },
+    {
+      "task": "gofiber__fiber-4584",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-08-11T08:37:38Z",
+      "tamper_check": "mutants",
+      "f2p": 39,
+      "p2p": 576
+    },
+    {
+      "task": "gofiber__fiber-4585",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-08-11T08:37:26Z",
+      "tamper_check": "mutants",
+      "f2p": 39,
+      "p2p": 576
+    },
+    {
+      "task": "gofiber__fiber-4589",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-08-12T14:52:56Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 319
+    },
+    {
+      "task": "gofiber__fiber-4606",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-08-12T06:17:47Z",
+      "tamper_check": "unavailable",
+      "f2p": 10,
+      "p2p": 100
+    },
+    {
+      "task": "gofiber__fiber-4614",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-08-16T16:48:13Z",
+      "tamper_check": "mutants",
+      "f2p": 2,
+      "p2p": 1804
+    },
+    {
+      "task": "gofiber__fiber-4615",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-08-16T13:18:27Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 1846
+    },
+    {
+      "task": "gofiber__fiber-4630",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-08-24T12:48:24Z",
+      "tamper_check": "unavailable",
+      "f2p": 4,
+      "p2p": 151
+    },
+    {
+      "task": "gofiber__fiber-4631",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-08-23T14:00:24Z",
+      "tamper_check": "unavailable",
+      "f2p": 4,
+      "p2p": 1886
+    },
+    {
+      "task": "gofiber__fiber-4638",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-08-31T12:21:09Z",
+      "tamper_check": "mutants",
+      "f2p": 13,
+      "p2p": 260
+    },
+    {
+      "task": "gofiber__fiber-4642",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-09-06T16:03:11Z",
+      "tamper_check": "mutants",
+      "f2p": 1,
+      "p2p": 2023
+    },
+    {
+      "task": "gofiber__fiber-4674",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-09-09T14:32:52Z",
+      "tamper_check": "mutants",
+      "f2p": 1,
+      "p2p": 2084
+    },
+    {
+      "task": "gofiber__fiber-4678",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-09-12T14:30:37Z",
+      "tamper_check": "unavailable",
+      "f2p": 3,
+      "p2p": 155
+    },
+    {
+      "task": "gofiber__fiber-4701",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-09-23T14:00:45Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 2178
+    },
+    {
+      "task": "gofiber__fiber-4715",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-09-30T11:10:55Z",
+      "tamper_check": "mutants",
+      "f2p": 1,
+      "p2p": 2292
+    },
+    {
+      "task": "gofiber__fiber-4717",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-09-29T09:58:41Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 2286
+    },
+    {
+      "task": "gofiber__fiber-4720",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-10-08T06:37:17Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 25
+    },
+    {
+      "task": "gofiber__fiber-4725",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-09-30T13:41:22Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 259
+    },
+    {
+      "task": "gofiber__fiber-4726",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-09-30T14:34:40Z",
+      "tamper_check": "unavailable",
+      "f2p": 3,
+      "p2p": 40
+    },
+    {
+      "task": "gofiber__fiber-4728",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-10-08T10:18:02Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 234
+    },
+    {
+      "task": "gofiber__fiber-4735",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-10-03T18:26:54Z",
+      "tamper_check": "unavailable",
+      "f2p": 6,
+      "p2p": 2810
+    },
+    {
+      "task": "gofiber__fiber-4736",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-10-05T13:27:28Z",
+      "tamper_check": "mutants",
+      "f2p": 44,
+      "p2p": 386
+    },
+    {
+      "task": "gofiber__fiber-4747",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-10-09T06:19:54Z",
+      "tamper_check": "unavailable",
+      "f2p": 18,
+      "p2p": 268
+    },
+    {
+      "task": "gofiber__fiber-4752",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-10-14T12:59:39Z",
+      "tamper_check": "unavailable",
+      "f2p": 18,
+      "p2p": 3297
+    },
+    {
+      "task": "gohugoio__hugo-15156",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-08-03T19:20:07Z",
+      "tamper_check": "unavailable",
+      "f2p": 4,
+      "p2p": 20
+    },
+    {
+      "task": "gohugoio__hugo-15164",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-08-04T14:10:27Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 24
+    },
+    {
+      "task": "gohugoio__hugo-15168",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-08-05T14:04:48Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 25
+    },
+    {
+      "task": "gohugoio__hugo-15175",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-08-08T17:51:42Z",
+      "tamper_check": "unavailable",
+      "f2p": 5,
+      "p2p": 37
+    },
+    {
+      "task": "gohugoio__hugo-15188",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-08-10T16:10:06Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 27
+    },
+    {
+      "task": "gohugoio__hugo-15209",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-08-19T11:13:56Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 7
+    },
+    {
+      "task": "gohugoio__hugo-15215",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-08-19T14:21:11Z",
+      "tamper_check": "unavailable",
+      "f2p": 9,
+      "p2p": 683
+    },
+    {
+      "task": "gohugoio__hugo-15225",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-08-27T15:00:58Z",
+      "tamper_check": "unavailable",
+      "f2p": 2,
+      "p2p": 624
+    },
+    {
+      "task": "gohugoio__hugo-15246",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-08-27T14:02:56Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 1
+    },
+    {
+      "task": "gohugoio__hugo-15252",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-08-29T18:34:17Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 51
+    },
+    {
+      "task": "gohugoio__hugo-15255",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-08-31T09:06:31Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 133
+    },
+    {
+      "task": "gohugoio__hugo-15256",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-08-30T16:06:11Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 14
+    },
+    {
+      "task": "gohugoio__hugo-15304",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-09-07T13:22:47Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 13
+    },
+    {
+      "task": "gohugoio__hugo-15305",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-09-07T15:36:39Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 14
+    },
+    {
+      "task": "gohugoio__hugo-15325",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-09-16T09:24:35Z",
+      "tamper_check": "unavailable",
+      "f2p": 4,
+      "p2p": 261
+    },
+    {
+      "task": "gohugoio__hugo-15331",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-09-12T09:34:12Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 636
+    },
+    {
+      "task": "gohugoio__hugo-15353",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-09-17T14:46:39Z",
+      "tamper_check": "unavailable",
+      "f2p": 2,
+      "p2p": 770
+    },
+    {
+      "task": "gohugoio__hugo-15357",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-09-19T14:17:04Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 41
+    },
+    {
+      "task": "gohugoio__hugo-15363",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-09-21T17:01:37Z",
+      "tamper_check": "unavailable",
+      "f2p": 4,
+      "p2p": 241
+    },
+    {
+      "task": "gohugoio__hugo-15376",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-09-24T15:50:37Z",
+      "tamper_check": "unavailable",
+      "f2p": 5,
+      "p2p": 13
+    },
+    {
+      "task": "gohugoio__hugo-15384",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-09-26T19:19:39Z",
+      "tamper_check": "unavailable",
+      "f2p": 2,
+      "p2p": 740
+    },
+    {
+      "task": "gohugoio__hugo-15386",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-09-26T19:17:33Z",
+      "tamper_check": "unavailable",
+      "f2p": 18,
+      "p2p": 63
+    },
+    {
+      "task": "gohugoio__hugo-15392",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-09-27T09:31:35Z",
+      "tamper_check": "unavailable",
+      "f2p": 2,
+      "p2p": 255
+    },
+    {
+      "task": "gohugoio__hugo-15417",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-10-07T10:56:57Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 641
+    },
+    {
+      "task": "gohugoio__hugo-15423",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-10-11T14:30:48Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 8
+    },
+    {
+      "task": "gohugoio__hugo-15429",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-10-09T12:28:31Z",
+      "tamper_check": "unavailable",
+      "f2p": 6,
+      "p2p": 265
+    },
+    {
+      "task": "gohugoio__hugo-15432",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-10-11T14:31:06Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 52
+    },
+    {
+      "task": "gohugoio__hugo-15436",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-10-12T11:29:26Z",
+      "tamper_check": "unavailable",
+      "f2p": 3,
+      "p2p": 61
+    },
+    {
+      "task": "gohugoio__hugo-15445",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-10-14T08:10:12Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 0
+    },
+    {
+      "task": "gohugoio__hugo-15450",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-10-15T18:32:44Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 642
+    },
+    {
+      "task": "more-itertools__more-itertools-1279",
+      "repo": "more-itertools/more-itertools",
+      "merged_at": "2026-09-14T14:39:09Z",
+      "tamper_check": "unavailable",
+      "f2p": 4,
+      "p2p": 604
+    },
+    {
+      "task": "more-itertools__more-itertools-1285",
+      "repo": "more-itertools/more-itertools",
+      "merged_at": "2026-09-17T14:26:17Z",
+      "tamper_check": "mutants",
+      "f2p": 4,
+      "p2p": 609
+    },
+    {
+      "task": "more-itertools__more-itertools-1294",
+      "repo": "more-itertools/more-itertools",
+      "merged_at": "2026-09-25T16:30:08Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 617
+    },
+    {
+      "task": "more-itertools__more-itertools-1309",
+      "repo": "more-itertools/more-itertools",
+      "merged_at": "2026-10-07T15:04:42Z",
+      "tamper_check": "mutants",
+      "f2p": 1,
+      "p2p": 619
+    },
+    {
+      "task": "networkx__networkx-8562",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-08-20T22:46:25Z",
+      "tamper_check": "unavailable",
+      "f2p": 6,
+      "p2p": 9
+    },
+    {
+      "task": "networkx__networkx-8721",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-07-22T11:30:41Z",
+      "tamper_check": "unavailable",
+      "f2p": 2,
+      "p2p": 11
+    },
+    {
+      "task": "networkx__networkx-8800",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-08-04T17:23:20Z",
+      "tamper_check": "mutants",
+      "f2p": 3,
+      "p2p": 91
+    },
+    {
+      "task": "networkx__networkx-8801",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-08-11T16:31:40Z",
+      "tamper_check": "unavailable",
+      "f2p": 2,
+      "p2p": 78
+    },
+    {
+      "task": "networkx__networkx-8803",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-08-06T18:08:01Z",
+      "tamper_check": "unavailable",
+      "f2p": 3,
+      "p2p": 0
+    },
+    {
+      "task": "networkx__networkx-8813",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-08-04T17:27:52Z",
+      "tamper_check": "mutants",
+      "f2p": 13,
+      "p2p": 1014
+    },
+    {
+      "task": "networkx__networkx-8818",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-08-04T20:34:38Z",
+      "tamper_check": "unavailable",
+      "f2p": 2,
+      "p2p": 32
+    },
+    {
+      "task": "networkx__networkx-8837",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-08-21T20:34:43Z",
+      "tamper_check": "mutants",
+      "f2p": 10,
+      "p2p": 55
+    },
+    {
+      "task": "networkx__networkx-8838",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-08-18T21:30:37Z",
+      "tamper_check": "unavailable",
+      "f2p": 221,
+      "p2p": 1075
+    },
+    {
+      "task": "networkx__networkx-8855",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-08-21T21:18:06Z",
+      "tamper_check": "unavailable",
+      "f2p": 2,
+      "p2p": 3
+    },
+    {
+      "task": "networkx__networkx-8879",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-08-29T19:45:35Z",
+      "tamper_check": "mutants",
+      "f2p": 1,
+      "p2p": 25
+    },
+    {
+      "task": "networkx__networkx-8880",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-08-30T01:48:51Z",
+      "tamper_check": "mutants",
+      "f2p": 2,
+      "p2p": 26
+    },
+    {
+      "task": "networkx__networkx-8881",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-08-30T01:49:18Z",
+      "tamper_check": "mutants",
+      "f2p": 1,
+      "p2p": 26
+    },
+    {
+      "task": "networkx__networkx-8882",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-08-30T23:46:37Z",
+      "tamper_check": "mutants",
+      "f2p": 1,
+      "p2p": 29
+    },
+    {
+      "task": "networkx__networkx-8883",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-09-03T13:52:14Z",
+      "tamper_check": "mutants",
+      "f2p": 2,
+      "p2p": 35
+    },
+    {
+      "task": "networkx__networkx-8890",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-09-11T13:46:33Z",
+      "tamper_check": "mutants",
+      "f2p": 2,
+      "p2p": 96
+    },
+    {
+      "task": "networkx__networkx-8892",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-09-17T16:23:40Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 314
+    },
+    {
+      "task": "networkx__networkx-8895",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-09-09T17:45:26Z",
+      "tamper_check": "unavailable",
+      "f2p": 6,
+      "p2p": 1269
+    },
+    {
+      "task": "networkx__networkx-8899",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-09-08T22:03:02Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 10
+    },
+    {
+      "task": "networkx__networkx-8900",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-09-08T22:02:01Z",
+      "tamper_check": "mutants",
+      "f2p": 8,
+      "p2p": 1296
+    },
+    {
+      "task": "networkx__networkx-8931",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-09-28T03:09:03Z",
+      "tamper_check": "mutants",
+      "f2p": 2,
+      "p2p": 38
+    }
+  ],
+  "eval_time": [
+    {
+      "task": "gofiber__fiber-4784",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-10-21T13:45:01Z",
+      "tamper_check": "unavailable",
+      "f2p": 3,
+      "p2p": 52
+    },
+    {
+      "task": "gofiber__fiber-4788",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-10-23T08:50:20Z",
+      "tamper_check": "unavailable",
+      "f2p": 3,
+      "p2p": 2791
+    },
+    {
+      "task": "gofiber__fiber-4791",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-10-23T08:39:10Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 153
+    },
+    {
+      "task": "gofiber__fiber-4796",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-10-25T11:24:56Z",
+      "tamper_check": "unavailable",
+      "f2p": 4,
+      "p2p": 105
+    },
+    {
+      "task": "gofiber__fiber-4798",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-11-04T22:10:36Z",
+      "tamper_check": "unavailable",
+      "f2p": 11,
+      "p2p": 484
+    },
+    {
+      "task": "gofiber__fiber-4802",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-10-30T20:59:14Z",
+      "tamper_check": "mutants",
+      "f2p": 2,
+      "p2p": 66
+    },
+    {
+      "task": "gofiber__fiber-4811",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-10-29T16:09:30Z",
+      "tamper_check": "mutants",
+      "f2p": 9,
+      "p2p": 2674
+    },
+    {
+      "task": "gofiber__fiber-4820",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-10-30T20:26:06Z",
+      "tamper_check": "unavailable",
+      "f2p": 11,
+      "p2p": 3001
+    },
+    {
+      "task": "gofiber__fiber-4834",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-11-02T13:42:20Z",
+      "tamper_check": "unavailable",
+      "f2p": 8,
+      "p2p": 47
+    },
+    {
+      "task": "gofiber__fiber-4840",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-11-03T11:13:22Z",
+      "tamper_check": "unavailable",
+      "f2p": 4,
+      "p2p": 96
+    },
+    {
+      "task": "gofiber__fiber-4850",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-11-03T17:44:35Z",
+      "tamper_check": "unavailable",
+      "f2p": 2,
+      "p2p": 291
+    },
+    {
+      "task": "gofiber__fiber-4855",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-11-05T12:22:54Z",
+      "tamper_check": "unavailable",
+      "f2p": 14,
+      "p2p": 2053
+    },
+    {
+      "task": "gofiber__fiber-4856",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-11-04T22:10:21Z",
+      "tamper_check": "mutants",
+      "f2p": 21,
+      "p2p": 3650
+    },
+    {
+      "task": "gohugoio__hugo-15461",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-10-27T13:56:11Z",
+      "tamper_check": "unavailable",
+      "f2p": 4,
+      "p2p": 861
+    },
+    {
+      "task": "gohugoio__hugo-15464",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-10-21T09:01:09Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 0
+    },
+    {
+      "task": "gohugoio__hugo-15468",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-10-21T09:12:16Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 55
+    },
+    {
+      "task": "gohugoio__hugo-15469",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-10-21T09:12:42Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 18
+    },
+    {
+      "task": "gohugoio__hugo-15471",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-10-24T10:49:54Z",
+      "tamper_check": "unavailable",
+      "f2p": 2,
+      "p2p": 644
+    },
+    {
+      "task": "gohugoio__hugo-15480",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-10-25T14:24:32Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 83
+    },
+    {
+      "task": "gohugoio__hugo-15483",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-10-24T10:37:00Z",
+      "tamper_check": "unavailable",
+      "f2p": 2,
+      "p2p": 68
+    },
+    {
+      "task": "gohugoio__hugo-15494",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-10-27T13:56:26Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 646
+    },
+    {
+      "task": "gohugoio__hugo-15503",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-10-28T15:45:19Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 673
+    },
+    {
+      "task": "gohugoio__hugo-15529",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-11-03T09:47:53Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 53
+    },
+    {
+      "task": "gohugoio__hugo-15539",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-11-06T19:09:34Z",
+      "tamper_check": "unavailable",
+      "f2p": 2,
+      "p2p": 15
+    },
+    {
+      "task": "gohugoio__hugo-15547",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-11-07T20:43:28Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 8
+    },
+    {
+      "task": "gohugoio__hugo-15557",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-11-09T16:44:06Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 249
+    },
+    {
+      "task": "gohugoio__hugo-15559",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-11-10T10:32:54Z",
+      "tamper_check": "unavailable",
+      "f2p": 6,
+      "p2p": 675
+    },
+    {
+      "task": "gohugoio__hugo-15566",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-11-10T18:19:29Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 25
+    },
+    {
+      "task": "networkx__networkx-8913",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-10-22T00:23:18Z",
+      "tamper_check": "mutants",
+      "f2p": 6,
+      "p2p": 16
+    },
+    {
+      "task": "networkx__networkx-8936",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-11-10T19:24:21Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 21
+    },
+    {
+      "task": "networkx__networkx-8938",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-10-22T00:46:42Z",
+      "tamper_check": "unavailable",
+      "f2p": 13,
+      "p2p": 51
+    }
+  ],
+  "eval_repo": [],
+  "excluded": [
+    {
+      "task": "gofiber__fiber-4557",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-07-24T16:24:30Z",
+      "tamper_check": "mutants",
+      "f2p": 4,
+      "p2p": 2408,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gofiber__fiber-4565",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-07-29T06:34:08Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 1536,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gofiber__fiber-4568",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-07-29T13:20:41Z",
+      "tamper_check": "unavailable",
+      "f2p": 2,
+      "p2p": 1537,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gofiber__fiber-4578",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-07-30T14:19:33Z",
+      "tamper_check": "unavailable",
+      "f2p": 2,
+      "p2p": 317,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gofiber__fiber-4579",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-07-31T06:37:07Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 1591,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gofiber__fiber-4626",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-08-23T14:06:32Z",
+      "tamper_check": "unavailable",
+      "f2p": 2,
+      "p2p": 151,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gofiber__fiber-4656",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-09-06T15:43:29Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 2006,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gofiber__fiber-4662",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-09-06T17:35:55Z",
+      "tamper_check": "mutants",
+      "f2p": 1,
+      "p2p": 799,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gofiber__fiber-4663",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-09-07T06:06:00Z",
+      "tamper_check": "unavailable",
+      "f2p": 3,
+      "p2p": 2027,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gofiber__fiber-4673",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-09-12T14:33:31Z",
+      "tamper_check": "mutants",
+      "f2p": 2,
+      "p2p": 255,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gofiber__fiber-4689",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-09-16T11:14:51Z",
+      "tamper_check": "mutants",
+      "f2p": 1,
+      "p2p": 257,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gofiber__fiber-4692",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-09-21T12:11:15Z",
+      "tamper_check": "unavailable",
+      "f2p": 2,
+      "p2p": 227,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gofiber__fiber-4693",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-09-21T12:03:55Z",
+      "tamper_check": "mutants",
+      "f2p": 1,
+      "p2p": 26,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gofiber__fiber-4708",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-10-01T17:12:45Z",
+      "tamper_check": "mutants",
+      "f2p": 2,
+      "p2p": 63,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gofiber__fiber-4719",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-10-08T06:36:21Z",
+      "tamper_check": "unavailable",
+      "f2p": 14,
+      "p2p": 2356,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gofiber__fiber-4738",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-10-05T13:29:15Z",
+      "tamper_check": "unavailable",
+      "f2p": 4,
+      "p2p": 2442,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gofiber__fiber-4793",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-10-29T16:10:32Z",
+      "tamper_check": "unavailable",
+      "f2p": 4,
+      "p2p": 135,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gofiber__fiber-4829",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-11-02T14:18:45Z",
+      "tamper_check": "unavailable",
+      "f2p": 5,
+      "p2p": 3591,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gofiber__fiber-4830",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-11-02T12:08:14Z",
+      "tamper_check": "unavailable",
+      "f2p": 4,
+      "p2p": 3594,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gofiber__fiber-4833",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-11-03T10:32:57Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 2261,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gofiber__fiber-4851",
+      "repo": "gofiber/fiber",
+      "merged_at": "2026-11-06T10:26:31Z",
+      "tamper_check": "unavailable",
+      "f2p": 2,
+      "p2p": 4311,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gohugoio__hugo-15211",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-08-15T18:41:04Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 622,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gohugoio__hugo-15249",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-08-28T11:03:10Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 12,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gohugoio__hugo-15370",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-09-22T14:25:55Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 8,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gohugoio__hugo-15391",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-09-27T08:44:50Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 4,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gohugoio__hugo-15399",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-09-28T14:13:47Z",
+      "tamper_check": "unavailable",
+      "f2p": 3,
+      "p2p": 17,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gohugoio__hugo-15426",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-10-09T17:16:28Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 24,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gohugoio__hugo-15537",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-11-06T10:25:38Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 102,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gohugoio__hugo-15543",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-11-06T19:04:58Z",
+      "tamper_check": "unavailable",
+      "f2p": 3,
+      "p2p": 103,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "gohugoio__hugo-15564",
+      "repo": "gohugoio/hugo",
+      "merged_at": "2026-11-10T15:34:47Z",
+      "tamper_check": "unavailable",
+      "f2p": 1,
+      "p2p": 20,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "more-itertools__more-itertools-1305",
+      "repo": "more-itertools/more-itertools",
+      "merged_at": "2026-09-29T20:28:23Z",
+      "tamper_check": "mutants",
+      "f2p": 2,
+      "p2p": 617,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "more-itertools__more-itertools-1322",
+      "repo": "more-itertools/more-itertools",
+      "merged_at": "2026-10-30T14:45:21Z",
+      "tamper_check": "mutants",
+      "f2p": 2,
+      "p2p": 620,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "more-itertools__more-itertools-1342",
+      "repo": "more-itertools/more-itertools",
+      "merged_at": "2026-10-30T14:50:28Z",
+      "tamper_check": "mutants",
+      "f2p": 2,
+      "p2p": 620,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "networkx__networkx-8753",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-07-24T20:35:21Z",
+      "tamper_check": "mutants",
+      "f2p": 1,
+      "p2p": 20,
+      "reason": "instruction_not_ok"
+    },
+    {
+      "task": "networkx__networkx-8806",
+      "repo": "networkx/networkx",
+      "merged_at": "2026-07-30T20:56:23Z",
+      "tamper_check": "mutants",
+      "f2p": 2,
+      "p2p": 81,
+      "reason": "instruction_not_ok"
+    }
+  ]
+}

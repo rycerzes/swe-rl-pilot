@@ -1249,7 +1249,7 @@ wheels = [
 [[package]]
 name = "openenv"
 version = "0.12.1.dev0"
-source = { git = "https://github.com/openenv/OpenEnv?rev=e83f73f2#e83f73f24b1fdfbf6e2e2726e4d702f364470cbb" }
+source = { git = "https://github.com/openenv/OpenEnv?rev=029c08f8122c8059e4aa05cd5bfd08092a75db75#029c08f8122c8059e4aa05cd5bfd08092a75db75" }
 dependencies = [
     { name = "fastapi" },
     { name = "fastmcp" },
@@ -1969,7 +1969,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "harbor", specifier = "==0.25.0" },
-    { name = "openenv", extras = ["harbor"], git = "https://github.com/openenv/OpenEnv?rev=e83f73f2" },
+    { name = "openenv", extras = ["harbor"], git = "https://github.com/openenv/OpenEnv?rev=029c08f8122c8059e4aa05cd5bfd08092a75db75" },
 ]
 
 [[package]]

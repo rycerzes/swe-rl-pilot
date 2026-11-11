@@ -4,7 +4,7 @@ version = "0.0.0"
 description = "OpenEnv Harbor rollouts for the pilot: OpenEnv main + Harbor 0.25 (separate verifier)."
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "openenv[harbor] @ git+https://github.com/openenv/OpenEnv@e83f73f2",
+    "openenv[harbor] @ git+https://github.com/openenv/OpenEnv@029c08f8122c8059e4aa05cd5bfd08092a75db75",
     "harbor==0.25.0",
 ]
 

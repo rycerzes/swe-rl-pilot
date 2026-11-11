@@ -758,6 +758,7 @@ inline_recipe_source = "agent_replay"
 instruction_names_hidden_tests = []
 instruction_description_words = 108
 instruction_ok = true
+image_tag = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15503-b60ceecd6569"
 
 [[metadata.swe_rl_pilot.p2p_dropped]]
 test = "TestGitInfoFromGitModuleWithGoMod"
@@ -788,4 +789,4 @@ environment_mode = "separate"
 user = "root"
 
 [environment]
-docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15503-b60ceecd6569"
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot@sha256:057dfb6097c3a5ff0436179ebc7c33382e0cfc635d1f07ebe638312ef9faf865"

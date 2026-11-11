@@ -405,6 +405,7 @@ instruction_names_hidden_tests = [
 ]
 instruction_description_words = 342
 instruction_ok = false
+image_tag = "ghcr.io/rycerzes/swe-rl-pilot:gofiber__fiber-4578-dd0191b1d7ff"
 
 [agent]
 timeout_sec = 1800.0
@@ -415,4 +416,4 @@ environment_mode = "separate"
 user = "root"
 
 [environment]
-docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gofiber__fiber-4578-dd0191b1d7ff"
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot@sha256:5ee7c70cd22c94bc76ced111f77d615793e4dc6a35204f5134649cac1997c8f3"

@@ -702,6 +702,7 @@ inline_recipe_source = "agent_replay"
 instruction_names_hidden_tests = []
 instruction_description_words = 146
 instruction_ok = true
+image_tag = "ghcr.io/rycerzes/swe-rl-pilot:more-itertools__more-itertools-1294-59da67f1f710"
 
 [agent]
 timeout_sec = 1800.0
@@ -712,4 +713,4 @@ environment_mode = "separate"
 user = "root"
 
 [environment]
-docker_image = "ghcr.io/rycerzes/swe-rl-pilot:more-itertools__more-itertools-1294-59da67f1f710"
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot@sha256:80107ba471e8f176d452fa3928a6cb93d2194daafec6f0fff0e32308bdcde6f6"

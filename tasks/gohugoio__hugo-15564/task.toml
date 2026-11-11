@@ -105,6 +105,7 @@ inline_recipe_source = "agent_replay"
 instruction_names_hidden_tests = []
 instruction_description_words = 13
 instruction_ok = false
+image_tag = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15564-606b21b184e8"
 
 [agent]
 timeout_sec = 1800.0
@@ -115,4 +116,4 @@ environment_mode = "separate"
 user = "root"
 
 [environment]
-docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15564-606b21b184e8"
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot@sha256:cef19a6578ab0974c6de950fc6818a9a3c452d3842ef53b43182abe5fba93537"

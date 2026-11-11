@@ -29,6 +29,8 @@ gen/.venv/bin/repo2rlenv generate --repo <owner/name> --pipeline pr_runtime \
     --pipeline-opt limit=15 --llm <provider/model> --out workspace/gen/<name>
 gen/.venv/bin/python scripts/prepare_tasks.py workspace/gen/<name> tasks
 git add tasks && git commit && git push   # CI builds and checks the new images
+# once CI has pushed them: pin each task to the image digest it was checked on
+CRANE=<path to crane> gen/.venv/bin/python scripts/pin_digests.py tasks && git commit -am "Pin digests"
 ```
 
 The image tag is `<task>-<hash of environment/>`, so only changed or new tasks rebuild.

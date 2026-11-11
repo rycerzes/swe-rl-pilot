@@ -2900,6 +2900,7 @@ inline_recipe_source = "agent_replay"
 instruction_names_hidden_tests = []
 instruction_description_words = 182
 instruction_ok = true
+image_tag = "ghcr.io/rycerzes/swe-rl-pilot:gofiber__fiber-4735-5567c5af9f12"
 
 [agent]
 timeout_sec = 1800.0
@@ -2910,4 +2911,4 @@ environment_mode = "separate"
 user = "root"
 
 [environment]
-docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gofiber__fiber-4735-5567c5af9f12"
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot@sha256:21b55296af360bc36f20ac4fbf75ec81920f7961befb370c8a72a6b342cf8660"

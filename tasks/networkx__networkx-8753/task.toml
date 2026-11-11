@@ -107,6 +107,7 @@ instruction_names_hidden_tests = [
 ]
 instruction_description_words = 518
 instruction_ok = false
+image_tag = "ghcr.io/rycerzes/swe-rl-pilot:networkx__networkx-8753-d5fc30687353"
 
 [agent]
 timeout_sec = 1800.0
@@ -117,4 +118,4 @@ environment_mode = "separate"
 user = "root"
 
 [environment]
-docker_image = "ghcr.io/rycerzes/swe-rl-pilot:networkx__networkx-8753-d5fc30687353"
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot@sha256:a05a8ba4f499907f04dc1f2fc67408907c2323341d48680802093c6f2ac2cc8d"

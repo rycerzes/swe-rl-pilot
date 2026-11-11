@@ -193,6 +193,7 @@ instruction_names_hidden_tests = [
 ]
 instruction_description_words = 196
 instruction_ok = false
+image_tag = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15543-d07afba8104d"
 
 [agent]
 timeout_sec = 1800.0
@@ -203,4 +204,4 @@ environment_mode = "separate"
 user = "root"
 
 [environment]
-docker_image = "ghcr.io/rycerzes/swe-rl-pilot:gohugoio__hugo-15543-d07afba8104d"
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot@sha256:7cb2e3b3338c3e1711c29b74ee12a838766f638665e0294e3a4414ac3d890fd1"

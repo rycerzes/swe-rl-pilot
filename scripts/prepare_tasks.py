@@ -77,10 +77,19 @@ def add_scrub(task: Path) -> None:
 
 
 def set_image(task: Path, registry: str) -> str:
+    """Record the content-addressed tag; point docker_image at it until pin_digests.py pins it.
+
+    A digest already pinned for the same tag is kept, so a refresh that leaves environment/
+    unchanged doesn't unpin the task.
+    """
     toml_path = task / "task.toml"
     data = tomllib.loads(toml_path.read_text(encoding="utf-8"))
     image = f"{registry}:{task.name}-{environment_hash(task / 'environment')}"
-    data.setdefault("environment", {})["docker_image"] = image
+    pilot = data.setdefault("metadata", {}).setdefault("swe_rl_pilot", {})
+    env = data.setdefault("environment", {})
+    if pilot.get("image_tag") != image or "@sha256:" not in env.get("docker_image", ""):
+        env["docker_image"] = image
+    pilot["image_tag"] = image
     toml_path.write_text(tomli_w.dumps(data), encoding="utf-8")
     return image
 

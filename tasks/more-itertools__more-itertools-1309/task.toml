@@ -708,6 +708,7 @@ instruction_stripped_sections = [
 instruction_names_hidden_tests = []
 instruction_description_words = 104
 instruction_ok = true
+image_tag = "ghcr.io/rycerzes/swe-rl-pilot:more-itertools__more-itertools-1309-3806c4040a02"
 
 [agent]
 timeout_sec = 1800.0
@@ -718,4 +719,4 @@ environment_mode = "separate"
 user = "root"
 
 [environment]
-docker_image = "ghcr.io/rycerzes/swe-rl-pilot:more-itertools__more-itertools-1309-3806c4040a02"
+docker_image = "ghcr.io/rycerzes/swe-rl-pilot@sha256:f2f21c7c9e5f58da44fae281c516f0ee6d2fdc3e3277b1870920af1e83d59520"

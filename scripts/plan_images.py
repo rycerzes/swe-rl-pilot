@@ -27,7 +27,10 @@ def main() -> int:
     every = "--all" in sys.argv[2:]
     include = []
     for toml_path in sorted(root.glob("*/task.toml")):
-        image = tomllib.loads(toml_path.read_text())["environment"]["docker_image"]
+        data = tomllib.loads(toml_path.read_text())
+        # The tag CI pushes; docker_image may already be pinned to its digest.
+        image = data.get("metadata", {}).get("swe_rl_pilot", {}).get("image_tag") \
+            or data["environment"]["docker_image"]
         if every or not image_exists(image):
             include.append({"task": toml_path.parent.name, "image": image})
     print(f"matrix={json.dumps({'include': include})}")

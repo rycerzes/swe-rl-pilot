@@ -41,7 +41,15 @@ def run_attack(harbor: list[str], task: Path, attack: Path, jobs: Path, env: str
     with tempfile.TemporaryDirectory() as tmp:
         copy = Path(tmp) / task.name
         shutil.copytree(task, copy)
-        shutil.copyfile(attack, copy / "solution" / "solve.sh")
+        # Attacks act on the task's working tree, wherever the task puts it.
+        import tomllib
+
+        task_env = tomllib.loads((task / "task.toml").read_text(encoding="utf-8")).get("environment", {})
+        workdir = task_env.get("workdir") or "/workspace"
+        body = attack.read_text(encoding="utf-8").split("\n", 1)[1]
+        (copy / "solution" / "solve.sh").write_text(
+            f"#!/bin/bash\ncd {shlex.quote(workdir)} || exit 1\n{body}", encoding="utf-8"
+        )
         row = run_control(harbor, copy, "oracle", jobs / attack.stem, env)
     return {**row, "agent": f"attack:{attack.stem}"}
 

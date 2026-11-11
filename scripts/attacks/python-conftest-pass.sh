@@ -1,6 +1,5 @@
 #!/bin/bash
 # Attack: a root conftest.py that reports every test as passed. Must score 0.
-cd /workspace
 cat > conftest.py <<'PY'
 import pytest
 

@@ -1,0 +1,136 @@
+name: Mirror task images
+
+# Copies digest-pinned task images (e.g. SWE-rebench V2.1 RL's, all on Docker Hub) to GHCR, so
+# HF Sandbox pulls don't hit Docker Hub's anonymous rate limit at RL concurrency. `crane copy`
+# copies the manifest byte for byte: the GHCR copy has the same digest, and each copy is checked.
+# Already-mirrored images are skipped, so a re-run only copies what's missing or failed.
+#
+# Output: an image map (source -> ghcr.io/...@sha256:...) per shard, merged into one artifact,
+# for scripts/wrap_separate_verifier.py --image-map.
+
+on:
+  workflow_dispatch:
+    inputs:
+      list:
+        description: "task<TAB>language<TAB>source image list (from scripts/select_mirror.py)"
+        default: "mirror/swe-rebench-v2.1.tsv"
+      package:
+        description: "GHCR package under this repo's owner"
+        default: "swe-rebench-v2.1"
+      shards:
+        description: "parallel jobs"
+        default: "20"
+
+permissions: {}
+
+env:
+  CRANE_VERSION: v0.22.1
+  CRANE_SHA256: 0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - id: plan
+        env:
+          SHARDS: ${{ inputs.shards }}
+        run: |
+          python3 -c "import json,os;n=int(os.environ['SHARDS']);print('matrix='+json.dumps({'shard':list(range(n))}))" >> "$GITHUB_OUTPUT"
+
+  mirror:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 340
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      LIST: ${{ inputs.list }}
+      SHARDS: ${{ inputs.shards }}
+      SHARD: ${{ matrix.shard }}
+      DEST: ghcr.io/${{ github.repository_owner }}/${{ inputs.package }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: crane
+        run: |
+          curl -sSfL -o crane.tgz "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz"
+          echo "${CRANE_SHA256}  crane.tgz" | sha256sum -c -
+          tar -xzf crane.tgz crane && sudo mv crane /usr/local/bin/ && crane version
+      - name: Log in to GHCR
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: echo "$TOKEN" | crane auth login ghcr.io -u "$ACTOR" --password-stdin
+      - name: Copy
+        run: |
+          mkdir -p out
+          : > "out/map-$SHARD.tsv"; : > "out/failed-$SHARD.tsv"
+          # Every SHARDS-th line, starting at this shard's index.
+          awk -F'\t' -v n="$SHARDS" -v s="$SHARD" 'NR % n == s' "$LIST" | while IFS=$'\t' read -r task lang src; do
+            want="${src##*@}"
+            dst="$DEST:$task"
+            have="$(crane digest "$dst" 2>/dev/null || true)"
+            if [ "$have" != "$want" ]; then
+              ok=""
+              for wait in 0 30 120 300; do
+                sleep "$wait"
+                if crane copy "$src" "$dst" 2> err.txt; then ok=1; break; fi
+                grep -q -E "TOOMANYREQUESTS|429|rate limit" err.txt || break
+                echo "rate limited on $task; retrying" >&2
+              done
+              have="$(crane digest "$dst" 2>/dev/null || true)"
+              if [ -z "$ok" ] || [ "$have" != "$want" ]; then
+                printf '%s\t%s\t%s\n' "$task" "$src" "$(tr '\n' ' ' < err.txt | cut -c1-300)" >> "out/failed-$SHARD.tsv"
+                continue
+              fi
+            fi
+            printf '%s\t%s@%s\n' "$src" "$DEST" "$want" >> "out/map-$SHARD.tsv"
+          done
+          echo "shard $SHARD: mirrored $(wc -l < out/map-$SHARD.tsv), failed $(wc -l < out/failed-$SHARD.tsv)" | tee -a "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mirror-${{ matrix.shard }}
+          path: out/
+          retention-days: 30
+
+  merge:
+    needs: mirror
+    if: always()
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: mirror-*
+          merge-multiple: true
+          path: out
+      - name: Image map
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import glob, json
+          image_map = {}
+          for f in sorted(glob.glob("out/map-*.tsv")):
+              for line in open(f):
+                  src, dst = line.rstrip("\n").split("\t")
+                  image_map[src] = dst
+          failed = [l for f in sorted(glob.glob("out/failed-*.tsv")) for l in open(f)]
+          json.dump(image_map, open("image-map.json", "w"), indent=1, sort_keys=True)
+          open("failed.tsv", "w").writelines(failed)
+          print(f"mirrored {len(image_map)}, failed {len(failed)}")
+          EOF
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-map
+          path: |
+            image-map.json
+            failed.tsv
+          retention-days: 90

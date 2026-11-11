@@ -26,8 +26,14 @@ ATTACKS = Path(__file__).with_name("attacks")
 
 
 def task_language(task: Path) -> str:
-    dockerfile = (task / "environment" / "Dockerfile").read_text(encoding="utf-8")
-    return "go" if "FROM golang" in dockerfile else "python"
+    """From the task's Dockerfile, else from `[metadata].language` (prebuilt-image tasks)."""
+    dockerfile = task / "environment" / "Dockerfile"
+    if dockerfile.exists():
+        return "go" if "FROM golang" in dockerfile.read_text(encoding="utf-8") else "python"
+    import tomllib
+
+    meta = tomllib.loads((task / "task.toml").read_text(encoding="utf-8")).get("metadata", {})
+    return str(meta.get("language", "python")).lower()
 
 
 def run_attack(harbor: list[str], task: Path, attack: Path, jobs: Path, env: str) -> dict:
@@ -56,7 +62,8 @@ def run_control(harbor: list[str], task: Path, agent: str, jobs: Path, env: str)
     return {
         "agent": agent,
         "reward": rewards.get("reward"),
-        "resolved": details.get("resolved"),
+        # Only Repo2RLEnv graders write reward-details.json; others report the reward alone.
+        "resolved": details.get("resolved") if details else "n/a",
         "parse_status": details.get("parse_status"),
         "tamper_check": details.get("tamper_check"),
         "exception": (result.get("exception_info") or {}).get("exception_type"),
@@ -91,7 +98,7 @@ def main() -> int:
         want = EXPECTED[row["agent"]]
         if row.get("reward") != want:
             failures.append(f"{row['agent']}: reward {row.get('reward')!r}, expected {want}")
-        if row["agent"] == "oracle" and row.get("resolved") is not True:
+        if row["agent"] == "oracle" and row.get("resolved") not in (True, "n/a"):
             failures.append(f"oracle: resolved {row.get('resolved')!r}, expected True")
 
     lines = [f"### {args.task.name}", "", "| control | reward | resolved | parse_status | tamper_check | exception |",

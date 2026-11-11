@@ -263,9 +263,6 @@ pass_to_pass = [
     "TestGetPageNewsVsTagsNewsIssue12638",
     "TestGetPageRelative",
     "TestGistShortcodeDeprecationError14491",
-    "TestGitInfoFromGitModuleWithGoMod",
-    "TestGitInfoFromGitModuleWithGoModInSubdir",
-    "TestGitInfoFromGitModuleWithVersionQuery",
     "TestGo18Constructs",
     "TestGo23ElseWith",
     "TestGoTemplateBugs",
@@ -401,7 +398,6 @@ pass_to_pass = [
     "TestMergeLanguages",
     "TestMergeLanguagesTemplate",
     "TestMinifyPublisher",
-    "TestModulePrivateRepo",
     "TestModulesDisabled",
     "TestModulesIgnoreConfig",
     "TestModulesIncompatible",
@@ -830,6 +826,22 @@ inline_recipe_source = "agent_replay"
 instruction_names_hidden_tests = []
 instruction_description_words = 49
 instruction_ok = true
+
+[[metadata.swe_rl_pilot.p2p_dropped]]
+test = "TestGitInfoFromGitModuleWithGoMod"
+reason = "needs git-hosted Go modules (network/git) unavailable in the task image; fails for the reference fix"
+
+[[metadata.swe_rl_pilot.p2p_dropped]]
+test = "TestGitInfoFromGitModuleWithGoModInSubdir"
+reason = "needs git-hosted Go modules (network/git) unavailable in the task image; fails for the reference fix"
+
+[[metadata.swe_rl_pilot.p2p_dropped]]
+test = "TestGitInfoFromGitModuleWithVersionQuery"
+reason = "needs git-hosted Go modules (network/git) unavailable in the task image; fails for the reference fix"
+
+[[metadata.swe_rl_pilot.p2p_dropped]]
+test = "TestModulePrivateRepo"
+reason = "needs git-hosted Go modules (network/git) unavailable in the task image; fails for the reference fix"
 
 [agent]
 timeout_sec = 1800.0

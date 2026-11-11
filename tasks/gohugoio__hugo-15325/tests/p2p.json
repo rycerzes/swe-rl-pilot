@@ -95,7 +95,6 @@
   "TestInspectCounts",
   "TestIntersect",
   "TestIsSet",
-  "TestLast",
   "TestLessEqualExtend",
   "TestLessThanExtend",
   "TestMerge",

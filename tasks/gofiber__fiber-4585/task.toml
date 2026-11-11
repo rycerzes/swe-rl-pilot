@@ -478,7 +478,6 @@ pass_to_pass = [
     "Test_Logger_Next",
     "Test_Logger_PreRegisteredMiddlewareTag",
     "Test_Logger_RegisterTagRejectsInvalidInput",
-    "Test_Logger_RegisteredTag",
     "Test_Logger_SanitizesControlBytes",
     "Test_Logger_SanitizesControlBytes/body",
     "Test_Logger_SanitizesControlBytes/query",
@@ -700,6 +699,10 @@ inline_recipe_source = "agent_replay"
 instruction_names_hidden_tests = []
 instruction_description_words = 659
 instruction_ok = true
+
+[[metadata.swe_rl_pilot.p2p_dropped]]
+test = "Test_Logger_RegisteredTag"
+reason = "status changed between runs for the reference fix (flaky) in CI (build run 42959327604)"
 
 [agent]
 timeout_sec = 1800.0

@@ -400,7 +400,6 @@
   "Test_Logger_Next",
   "Test_Logger_PreRegisteredMiddlewareTag",
   "Test_Logger_RegisterTagRejectsInvalidInput",
-  "Test_Logger_RegisteredTag",
   "Test_Logger_SanitizesControlBytes",
   "Test_Logger_SanitizesControlBytes/body",
   "Test_Logger_SanitizesControlBytes/query",

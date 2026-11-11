@@ -138,7 +138,6 @@ pass_to_pass = [
     "TestInspectCounts",
     "TestIntersect",
     "TestIsSet",
-    "TestLast",
     "TestLessEqualExtend",
     "TestLessThanExtend",
     "TestMerge",
@@ -350,6 +349,9 @@ inline_recipe_source = "agent_replay"
 instruction_names_hidden_tests = []
 instruction_description_words = 434
 instruction_ok = true
+p2p_dropped = [
+    { test = "TestLast", reason = "failed for the reference fix in CI (build run 42959327604)" },
+]
 
 [agent]
 timeout_sec = 1800.0

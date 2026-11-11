@@ -8,6 +8,7 @@
 """
 
 import pathlib
+import site
 
 import harbor.agents.installed.mini_swe_agent as msa
 import harbor.environments.tar_transfer as t
@@ -16,6 +17,24 @@ PATCHES = [
     (t.__file__, "tar -xzf ", "tar --no-same-owner -xzf "),
     (msa.__file__, '"--with litellm --with orjson', "\"--with 'litellm[mcp]' --with orjson"),
 ]
+
+# 3. huggingface_hub#5306 (merged, unreleased in 2.4.0): a digest-pinned image makes the derived
+#    sandbox job name exceed the Hub's 100-character label limit, so no sandbox starts. A .pth
+#    hook loads the same truncation TRL's sft_agent_traces example uses, in every process.
+HUB_NAME_FIX = """try:
+    import huggingface_hub.hf_api as _hf_api
+    _orig = _hf_api._default_job_name_from_image
+    def _short_name(image, command, **kwargs):
+        name = _orig(image, command, **kwargs)
+        return name if len(name) <= 100 else name[:91] + name[-9:]
+    _hf_api._default_job_name_from_image = _short_name
+except Exception:
+    pass
+"""
+site_dir = pathlib.Path(site.getsitepackages()[0])
+(site_dir / "_pilot_hub_jobname_fix.py").write_text(HUB_NAME_FIX)
+(site_dir / "_pilot_hub_jobname_fix.pth").write_text("import _pilot_hub_jobname_fix\n")
+print("installed hub job-name fix in", site_dir.name)
 
 for file, old, new in PATCHES:
     path = pathlib.Path(file)

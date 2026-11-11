@@ -231,9 +231,6 @@ pass_to_pass = [
     "TestGetPageMultilingual",
     "TestGetPageNewsVsTagsNewsIssue12638",
     "TestGetPageRelative",
-    "TestGitInfoFromGitModuleWithGoMod",
-    "TestGitInfoFromGitModuleWithGoModInSubdir",
-    "TestGitInfoFromGitModuleWithVersionQuery",
     "TestGoldmark",
     "TestHTMLFilesIsue11999",
     "TestHTMLNotContent",
@@ -333,7 +330,6 @@ pass_to_pass = [
     "TestMergeLanguages",
     "TestMergeLanguagesTemplate",
     "TestMinifyPublisher",
-    "TestModulePrivateRepo",
     "TestModulesDisabled",
     "TestModulesIgnoreConfig",
     "TestModulesIncompatible",
@@ -714,6 +710,22 @@ inline_recipe_source = "agent_replay"
 instruction_names_hidden_tests = []
 instruction_description_words = 146
 instruction_ok = true
+
+[[metadata.swe_rl_pilot.p2p_dropped]]
+test = "TestGitInfoFromGitModuleWithGoMod"
+reason = "needs git-hosted Go modules (network/git) unavailable in the task image; fails for the reference fix"
+
+[[metadata.swe_rl_pilot.p2p_dropped]]
+test = "TestGitInfoFromGitModuleWithGoModInSubdir"
+reason = "needs git-hosted Go modules (network/git) unavailable in the task image; fails for the reference fix"
+
+[[metadata.swe_rl_pilot.p2p_dropped]]
+test = "TestGitInfoFromGitModuleWithVersionQuery"
+reason = "needs git-hosted Go modules (network/git) unavailable in the task image; fails for the reference fix"
+
+[[metadata.swe_rl_pilot.p2p_dropped]]
+test = "TestModulePrivateRepo"
+reason = "needs git-hosted Go modules (network/git) unavailable in the task image; fails for the reference fix"
 
 [agent]
 timeout_sec = 1800.0

@@ -2,6 +2,8 @@
 
 Usage: python3 scripts/check_controls.py tasks/<task> [--harbor 'uvx --from harbor==0.25.0 harbor']
        [--env hf-sandbox]   # default docker; hf-sandbox needs rollout/patch_harbor.py applied
+       [--attacks]          # also run scripts/attacks/<language>-*.sh as the solution: each must
+                            # not score above 0 (ungraded is reported, not a failure)
 
 Runs on the published image (`docker_image`), so it checks exactly what HF Sandbox will pull.
 A missing reward fails the check: the controls must be graded, not ungraded.
@@ -13,11 +15,29 @@ import argparse
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 EXPECTED = {"oracle": 1.0, "nop": 0.0}
+ATTACKS = Path(__file__).with_name("attacks")
+
+
+def task_language(task: Path) -> str:
+    dockerfile = (task / "environment" / "Dockerfile").read_text(encoding="utf-8")
+    return "go" if "FROM golang" in dockerfile else "python"
+
+
+def run_attack(harbor: list[str], task: Path, attack: Path, jobs: Path, env: str) -> dict:
+    """Run `attack` as the task's solution through Harbor's oracle agent."""
+    with tempfile.TemporaryDirectory() as tmp:
+        copy = Path(tmp) / task.name
+        shutil.copytree(task, copy)
+        shutil.copyfile(attack, copy / "solution" / "solve.sh")
+        row = run_control(harbor, copy, "oracle", jobs / attack.stem, env)
+    return {**row, "agent": f"attack:{attack.stem}"}
 
 
 def run_control(harbor: list[str], task: Path, agent: str, jobs: Path, env: str) -> dict:
@@ -49,11 +69,25 @@ def main() -> int:
     parser.add_argument("--harbor", default="uvx --from harbor==0.25.0 harbor")
     parser.add_argument("--jobs", type=Path, default=Path("jobs"))
     parser.add_argument("--env", default="docker", help="Harbor environment (docker, hf-sandbox)")
+    parser.add_argument("--attacks", action="store_true", help="also run the attack solutions")
+    parser.add_argument("--oracle-runs", type=int, default=1,
+                        help="run the oracle this many times; every run must score 1.0 (flaky tests)")
     args = parser.parse_args()
 
-    rows = [run_control(shlex.split(args.harbor), args.task, a, args.jobs, args.env) for a in EXPECTED]
+    harbor = shlex.split(args.harbor)
+    rows = [run_control(harbor, args.task, a, args.jobs, args.env) for a in EXPECTED]
+    for n in range(2, args.oracle_runs + 1):
+        rows.append(run_control(harbor, args.task, "oracle", args.jobs / f"oracle-{n}", args.env))
+    if args.attacks:
+        for attack in sorted(ATTACKS.glob(f"{task_language(args.task)}-*.sh")):
+            rows.append(run_attack(harbor, args.task, attack, args.jobs, args.env))
     failures = []
     for row in rows:
+        if row["agent"].startswith("attack:"):
+            reward = row.get("reward")
+            if reward is not None and reward > 0:
+                failures.append(f"{row['agent']}: reward {reward!r}, expected 0 (weak grader)")
+            continue
         want = EXPECTED[row["agent"]]
         if row.get("reward") != want:
             failures.append(f"{row['agent']}: reward {row.get('reward')!r}, expected {want}")

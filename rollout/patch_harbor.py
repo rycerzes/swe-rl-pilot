@@ -36,6 +36,19 @@ site_dir = pathlib.Path(site.getsitepackages()[0])
 (site_dir / "_pilot_hub_jobname_fix.pth").write_text("import _pilot_hub_jobname_fix\n")
 print("installed hub job-name fix in", site_dir.name)
 
+# 4. egress/pilot_harbor_egress.py: HF Sandbox honors [agent].user (setpriv), and with
+#    PILOT_EGRESS_ALLOW set, the agent's run phase gets the Landlock + allowlist-proxy jail.
+import shutil
+
+egress = pathlib.Path(__file__).with_name("egress")
+shutil.copyfile(egress / "pilot_harbor_egress.py", site_dir / "pilot_harbor_egress.py")
+files = site_dir / "pilot_egress_files"
+files.mkdir(exist_ok=True)
+for name in ("allowlist_proxy.py", "landlock_exec.py"):
+    shutil.copyfile(egress / name, files / name)
+(site_dir / "_pilot_harbor_egress.pth").write_text("import pilot_harbor_egress\n")
+print("installed HF Sandbox user switching + egress jail in", site_dir.name)
+
 for file, old, new in PATCHES:
     path = pathlib.Path(file)
     text = path.read_text()
